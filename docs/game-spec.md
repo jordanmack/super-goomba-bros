@@ -1,4 +1,4 @@
-# Super Goomba Brotherhood
+# Super Goomba Bros
 
 ## Purpose and status
 
@@ -32,7 +32,7 @@ tell characters to flee or hide because Mario is approaching.
 - Flat pixel-art sprites and tile scenery rendered with Three.js.
 - A side view and 2D movement. No 3D character models are needed.
 - Goomba movement, warnings, hiding, NPC rescues, and Mario encounters.
-- A title screen named exactly **Super Goomba Brotherhood**.
+- A title screen named exactly **Super Goomba Bros**.
 - Music or heartbeat cues for Mario's approach and a short victory tune.
 
 Multiple levels, player weapons, direct player attacks, and endless NPC
@@ -317,7 +317,7 @@ a mute control. Keep important danger information visible when audio is off.
 These are checks to run against the playable game, not completed test results.
 Use the starting tuning values below unless playtesting has changed them.
 
-- The title reads `Super Goomba Brotherhood`.
+- The title reads `Super Goomba Bros`.
 - The same level is playable with a keyboard and with touch controls.
 - The player can walk, run without a stamina limit, jump, hide, and warn.
 - Running and warnings can attract nearby Mario; walking is quieter.
