@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  ArrowDown,
   DoorOpen,
   Pause,
   Play,
@@ -18,6 +19,7 @@ import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
 import { GameControls } from "./game/controls";
+import { CAMPAIGN } from "./game/levels";
 
 type Runtime = {
   sim: Simulation;
@@ -44,6 +46,8 @@ type Snapshot = {
   cooldown: number;
   finishLeft: number;
   progress: number;
+  level: string;
+  lastLevel: boolean;
 };
 const initial: Snapshot = {
   mode: "title",
@@ -61,6 +65,8 @@ const initial: Snapshot = {
   cooldown: 0,
   finishLeft: 0,
   progress: 0,
+  level: "1-1",
+  lastLevel: false,
 };
 export default function App() {
   const surface = useRef<HTMLElement>(null);
@@ -92,6 +98,14 @@ export default function App() {
       return;
     }
     const sim = new Simulation();
+    if (import.meta.env.DEV) {
+      const requested = new URLSearchParams(location.search).get("level");
+      const index = CAMPAIGN.findIndex((level) => level.id === requested);
+      if (index >= 0) {
+        sim.levelIndex = index;
+        sim.reset("title");
+      }
+    }
     const audio = new GameAudio(renderer.game);
     const game: Runtime = {
       sim,
@@ -105,22 +119,37 @@ export default function App() {
     runtime.current = game;
     let disposed = false;
     let controls: GameControls | undefined;
-    void renderer.ready.then(() => {
-      if (disposed) return;
-      renderer.bindPhysics(sim.physics);
-      controls = new GameControls(renderer.play!.input, surface.current!, game, () => {
-        game.paused = !game.paused; setPaused(game.paused); game.clearInput();
-        if (game.paused) audio.pause(); else startAudio(game);
-      }, () => {
-        if (sim.mode === "playing" || sim.mode === "finishing") {
-          game.paused = true; setPaused(true); audio.pause();
-        }
+    void renderer.ready
+      .then(() => {
+        if (disposed) return;
+        renderer.bindPhysics(sim.physics);
+        controls = new GameControls(
+          renderer.play!.input,
+          surface.current!,
+          game,
+          () => {
+            game.paused = !game.paused;
+            setPaused(game.paused);
+            game.clearInput();
+            if (game.paused) audio.pause();
+            else startAudio(game);
+          },
+          () => {
+            if (sim.mode === "playing" || sim.mode === "finishing") {
+              game.paused = true;
+              setPaused(true);
+              audio.pause();
+            }
+          },
+        );
+        game.clearInput = () => controls?.clear();
+        setPortrait(renderer.game.registry.get("portrait"));
+        setReady(true);
+        renderer.play!.tick = update;
+      })
+      .catch((error: Error) => {
+        if (!disposed) setError(error.message);
       });
-      game.clearInput = () => controls?.clear();
-      setPortrait(renderer.game.registry.get("portrait"));
-      setReady(true);
-      renderer.play!.tick = update;
-    }).catch((error: Error) => { if (!disposed) setError(error.message); });
     // Development-only access supports deterministic browser checks, never the built game.
     if (import.meta.env.DEV)
       (window as unknown as { __game: Runtime }).__game = game;
@@ -142,6 +171,7 @@ export default function App() {
           sim.mode === "playing",
           (sim.player.alive && sim.player.starLeft > 0) ||
             (sim.marioActive && sim.mario.alive && sim.mario.starLeft > 0),
+          sim.activeRoom.data.type,
         );
       }
       renderer.render(sim, now / 1000);
@@ -171,7 +201,12 @@ export default function App() {
           y: point.y,
           cooldown: sim.cooldown,
           finishLeft: sim.finishLeft,
-          progress: Math.min(1, p.x / T.goalX),
+          progress: Math.min(
+            1,
+            (p.x - sim.activeRoom.offset) / (sim.goalX - sim.activeRoom.offset),
+          ),
+          level: sim.level.id,
+          lastLevel: sim.levelIndex === 31,
         });
       }
     };
@@ -204,6 +239,21 @@ export default function App() {
     if (game.paused) game.audio.pause();
     else startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
+  };
+  const nextLevel = () => {
+    const game = runtime.current;
+    if (!game) return;
+    game.sim.nextLevel();
+    game.clearInput();
+    game.audio.resetMusic(true);
+    game.paused = false;
+    setPaused(false);
+    startAudio(game);
+    (document.activeElement as HTMLElement)?.blur();
+  };
+  const replay = () => {
+    if (runtime.current) runtime.current.sim.levelIndex = 0;
+    start();
   };
   const mute = () => {
     if (runtime.current) runtime.current.audio.muted = !muted;
@@ -299,7 +349,11 @@ export default function App() {
           <h1 aria-label="Super Goomba Bros">
             <span>SUPER</span>GOOMBA<span>BROS</span>
           </h1>
-          <button className="primary" onClick={start} disabled={!!error || !ready}>
+          <button
+            className="primary"
+            onClick={start}
+            disabled={!!error || !ready}
+          >
             <Play size={20} fill="currentColor" /> START GAME
           </button>
           <p className="edition">
@@ -320,7 +374,7 @@ export default function App() {
                 ? "FIRE MARIO"
                 : state.phase === 1
                   ? "MARIO IS FASTER"
-                  : "WORLD 1-1"}
+                  : `WORLD ${state.level}`}
             </span>
             <time>
               {minutes}:{seconds}
@@ -347,8 +401,8 @@ export default function App() {
             state.mode === "playing" &&
             state.saved < T.required && (
               <div className="goal-message">
-                <DoorOpen size={18} /> {T.required - state.saved} MORE RESCUES TO
-                OPEN THE CASTLE DOOR
+                <DoorOpen size={18} /> {T.required - state.saved} MORE RESCUES
+                TO OPEN THE CASTLE DOOR
               </div>
             )}
           {state.mode === "finishing" && (
@@ -381,7 +435,13 @@ export default function App() {
                 )}
               </div>
               <div className="actions">
-        {state.flower &&
+                {actionButton(
+                  "down",
+                  "Pipe",
+                  <ArrowDown />,
+                  "Enter pipe (Down / S)",
+                )}
+                {state.flower &&
                   actionButton("fire", "Fire", <Flame />, "Shoot fireball (Z)")}
                 {actionButton(
                   "jump",
@@ -434,9 +494,18 @@ export default function App() {
                   <span>SAVED</span>
                 </div>
               </div>
-              <button className="primary" onClick={start}>
-                <RotateCcw size={20} /> PLAY AGAIN
+              <button
+                className="primary"
+                onClick={state.lastLevel ? replay : nextLevel}
+              >
+                <Play size={20} />{" "}
+                {state.lastLevel ? "PLAY AGAIN" : "NEXT LEVEL"}
               </button>
+              {!state.lastLevel && (
+                <button className="secondary" onClick={start}>
+                  <RotateCcw size={16} /> PLAY AGAIN
+                </button>
+              )}
             </>
           )}
         </section>

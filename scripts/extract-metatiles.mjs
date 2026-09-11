@@ -1,6 +1,6 @@
 // Offline art extraction. Geometry comes only from the disassembly level JSON.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const referenceDir = process.argv[2];
@@ -19,18 +19,17 @@ const sources = {
     "2-3",
     "4-1",
     "4-3",
-    "5-1",
-    "5-2",
-    "7-1",
     "8-1",
     "8-2",
     "8-3",
   ],
-  night: ["3-1", "3-2", "3-3", "6-1", "6-2"],
+  night: ["3-3", "6-1", "6-2"],
   snow: ["6-3"],
   underground: ["1-2", "4-2"],
   water: ["2-2"],
   castle: ["1-4", "2-4", "3-4", "4-4", "7-4", "8-4"],
+  "snow-day": ["5-1", "5-2", "7-1"],
+  "snow-night": ["3-1", "3-2"],
 };
 const themes = Object.keys(sources);
 const urls = [];
@@ -95,6 +94,10 @@ for (const [theme, levels] of Object.entries(sources)) {
   }
 }
 
+// Cloud bonus terrain does not occur in a main-stage map. Use its original
+// frame from the already credited sprite sheet rather than a blank substitute.
+frames.set("day:136", execFileSync("convert", ["src/assets/smb/scenery.png", "-crop", "16x16+64+336", "-depth", "8", "rgba:-"]));
+
 // Identical source metatile graphics have distinct IDs for their game behavior.
 const aliases = {
   16: 18,
@@ -121,6 +124,8 @@ const palette = {
   snow: ["fcfcfc", "a4a4a4"],
   castle: ["fcfcfc", "a4a4a4"],
   water: ["b8f818", "00a800"],
+  "snow-day": ["fcbcb0", "c84c0c"],
+  "snow-night": ["fcbcb0", "c84c0c"],
 };
 const recolor = (image, from, to, id) => {
   const result = Buffer.from(image);
@@ -132,7 +137,8 @@ const recolor = (image, from, to, id) => {
   }
   return result;
 };
-const atlas = Buffer.alloc(256 * 1536 * 4),
+const atlasHeight = themes.length * 256;
+const atlas = Buffer.alloc(256 * atlasHeight * 4),
   coverage = {};
 for (const [themeIndex, theme] of themes.entries()) {
   coverage[theme] = [];
@@ -163,9 +169,9 @@ for (const [themeIndex, theme] of themes.entries()) {
   }
 }
 const used = new Set(
-  campaign.flatMap((level) =>
+  readdirSync("src/assets/levels").filter(name => /^area-.*\.json$/.test(name)).flatMap((name) =>
     JSON.parse(
-      readFileSync(`src/assets/levels/area-${level.main}.json`, "utf8"),
+      readFileSync(`src/assets/levels/${name}`, "utf8"),
     ).tiles.flat(),
   ),
 );
@@ -179,7 +185,7 @@ writeFileSync(
   "src/assets/smb/metatiles.png",
   execFileSync(
     "convert",
-    ["-size", "256x1536", "-depth", "8", "rgba:-", "png:-"],
+    ["-size", `256x${atlasHeight}`, "-depth", "8", "rgba:-", "png:-"],
     { input: atlas },
   ),
 );

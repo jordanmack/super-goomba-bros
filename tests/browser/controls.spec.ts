@@ -317,3 +317,16 @@ test("mouse dragging switches controls and capture loss clears the action", asyn
   await page.mouse.up();
   await input(page, {});
 });
+
+test("Space still jumps after clicking or focusing a gameplay control", async ({ page }) => {
+  const right = await point(page, "Right", 1);
+  await page.mouse.click(right.x, right.y);
+  await page.keyboard.down("Space");
+  await input(page, { jump: true });
+  await page.keyboard.up("Space");
+  await page.getByRole("button", { name: "Jump", exact: true }).focus();
+  await page.keyboard.down("Space");
+  await input(page, { jump: true });
+  await page.keyboard.up("Space");
+  await input(page, {});
+});

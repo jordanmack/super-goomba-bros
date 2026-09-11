@@ -51,6 +51,9 @@ sprite. The item sprites are drawn in code using the NES palette. The finish is
 the original castle door tile in the map.
 There are no log sprites or log hiding places.
 
+`items.png` supplies original platform and coin frames:
+https://www.mariouniverse.com/wp-content/img/sprites/nes/smb/items-objects.png
+
 Walking and running use the same source frames; distance traveled controls frame
 advance. Mario uses three movement frames plus idle, skid, jump, and his original
 small-Mario death pose. Goombas and

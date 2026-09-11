@@ -1,6 +1,9 @@
 import { TILE_COUNT, WORLD_TILES } from "./world-tiles";
 
-export type SpriteSources = Record<"mario" | "enemies" | "scenery" | "tiles", HTMLImageElement>;
+export type SpriteSources = Record<
+  "mario" | "enemies" | "scenery" | "tiles" | "items",
+  HTMLImageElement
+>;
 
 function crop(
   image: HTMLImageElement,
@@ -94,8 +97,14 @@ function firePalette(source: HTMLCanvasElement) {
   return canvas;
 }
 
-export function scenerySprites({ scenery, tiles, enemies }: SpriteSources) {
-  const tile = (id: number) => crop(tiles, (id % 16) * 16, Math.floor(id / 16) * 16, 16, 16);
+export function scenerySprites({
+  scenery,
+  tiles,
+  enemies,
+  items,
+}: SpriteSources) {
+  const tile = (id: number) =>
+    crop(tiles, (id % 16) * 16, Math.floor(id / 16) * 16, 16, 16);
   return {
     ...Object.fromEntries(
       Array.from({ length: TILE_COUNT }, (_, id) => [
@@ -107,7 +116,12 @@ export function scenerySprites({ scenery, tiles, enemies }: SpriteSources) {
     ground: tile(WORLD_TILES[13][0]),
     brick: tile(WORLD_TILES[9][20]),
     used: crop(scenery, 48, 0, 16, 16),
-    fireball: crop(enemies, 360, 184, 16, 16),
+    fireball: crop(enemies, 364, 188, 8, 8),
+    platform: crop(items, 80, 24, 48, 8),
+    coin: crop(items, 0, 80, 16, 16),
+    mushroom: crop(items, 0, 0, 16, 16),
+    flower: crop(items, 0, 32, 16, 16),
+    star: crop(items, 0, 48, 16, 16),
   };
 }
 

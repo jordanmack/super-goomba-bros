@@ -187,13 +187,17 @@ export function decodeArea(tables, pointer) {
   const attributes = [];
   let terrain = header.terrain,
     background = header.background,
-    foreground = header.foreground;
+    foreground = header.foreground,
+    color = header.color;
   for (let x = 0; x < width; x++) {
     // Attribute changes run after base scenery, and thus affect the next column.
     for (const o of objects.filter(
       (o) => o.opcode === 46 && o.column === x - 1,
     )) {
-      if (o.byte & 64) foreground = (o.byte & 7) < 4 ? o.byte & 7 : 0;
+      if (o.byte & 64) {
+        foreground = (o.byte & 7) < 4 ? o.byte & 7 : 0;
+        if ((o.byte & 7) >= 4) color = o.byte & 7;
+      }
       else {
         terrain = o.byte & 15;
         background = (o.byte >> 4) & 3;
@@ -203,7 +207,7 @@ export function decodeArea(tables, pointer) {
         terrain,
         background,
         foreground,
-        color: o.byte & 64 && (o.byte & 7) >= 4 ? o.byte & 7 : header.color,
+        color,
       });
     }
     const put = (y, value) => {
@@ -232,7 +236,7 @@ export function decodeArea(tables, pointer) {
             ? 136
             : type === 2 && r >= 11
               ? 84
-              : tables.TerrainMetatiles[type],
+            : type === 0 && id === "02" ? 98 : tables.TerrainMetatiles[type],
         );
     }
     const under = (row, length, value) => {
@@ -495,11 +499,12 @@ export function decodeArea(tables, pointer) {
       : exitPipe
         ? { kind: "pipe", column: exitPipe.column, row: exitPipe.row }
         : null;
+  const initialColor = attributes.filter(a => a.column <= 16).at(-1)?.color ?? header.color;
   return {
     id,
     label,
     type: TYPES[type],
-    palette: header.color === 4 || type !== 1 ? "night" : "day",
+    palette: type !== 1 ? TYPES[type] : ({ 4: "night", 5: "snow-day", 6: "snow-night", 7: "snow" }[initialColor] ?? "day"),
     width,
     height: 15,
     tileSize: 16,

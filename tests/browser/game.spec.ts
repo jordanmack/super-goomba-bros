@@ -5,28 +5,34 @@ import { TUNING as T } from "../../src/game/config";
 import { WORLD_TILES } from "../../src/game/world-tiles";
 import { WORLD_1_1 as LEVEL } from "../../src/game/world-1-1";
 
-test("Starman music follows only player and Mario stars and respects death cues", async ({ page }) => {
+test("Starman music follows only player and Mario stars and respects death cues", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
-  await page.waitForFunction(() => (window as any).__game.audio.buffers.size === 12);
+  await page.waitForFunction(
+    () => (window as any).__game.audio.buffers.size === 15,
+  );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
     // Keep actors still while the app's real event and music loop runs.
     s.step = () => {};
     s.marioActive = true;
   });
-  const isStarMusic = () => page.evaluate(() => {
-    const a = (window as any).__game.audio;
-    return a.music?.audioBuffer === a.buffers.get("starman");
-  });
-  const giveStar = (who: "player" | "mario" | "npc") => page.evaluate((who) => {
-    const s = (window as any).__game.sim;
-    const box = s.covers.find((c: any) => c.question && !c.used);
-    s.hitBlock(box, s.player);
-    const item = s.items.at(-1);
-    item.kind = "star";
-    s.collect(who === "npc" ? s.npcs[0] : s[who], item);
-  }, who);
+  const isStarMusic = () =>
+    page.evaluate(() => {
+      const a = (window as any).__game.audio;
+      return a.music?.audioBuffer === a.buffers.get("starman");
+    });
+  const giveStar = (who: "player" | "mario" | "npc") =>
+    page.evaluate((who) => {
+      const s = (window as any).__game.sim;
+      const box = s.covers.find((c: any) => c.question && !c.used);
+      s.hitBlock(box, s.player);
+      const item = s.items.at(-1);
+      item.kind = "star";
+      s.collect(who === "npc" ? s.npcs[0] : s[who], item);
+    }, who);
   await giveStar("npc");
   await expect.poll(isStarMusic).toBe(false);
   await giveStar("player");
@@ -36,30 +42,53 @@ test("Starman music follows only player and Mario stars and respects death cues"
     g.testStarMusic = g.audio.music;
   });
   await giveStar("mario");
-  await page.evaluate(() => { (window as any).__game.sim.player.starLeft = 0; });
+  await page.evaluate(() => {
+    (window as any).__game.sim.player.starLeft = 0;
+  });
   await expect.poll(isStarMusic).toBe(true);
-  expect(await page.evaluate(() => {
-    const g = (window as any).__game;
-    return g.testStarMusic === g.audio.music;
-  })).toBe(true);
-  await page.evaluate(() => { (window as any).__game.sim.marioActive = false; });
+  expect(
+    await page.evaluate(() => {
+      const g = (window as any).__game;
+      return g.testStarMusic === g.audio.music;
+    }),
+  ).toBe(true);
+  await page.evaluate(() => {
+    (window as any).__game.sim.marioActive = false;
+  });
   await expect.poll(isStarMusic).toBe(false);
-  await page.evaluate(() => { (window as any).__game.sim.marioActive = true; });
+  await page.evaluate(() => {
+    (window as any).__game.sim.marioActive = true;
+  });
   await expect.poll(isStarMusic).toBe(true);
-  await page.evaluate(() => { (window as any).__game.sim.mario.starLeft = 0; });
+  await page.evaluate(() => {
+    (window as any).__game.sim.mario.starLeft = 0;
+  });
   await expect.poll(isStarMusic).toBe(false);
   await giveStar("player");
   await expect.poll(isStarMusic).toBe(true);
-  await page.evaluate(() => { (window as any).__game.sim.events.push("marioDeath"); });
-  await expect.poll(() => page.evaluate(() => {
-    const a = (window as any).__game.audio;
-    return !a.music && a.musicHoldUntil > a.context.currentTime &&
-      [...a.effects].some((source: any) => source.audioBuffer === a.buffers.get("death"));
-  })).toBe(true);
+  await page.evaluate(() => {
+    (window as any).__game.sim.events.push("marioDeath");
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const a = (window as any).__game.audio;
+        return (
+          !a.music &&
+          a.musicHoldUntil > a.context.currentTime &&
+          [...a.effects].some(
+            (source: any) => source.audioBuffer === a.buffers.get("death"),
+          )
+        );
+      }),
+    )
+    .toBe(true);
   await expect.poll(isStarMusic, { timeout: 6000 }).toBe(true);
 });
 
-test("pipe segments and background bushes retain their map pixels", async ({ page }) => {
+test("pipe segments and background bushes retain their map pixels", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
   const cells = LEVEL.pipes.flatMap(({ column, height }) =>
@@ -69,39 +98,49 @@ test("pipe segments and background bushes retain their map pixels", async ({ pag
   );
   // The removed cover overlays also obscured several bushes near ground level.
   cells.push([13, 12], [24, 12], [43, 12]);
-  const mismatches = await page.evaluate(async (samples) => {
-    const g = (window as any).__game;
-    const s = g.sim;
-    g.paused = true;
-    s.player.alive = false;
-    for (const n of s.npcs) n.alive = false;
-    s.marioActive = false;
-    const canvas = document.createElement("canvas");
-    const source = g.renderer.game.canvas;
-    canvas.width = source.width;
-    canvas.height = source.height;
-    const ctx = canvas.getContext("2d")!;
-    const errors: string[] = [];
-    for (const [x, y, id] of samples) {
-      // Sample the center of source pixel (8, 8), not its left/top edge.
-      const worldX = x * 32 + 17;
-      const worldY = 14 + y * 32 + 17;
-      s.player.body.position.x = worldX;
-      g.renderer.render(s, 0);
-      await new Promise(requestAnimationFrame);
-      await new Promise(requestAnimationFrame);
-      ctx.drawImage(source, 0, 0);
-      const pixel = ctx.getImageData(
-        Math.floor((worldX - s.cameraX) / g.renderer.width * canvas.width),
-        Math.floor(worldY / 540 * canvas.height), 1, 1,
-      ).data;
-      const expected = g.renderer.game.textures.get(`tile${id}`).getSourceImage()
-        .getContext("2d").getImageData(8, 8, 1, 1).data;
-      if ([0, 1, 2].some((i) => Math.abs(pixel[i] - expected[i]) > 2))
-        errors.push(`tile ${x},${y}: ${Array.from(pixel)} vs ${Array.from(expected)}`);
-    }
-    return errors;
-  }, cells.map(([x, y]) => [x, y, WORLD_TILES[y][x]]));
+  const mismatches = await page.evaluate(
+    async (samples) => {
+      const g = (window as any).__game;
+      const s = g.sim;
+      g.paused = true;
+      s.player.alive = false;
+      for (const n of s.npcs) n.alive = false;
+      s.marioActive = false;
+      const canvas = document.createElement("canvas");
+      const source = g.renderer.game.canvas;
+      canvas.width = source.width;
+      canvas.height = source.height;
+      const ctx = canvas.getContext("2d")!;
+      const errors: string[] = [];
+      for (const [x, y, id] of samples) {
+        // Sample the center of source pixel (8, 8), not its left/top edge.
+        const worldX = x * 32 + 17;
+        const worldY = 14 + y * 32 + 17;
+        s.player.body.position.x = worldX;
+        g.renderer.render(s, 0);
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        ctx.drawImage(source, 0, 0);
+        const pixel = ctx.getImageData(
+          Math.floor(((worldX - s.cameraX) / g.renderer.width) * canvas.width),
+          Math.floor((worldY / 540) * canvas.height),
+          1,
+          1,
+        ).data;
+        const expected = g.renderer.game.textures
+          .get(`tile${id}`)
+          .getSourceImage()
+          .getContext("2d")
+          .getImageData(8, 8, 1, 1).data;
+        if ([0, 1, 2].some((i) => Math.abs(pixel[i] - expected[i]) > 2))
+          errors.push(
+            `tile ${x},${y}: ${Array.from(pixel)} vs ${Array.from(expected)}`,
+          );
+      }
+      return errors;
+    },
+    cells.map(([x, y]) => [x, y, WORLD_TILES[y][x]]),
+  );
   expect(mismatches).toEqual([]);
 });
 
@@ -114,7 +153,7 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
     page.getByRole("button", { name: "Run", exact: true }),
   ).toHaveCount(0);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 12,
+    () => (window as any).__game.audio.buffers.size === 15,
   );
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -139,7 +178,10 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
     s.collect(s.player, s.items[0]);
     g.renderer.render(s, 0);
     const texture = g.renderer.play.actors.get(s.player.id).texture;
-    const data = texture.getSourceImage().getContext("2d").getImageData(0, 0, 16, 16).data;
+    const data = texture
+      .getSourceImage()
+      .getContext("2d")
+      .getImageData(0, 0, 16, 16).data;
     let white = 0,
       dark = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -153,7 +195,8 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
     s.setMarioStage(2);
     g.renderer.render(s, 0);
     const marioTexture = g.renderer.play.actors.get(s.mario.id).texture;
-    const marioData = marioTexture.getSourceImage()
+    const marioData = marioTexture
+      .getSourceImage()
       .getContext("2d")
       .getImageData(0, 0, 16, 32).data;
     let marioWhite = 0;
@@ -338,9 +381,9 @@ for (const viewport of [
       s.player.body.position.y = s.npcs[0].body.position.y;
     });
     await expect(page.locator(".speech")).toBeVisible();
-    await expect.poll(() => page.getByTestId("warned").textContent()).toMatch(
-      /0[1-9]|[1-9][0-9]/,
-    );
+    await expect
+      .poll(() => page.getByTestId("warned").textContent())
+      .toMatch(/0[1-9]|[1-9][0-9]/);
     await page.screenshot({ path: `test-results/game-${viewport.width}.png` });
     await page.getByRole("button", { name: "Pause", exact: true }).click();
     await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
@@ -407,8 +450,12 @@ test("touch movement supports simultaneous jump and clears on release", async ({
   expect(active.y).toBeLessThan(405);
   // Exercise a long two-finger hold, beyond the browser's long-press threshold.
   await page.waitForTimeout(1000);
-  expect(await page.evaluate(() => (window as any).__game.input.right)).toBe(true);
-  expect(await page.evaluate(() => (window as any).__game.input.jump)).toBe(true);
+  expect(await page.evaluate(() => (window as any).__game.input.right)).toBe(
+    true,
+  );
+  expect(await page.evaluate(() => (window as any).__game.input.jump)).toBe(
+    true,
+  );
   await client.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],
@@ -505,12 +552,16 @@ test("background music produces audio, pauses, and mutes", async ({ page }) => {
   await expect.poll(level).toBeGreaterThan(0.001);
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect
-    .poll(() => page.evaluate(() => (window as any).__game.audio.music.isPaused))
+    .poll(() =>
+      page.evaluate(() => (window as any).__game.audio.music.isPaused),
+    )
     .toBe(true);
   await expect.poll(level).toBe(0);
   await page.getByRole("button", { name: "RESUME", exact: true }).click();
   await expect
-    .poll(() => page.evaluate(() => (window as any).__game.audio.music.isPlaying))
+    .poll(() =>
+      page.evaluate(() => (window as any).__game.audio.music.isPlaying),
+    )
     .toBe(true);
   await expect.poll(level).toBeGreaterThan(0.001);
 });
@@ -521,7 +572,7 @@ test("original recordings decode and play as effects, with level clear replacing
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 12,
+    () => (window as any).__game.audio.buffers.size === 15,
   );
   const playback = await page.evaluate(() => {
     const a = (window as any).__game.audio;
@@ -721,9 +772,12 @@ test("original 1-1 map art and collision anchors agree", async ({ page }) => {
       tiles: tiles.length,
       native: tiles.every(
         (k) =>
-          textures[k].getSourceImage().width === 16 && textures[k].getSourceImage().height === 16,
+          textures[k].getSourceImage().width === 16 &&
+          textures[k].getSourceImage().height === 16,
       ),
-      instances: game.renderer.play.tiles.layer.data.flat().filter((tile: any) => tile.index >= 0).length,
+      instances: game.renderer.play.tiles.layer.data
+        .flat()
+        .filter((tile: any) => tile.index >= 0).length,
       pipe: game.sim.covers.find((c: any) => c.kind === "pipe").body.bounds,
       question: game.sim.covers.find((c: any) => c.question && c.x === 528).body
         .bounds,

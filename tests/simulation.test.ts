@@ -12,7 +12,9 @@ import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
 
 class Simulation extends RulesSimulation {
-  constructor(random = Math.random) { super(random, physics()); }
+  constructor(random = Math.random) {
+    super(random, physics());
+  }
 }
 
 const dt = 1 / 60;
@@ -60,6 +62,18 @@ test("small and giant player jumps stay at standard height even when held", () =
     }
   }
   assert.ok(Math.max(...heights) - Math.min(...heights) < 1);
+});
+
+test("forward jump reach increases while walking keeps its fixed pace", () => {
+  const sim = game();
+  tick(sim, 0.2, { right: true });
+  assert.equal(sim.player.body.velocity.x, T.walkSpeed);
+  tick(sim, 1 / 60, { right: true, jump: true });
+  tick(sim, 0.15, { right: true });
+  assert.equal(sim.player.grounded, false);
+  assert.equal(sim.player.body.velocity.x, T.airSpeed);
+  tick(sim, 0.1);
+  assert.equal(sim.player.body.velocity.x, 0, "releasing direction still stops horizontal motion");
 });
 
 test("active Mario collects a star by contact and its immunity expires", () => {
@@ -375,7 +389,14 @@ test("player fireballs step Mario from fire to big to small, then defeat him", (
   s.marioStage = 2;
   s.mario.flower = true;
   for (const expected of [1, 0]) {
-    s.fireballs.push({ id: s.fireballs.length + 1, x: 140, y: 411, vx: 0, age: 0, owner: "player" });
+    s.fireballs.push({
+      id: s.fireballs.length + 1,
+      x: 140,
+      y: 411,
+      vx: 0,
+      age: 0,
+      owner: "player",
+    });
     tick(s, dt);
     assert.equal(s.marioStage, expected);
     assert.equal(s.marioActive, true);
@@ -467,7 +488,8 @@ test("World 1-1 has its original gaps, six pipe heights, block rows, and end sta
     s.covers.filter((c) => c.kind === "brick" && !c.question).length,
     30,
   );
-  assert.equal(s.covers.filter((c) => c.question).length, 13);
+  assert.equal(s.covers.filter((c) => c.question && !c.hidden).length, 13);
+  assert.equal(s.covers.filter((c) => c.hidden).length, 1);
   assert.ok(s.covers.some((c) => c.question && c.x === 528 && c.y === 318));
   assert.ok(
     s.solids.some((b) => b.bounds.min.x === 6016 && b.bounds.min.y === 174),
@@ -598,18 +620,21 @@ test("idle patrol turns at gaps and pipes, and a warning starts escape", () => {
   const pipe = s.covers.find((c) => c.kind === "pipe")!;
   a.homeX = GAPS[0][0] - 25;
   b.homeX = pipe.x - T.pipeWidth / 2 - 25;
-  for (const n of [a, b])
-    Body.setPosition(n.body, { x: n.homeX, y: 415 });
+  for (const n of [a, b]) Body.setPosition(n.body, { x: n.homeX, y: 415 });
   tick(s, 12);
   assert.ok(a.alive && b.alive);
   assert.ok(a.body.position.x < GAPS[0][0] - 12);
   assert.ok(b.body.position.x < pipe.x - T.pipeWidth / 2 - 12);
   at(s, b.body.position.x);
+  const warningX = b.body.position.x;
   s.warn();
-  tick(s, 0.8);
+  tick(s, 2.2);
   assert.ok(b.warned);
   assert.equal(b.state, "run");
-  assert.ok(b.body.velocity.x > T.idleSpeed);
+  assert.ok(
+    b.body.position.x > warningX + 110,
+    "escape progresses beyond idle patrol, including the jump past the pipe",
+  );
 });
 
 test("warnings count nearby groups once, never rescue them", () => {
@@ -944,7 +969,7 @@ test("Mario cannot reverse a jump to follow a dodge", () => {
 
 test("cover input does not break pursuit or create an invisible target", () => {
   const s = game();
-  at(s, s.covers[0].x);
+  at(s, 432);
   tick(s, 0.6, { hide: true });
   s.marioActive = true;
   s.marioChase = 3;
@@ -964,14 +989,46 @@ test("both player sizes can jump every pipe in both directions at standard heigh
         const s = game();
         if (giant) give(s, s.player, "mushroom");
         const pipe = s.covers.filter((c) => c.kind === "pipe")[pipeIndex];
+        // Isolate the original pipe dimensions on flat ground. The last pipe
+        // touches the end stairs, so a ground-height spawn to its right would
+        // be inside solid stone. Separate route tests cover those stairs.
+        for (const solid of s.solids)
+          if (solid !== pipe.body) s.physics.remove(solid);
+        const floor = s.physics.rectangle(
+          pipe.x,
+          T.groundY + 80,
+          1200,
+          160,
+          true,
+        );
+        s.solids = [floor, pipe.body!];
+        s.covers = [pipe];
+        for (const npc of s.npcs) s.kill(npc, false);
         at(s, pipe.x - dir * 100, T.groundY - 14 * s.player.scale);
         tick(s, 1, { right: dir === 1, left: dir === -1 });
-        assert.ok((pipe.x - s.player.body.position.x) * dir > T.pipeWidth / 2);
+        assert.ok(
+          (pipe.x - s.player.body.position.x) * dir > T.pipeWidth / 2,
+          JSON.stringify({
+            pipeIndex,
+            dir,
+            giant,
+            position: s.player.body.position,
+            velocity: s.player.body.velocity,
+            mode: s.mode,
+          }),
+        );
         tick(s, 0.9, { right: dir === 1, left: dir === -1, jump: true });
         tick(s, 0.7, { right: dir === 1, left: dir === -1 });
         assert.ok(
           (s.player.body.position.x - pipe.x) * dir > T.pipeWidth / 2,
-          `pipe ${pipeIndex}, direction ${dir}, giant ${giant}`,
+          JSON.stringify({
+            pipeIndex,
+            dir,
+            giant,
+            position: s.player.body.position,
+            velocity: s.player.body.velocity,
+            mode: s.mode,
+          }),
         );
       }
     }
@@ -986,12 +1043,14 @@ test("pipes remain solid obstacles and are not hiding entrances", () => {
   assert.equal(s.player.state, "idle");
   tick(s, 1, { right: true });
   assert.equal(overlaps(s.player.body, [pipe.body!]).length, 0);
-  assert.ok(Math.abs(s.player.body.bounds.max.x - pipe.body!.bounds.min.x) < 0.1);
+  assert.ok(
+    Math.abs(s.player.body.bounds.max.x - pipe.body!.bounds.min.x) < 0.1,
+  );
 });
 
 test("every floating brick has a solid top and can be destroyed and restored", () => {
   const s = game();
-  const bricks = s.covers.filter((c) => c.kind === "brick");
+  const bricks = s.covers.filter((c) => c.kind === "brick" && !c.hidden);
   assert.ok(bricks.length > 20);
   for (const c of bricks) {
     at(s, c.x, c.y - 65);
@@ -1050,7 +1109,7 @@ test("kills emit blood once, stains settle, and all effects clear on restart", (
 
 test("Mario hunts an NPC, lands a stomp, then acquires another victim", () => {
   const s = game();
-  at(s, 4300);
+  s.activeRoom.place(s.player, 4300);
   for (let i = 2; i < s.npcs.length; i++)
     Body.setPosition(s.npcs[i].body, { x: 4200, y: 415 });
   Body.setPosition(s.npcs[0].body, { x: 220, y: 415 });
@@ -1059,7 +1118,22 @@ test("Mario hunts an NPC, lands a stomp, then acquires another victim", () => {
   Body.setFrozen(s.mario.body, false);
   Body.setPosition(s.mario.body, { x: 100, y: 411 });
   tick(s, 5);
-  assert.equal(s.npcs[0].alive, false);
+  assert.equal(
+    s.npcs[0].alive,
+    false,
+    JSON.stringify({
+      mario: s.mario.body.position,
+      active: s.marioActive,
+      target: s.marioTarget,
+      npcs: s.npcs
+        .slice(0, 2)
+        .map((n) => ({
+          position: n.body.position,
+          alive: n.alive,
+          home: n.homeX,
+        })),
+    }),
+  );
   assert.ok(!s.npcs[1].alive || s.marioTarget === s.npcs[1].id);
   assert.ok(s.particles.some((p) => p.color === "#bc0018"));
 });
