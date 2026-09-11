@@ -1,0 +1,757 @@
+@import "@fontsource/press-start-2p/latin-400.css";
+
+/* NES palette for the game chrome; blood remains visible during quick retries. */
+.game.at-title .topbar,
+.game.in-game .topbar {
+  background: #000;
+  color: #fff;
+  box-shadow: none;
+}
+.game .brand,
+.game .level-label,
+.game .edition,
+.game .phase {
+  color: #fff;
+}
+.game .play-footer {
+  background: #000;
+  border-color: #c84c0c;
+}
+.game .control,
+.game.in-game .tools button,
+.game.at-title .tools button {
+  border-radius: 0;
+  background: #000;
+  border-color: #fff;
+  color: #fff;
+}
+.game .scanlines {
+  opacity: 0;
+}
+.game .death-overlay {
+  background: #32000026;
+  justify-content: flex-start;
+  padding-top: 22vh;
+  pointer-events: none;
+}
+
+:root {
+  font-family: "Press Start 2P", monospace;
+  color: #fff5d5;
+  background: #172c26;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  letter-spacing: 0;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+  letter-spacing: 0;
+}
+button:focus-visible {
+  outline: 3px solid #fff6b8;
+  outline-offset: 5px;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+button,
+svg {
+  -webkit-tap-highlight-color: transparent;
+}
+button svg {
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+}
+button {
+  touch-action: none;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none;
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+.game {
+  height: 100dvh;
+  min-height: 340px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.game,
+.game * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.game img {
+  -webkit-user-drag: none;
+}
+.world {
+  position: absolute;
+  inset: 0;
+}
+.world canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+.scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background: repeating-linear-gradient(
+    0deg,
+    #142e36 0px,
+    #142e36 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  z-index: 1;
+}
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 25px 32px;
+  z-index: 6;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #173e3c;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.brand img {
+  width: 38px;
+  height: 38px;
+  image-rendering: pixelated;
+}
+.tools {
+  display: flex;
+  gap: 10px;
+}
+.tools button {
+  width: 42px;
+  height: 42px;
+  border: 2px solid #28585466;
+  background: #edf3ceaa;
+  color: #21443e;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+}
+.tools button:hover {
+  background: #fff4c7;
+}
+.title-screen {
+  position: absolute;
+  top: 17%;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  text-align: center;
+  z-index: 3;
+}
+.level-label {
+  font-size: 9px;
+  line-height: 1.8;
+  color: #214e4a;
+  margin-bottom: 20px;
+}
+.title-screen h1 {
+  font-size: 56px;
+  line-height: 1.35;
+  color: #fff1b4;
+  text-shadow:
+    4px 0 #633d44,
+    -4px 0 #633d44,
+    0 -4px #633d44,
+    0 4px #633d44,
+    5px 8px #633d44;
+  display: flex;
+  flex-direction: column;
+}
+.title-screen h1 span:first-child {
+  font-size: 27px;
+  color: #fbe783;
+  margin-bottom: 4px;
+}
+.title-screen h1 span:last-child {
+  font-size: 43px;
+  color: #fbd16f;
+}
+.primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  background: #e6554b;
+  border: 3px solid #793e43;
+  color: #fff5d5;
+  box-shadow: 0 5px 0 #793e43;
+  padding: 17px 24px;
+  font-size: 12px;
+  min-height: 56px;
+  border-radius: 2px;
+}
+.primary:hover {
+  background: #f36c57;
+  transform: translateY(-1px);
+}
+.primary:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #793e43;
+}
+.title-screen .primary {
+  margin-top: 29px;
+}
+.edition {
+  margin-top: 24px;
+  font-size: 8px;
+  color: #234e44;
+  line-height: 1.8;
+}
+.edition span {
+  opacity: 0.5;
+  padding: 0 8px;
+}
+.counters {
+  display: flex;
+  gap: 38px;
+  padding: 0 20px;
+  text-shadow: 2px 2px #254d43;
+}
+.counters > div {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.counters span {
+  font-size: 9px;
+  color: #e5f3dc;
+}
+.counters strong {
+  font-size: 23px;
+  font-weight: 400;
+}
+.counters small {
+  font-size: 11px;
+}
+.saved-counter strong {
+  color: #fff09a;
+}
+.in-game .topbar {
+  background: #173e3cdd;
+  box-shadow: 0 3px #b8d28a66;
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+.in-game .brand {
+  color: #edf2ca;
+}
+.in-game .tools button {
+  background: #31594d;
+  color: #f4efc8;
+  border-color: #6c8970;
+}
+.phase {
+  position: absolute;
+  top: 105px;
+  right: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+  font-size: 8px;
+  color: #244d47;
+  z-index: 2;
+}
+.phase time {
+  font-size: 13px;
+}
+.power-state {
+  position: absolute;
+  top: 111px;
+  left: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  font-size: 8px;
+  z-index: 2;
+}
+.speech {
+  position: absolute;
+  max-width: 250px;
+  padding: 12px 14px;
+  background: #fff6d4;
+  color: #3d3c39;
+  border: 3px solid #3c4940;
+  box-shadow: 3px 3px 0 #34554e55;
+  font-size: 10px;
+  line-height: 1.6;
+  transform: translate(-50%, -100%);
+  z-index: 4;
+  text-align: center;
+  pointer-events: none;
+}
+.speech:after {
+  content: "";
+  position: absolute;
+  bottom: -11px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  background: #fff6d4;
+  border-right: 3px solid #3c4940;
+  border-bottom: 3px solid #3c4940;
+  transform: rotate(45deg);
+}
+.play-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: #183e34e8;
+  border-top: 3px solid #7db76a;
+  padding: 12px 28px 17px;
+}
+.journey {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 630px;
+  margin: 0 auto 12px;
+  font-size: 7px;
+  color: #b9d39e;
+}
+.journey > div {
+  height: 5px;
+  background: #3d6650;
+  flex: 1;
+}
+.journey i {
+  display: block;
+  height: 100%;
+  background: #e3d376;
+}
+.controls {
+  touch-action: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  max-width: 1000px;
+  margin: auto;
+}
+.movement,
+.actions {
+  display: flex;
+  gap: 10px;
+}
+.control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px solid #74916b;
+  background: #2e5947;
+  color: #eef0c7;
+  min-width: 75px;
+  height: 48px;
+  border-radius: 4px;
+  font-size: 9px;
+  overflow: hidden;
+  user-select: none;
+}
+.control:hover {
+  background: #416e52;
+}
+.control[data-pressed] {
+  transform: translateY(2px);
+  background: #537e57;
+}
+.control > * {
+  pointer-events: none;
+}
+.control-left,
+.control-right {
+  min-width: 57px;
+}
+.control-left span,
+.control-right span {
+  display: none;
+}
+.cooldown {
+  position: absolute;
+  inset: auto 0 0;
+  height: 4px;
+  background: #b25a45;
+  transform-origin: left;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: #173c36ec;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 25px;
+  padding: 30px;
+}
+.overlay .level-label {
+  color: #b9d495;
+  margin: 0;
+}
+.overlay h2 {
+  font-size: 36px;
+  line-height: 1.6;
+  color: #f8dd8a;
+  text-shadow: 3px 3px #92534a;
+}
+.overlay > p:not(.level-label) {
+  font-size: 10px;
+  line-height: 1.8;
+}
+.secondary {
+  border: 0;
+  background: none;
+  color: #d9e3bc;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 9px;
+  padding: 10px;
+}
+.final-counts {
+  display: flex;
+  gap: 65px;
+  margin: 4px 0 12px;
+}
+.final-counts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  font-size: 9px;
+}
+.final-counts strong {
+  font-size: 36px;
+  font-weight: 400;
+  color: #faf0b0;
+}
+.goal-message,
+.finish-banner {
+  position: absolute;
+  top: 25%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #294e42;
+  color: #fff0aa;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 10px;
+  line-height: 1.7;
+  z-index: 4;
+  width: max-content;
+  max-width: 90%;
+  text-align: center;
+}
+.finish-banner {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.finish-banner span {
+  font-size: 8px;
+}
+.death-icon {
+  width: 45px;
+  height: 45px;
+  color: #f58066;
+}
+.error {
+  position: absolute;
+  inset: 30% 10% auto;
+  background: #38292d;
+  color: white;
+  padding: 30px;
+  line-height: 2;
+  font-size: 12px;
+  z-index: 20;
+}
+@media (min-width: 1500px) {
+  .title-screen {
+    top: 20%;
+  }
+  .title-screen h1 {
+    font-size: 68px;
+  }
+  .title-screen h1 span:last-child {
+    font-size: 52px;
+  }
+  .title-screen .primary {
+    margin-top: 40px;
+  }
+}
+@media (max-width: 700px) {
+  .topbar {
+    padding: 18px 16px;
+    gap: 10px;
+  }
+  .brand {
+    font-size: 7px;
+    gap: 8px;
+  }
+  .brand img {
+    width: 28px;
+    height: 28px;
+  }
+  .title-screen {
+    top: 21%;
+  }
+  .title-screen h1 {
+    font-size: 36px;
+  }
+  .title-screen h1 span:first-child {
+    font-size: 21px;
+  }
+  .title-screen h1 span:last-child {
+    font-size: 30px;
+  }
+  .level-label {
+    font-size: 7px;
+    max-width: 280px;
+    line-height: 2;
+  }
+  .edition {
+    font-size: 7px;
+    max-width: 280px;
+    line-height: 2;
+  }
+  .tools {
+    gap: 6px;
+  }
+  .tools button {
+    width: 34px;
+    height: 34px;
+  }
+  .tools svg {
+    width: 18px;
+    height: 18px;
+  }
+  .in-game .brand span {
+    display: none;
+  }
+  .in-game .topbar {
+    padding: 14px;
+  }
+  .counters {
+    gap: 21px;
+    padding: 0;
+  }
+  .counters span {
+    font-size: 7px;
+  }
+  .counters strong {
+    font-size: 18px;
+  }
+  .counters small {
+    font-size: 8px;
+  }
+  .power-state {
+    top: 98px;
+    left: 14px;
+    font-size: 6px;
+    gap: 6px;
+  }
+  .phase {
+    top: 94px;
+    right: 14px;
+    font-size: 6px;
+  }
+  .phase time {
+    font-size: 10px;
+  }
+  .play-footer {
+    padding: 10px 12px 15px;
+  }
+  .journey {
+    font-size: 6px;
+    gap: 8px;
+  }
+  .controls {
+    gap: 6px;
+  }
+  .movement,
+  .actions {
+    gap: 4px;
+  }
+  .control {
+    height: 52px;
+    min-width: 43px;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 6px;
+    padding: 4px;
+  }
+  .control svg {
+    width: 20px;
+    height: 20px;
+  }
+  .control-left,
+  .control-right {
+    min-width: 39px;
+  }
+  .speech {
+    font-size: 8px;
+    max-width: 180px;
+    padding: 9px;
+    line-height: 1.6;
+  }
+  .overlay h2 {
+    font-size: 25px;
+  }
+  .primary {
+    font-size: 10px;
+    padding: 15px 20px;
+  }
+  .overlay {
+    gap: 20px;
+  }
+  .final-counts {
+    gap: 45px;
+  }
+  .goal-message {
+    font-size: 8px;
+  }
+  .in-game .world {
+    bottom: 93px;
+  }
+}
+@media (max-height: 540px) and (min-width: 600px) {
+  .topbar {
+    padding: 10px 20px;
+  }
+  .brand {
+    font-size: 7px;
+  }
+  .brand img {
+    width: 25px;
+    height: 25px;
+  }
+  .tools button {
+    width: 32px;
+    height: 32px;
+  }
+  .title-screen {
+    top: 12%;
+  }
+  .title-screen h1 {
+    font-size: 33px;
+  }
+  .title-screen h1 span:first-child {
+    font-size: 18px;
+  }
+  .title-screen h1 span:last-child {
+    font-size: 24px;
+  }
+  .title-screen .level-label {
+    margin-bottom: 8px;
+    font-size: 7px;
+  }
+  .title-screen .primary {
+    margin-top: 12px;
+    min-height: 40px;
+    padding: 8px 17px;
+    font-size: 9px;
+  }
+  .edition {
+    margin-top: 12px;
+    font-size: 6px;
+  }
+  .in-game .topbar {
+    padding: 9px 18px;
+  }
+  .counters {
+    gap: 25px;
+  }
+  .counters > div {
+    gap: 6px;
+  }
+  .counters strong {
+    font-size: 16px;
+  }
+  .counters span {
+    font-size: 6px;
+  }
+  .counters small {
+    font-size: 8px;
+  }
+  .phase,
+  .power-state {
+    top: 73px;
+  }
+  .play-footer {
+    padding: 6px 20px;
+  }
+  .journey {
+    display: none;
+  }
+  .control {
+    height: 38px;
+    min-width: 56px;
+    font-size: 7px;
+  }
+  .overlay {
+    gap: 15px;
+  }
+  .overlay h2 {
+    font-size: 26px;
+  }
+  .overlay .primary {
+    min-height: 44px;
+    padding: 9px 20px;
+  }
+  .in-game .world {
+    bottom: 52px;
+  }
+  .final-counts strong {
+    font-size: 26px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .urgent svg {
+    animation: none;
+  }
+  button {
+    transition: none;
+  }
+}

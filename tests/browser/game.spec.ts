@@ -1,0 +1,745 @@
+import { test, expect } from "@playwright/test";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { TUNING as T } from "../../src/game/config";
+import { WORLD_TILES } from "../../src/game/world-tiles";
+import { WORLD_1_1 as LEVEL } from "../../src/game/world-1-1";
+
+test("Starman music follows only player and Mario stars and respects death cues", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.waitForFunction(() => (window as any).__game.audio.buffers.size === 12);
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    // Keep actors still while the app's real event and music loop runs.
+    s.step = () => {};
+    s.marioActive = true;
+  });
+  const isStarMusic = () => page.evaluate(() => {
+    const a = (window as any).__game.audio;
+    return a.music?.buffer === a.buffers.get("starman");
+  });
+  const giveStar = (who: "player" | "mario" | "npc") => page.evaluate((who) => {
+    const s = (window as any).__game.sim;
+    const box = s.covers.find((c: any) => c.question && !c.used);
+    s.hitBlock(box, s.player);
+    const item = s.items.at(-1);
+    item.kind = "star";
+    s.collect(who === "npc" ? s.npcs[0] : s[who], item);
+  }, who);
+  await giveStar("npc");
+  await expect.poll(isStarMusic).toBe(false);
+  await giveStar("player");
+  await expect.poll(isStarMusic).toBe(true);
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.testStarMusic = g.audio.music;
+  });
+  await giveStar("mario");
+  await page.evaluate(() => { (window as any).__game.sim.player.starLeft = 0; });
+  await expect.poll(isStarMusic).toBe(true);
+  expect(await page.evaluate(() => {
+    const g = (window as any).__game;
+    return g.testStarMusic === g.audio.music;
+  })).toBe(true);
+  await page.evaluate(() => { (window as any).__game.sim.marioActive = false; });
+  await expect.poll(isStarMusic).toBe(false);
+  await page.evaluate(() => { (window as any).__game.sim.marioActive = true; });
+  await expect.poll(isStarMusic).toBe(true);
+  await page.evaluate(() => { (window as any).__game.sim.mario.starLeft = 0; });
+  await expect.poll(isStarMusic).toBe(false);
+  await giveStar("player");
+  await expect.poll(isStarMusic).toBe(true);
+  await page.evaluate(() => { (window as any).__game.sim.events.push("marioDeath"); });
+  await expect.poll(() => page.evaluate(() => {
+    const a = (window as any).__game.audio;
+    return !a.music && a.musicHoldUntil > a.context.currentTime &&
+      [...a.effects].some((source: any) => source.buffer === a.buffers.get("death"));
+  })).toBe(true);
+  await expect.poll(isStarMusic, { timeout: 6000 }).toBe(true);
+});
+
+test("pipe segments and background bushes retain their map pixels", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => !!(window as any).__game);
+  const cells = LEVEL.pipes.flatMap(({ column, height }) =>
+    Array.from({ length: height }, (_, i) =>
+      [column, column + 1].map((x) => [x, LEVEL.groundRow - height + i]),
+    ).flat(),
+  );
+  // The removed cover overlays also obscured several bushes near ground level.
+  cells.push([13, 12], [24, 12], [43, 12]);
+  const mismatches = await page.evaluate((samples) => {
+    const g = (window as any).__game;
+    const s = g.sim;
+    g.paused = true;
+    s.player.alive = false;
+    for (const n of s.npcs) n.alive = false;
+    s.marioActive = false;
+    const canvas = document.createElement("canvas");
+    const source = g.renderer.renderer.domElement;
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext("2d")!;
+    const errors: string[] = [];
+    for (const [x, y, id] of samples) {
+      // Sample the center of source pixel (8, 8), not its left/top edge.
+      const worldX = x * 32 + 17;
+      const worldY = 14 + y * 32 + 17;
+      s.player.body.position.x = worldX;
+      g.renderer.render(s, 0);
+      ctx.drawImage(source, 0, 0);
+      const pixel = ctx.getImageData(
+        Math.floor((worldX - s.cameraX) / g.renderer.width * canvas.width),
+        Math.floor(worldY / 540 * canvas.height), 1, 1,
+      ).data;
+      const expected = g.renderer.art.textures[`tile${id}`].image
+        .getContext("2d").getImageData(8, 8, 1, 1).data;
+      if ([0, 1, 2].some((i) => Math.abs(pixel[i] - expected[i]) > 2))
+        errors.push(`tile ${x},${y}: ${Array.from(pixel)} vs ${Array.from(expected)}`);
+    }
+    return errors;
+  }, cells.map(([x, y]) => [x, y, WORLD_TILES[y][x]]));
+  expect(mismatches).toEqual([]);
+});
+
+test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue finishes before music resumes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await expect(
+    page.getByRole("button", { name: "Run", exact: true }),
+  ).toHaveCount(0);
+  await page.waitForFunction(
+    () => (window as any).__game.audio.buffers.size === 12,
+  );
+  await page.keyboard.down("ArrowRight");
+  await page.waitForFunction(
+    () => (window as any).__game.sim.player.body.velocity.x > 0,
+  );
+  await page.keyboard.down("Shift");
+  expect(
+    await page.evaluate(
+      () => (window as any).__game.sim.player.body.velocity.x,
+    ),
+  ).toBeCloseTo(T.walkSpeed);
+  await page.keyboard.up("Shift");
+  await page.keyboard.up("ArrowRight");
+  const appearance = await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    const s = g.sim;
+    s.marioReturn = 1e6;
+    const box = s.covers.find((c: any) => c.question);
+    s.hitBlock(box, s.player);
+    s.items[0].kind = "flower";
+    s.collect(s.player, s.items[0]);
+    g.renderer.render(s, 0);
+    const texture = g.renderer.actors.get(s.player.id).material.map;
+    const data = texture.image.getContext("2d").getImageData(0, 0, 16, 16).data;
+    let white = 0,
+      dark = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (!data[i + 3]) continue;
+      if (data[i] > 245 && data[i + 1] > 245 && data[i + 2] > 245) white++;
+      if (data[i] < 40 && data[i + 1] < 40 && data[i + 2] < 40) dark++;
+    }
+    s.marioActive = true;
+    s.mario.body.position.x = 220;
+    s.mario.body.position.y = 350;
+    s.setMarioStage(2);
+    g.renderer.render(s, 0);
+    const marioTexture = g.renderer.actors.get(s.mario.id).material.map;
+    const marioData = marioTexture.image
+      .getContext("2d")
+      .getImageData(0, 0, 16, 32).data;
+    let marioWhite = 0;
+    for (let i = 0; i < marioData.length; i += 4)
+      if (
+        marioData[i + 3] &&
+        marioData[i] > 245 &&
+        marioData[i + 1] > 245 &&
+        marioData[i + 2] > 245
+      )
+        marioWhite++;
+    s.defeatMario();
+    for (const event of s.events.splice(0)) g.audio.event(event);
+    g.renderer.render(s, 0);
+    return {
+      white,
+      dark,
+      deathVisible: g.renderer.actors.get(s.mario.id).visible,
+      deathPose:
+        g.renderer.actors.get(s.mario.id).material.map ===
+        g.renderer.art.textures.marioDeath,
+      marioWhite,
+    };
+  });
+  expect(appearance.white).toBeGreaterThan(60);
+  expect(appearance.dark).toBeGreaterThan(20);
+  expect(appearance.marioWhite).toBeGreaterThan(20);
+  expect(appearance.deathVisible && appearance.deathPose).toBe(true);
+  await page.screenshot({ path: "test-results/white-goomba-mario-death.png" });
+  await page.evaluate(() => {
+    (window as any).__game.paused = false;
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const a = (window as any).__game.audio;
+        return (
+          !a.music &&
+          [...a.effects].some(
+            (source: any) => source.buffer === a.buffers.get("death"),
+          )
+        );
+      }),
+    )
+    .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).__game.audio.music), {
+      timeout: 6000,
+    })
+    .toBe(true);
+});
+
+test("blocks bounce and disappear independently; item powers render with touch fire controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  const blocks = await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    const s = g.sim;
+    s.marioReturn = 1e6;
+    const brick = s.covers.find((c: any) => c.kind === "brick" && !c.question);
+    s.hitBlock(brick, s.player);
+    for (let i = 0; i < 3; i++)
+      s.step(1 / 60, {
+        left: false,
+        right: false,
+        jump: false,
+        hide: false,
+        warn: false,
+        fire: false,
+      });
+    g.renderer.render(s, 0);
+    const mesh = g.renderer.covers.get(brick.id);
+    const bounced = mesh.visible && mesh.position.y < brick.y;
+    s.breakBrick(brick);
+    g.renderer.render(s, 0);
+    const disappeared = !mesh.visible;
+    for (const kind of ["mushroom", "flower", "star"]) {
+      const box = s.covers.find((c: any) => c.question && !c.used);
+      s.hitBlock(box, s.player);
+      const item = s.items.at(-1);
+      item.kind = kind;
+      s.collect(s.player, item);
+    }
+    g.renderer.render(s, 0);
+    return {
+      bounced,
+      disappeared,
+      scale: g.renderer.actors.get(s.player.id).scale.x,
+    };
+  });
+  expect(blocks).toEqual({ bounced: true, disappeared: true, scale: 96 });
+  await expect(page.locator(".power-state")).toContainText("GIANT");
+  await expect(page.locator(".danger, .danger-meter")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Fire", exact: true }),
+  ).toBeVisible();
+  for (const button of await page.locator(".controls button").all()) {
+    const bounds = (await button.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  }
+  await page.screenshot({ path: "test-results/giant-powers-390.png" });
+  await page.evaluate(() => {
+    (window as any).__game.paused = false;
+  });
+  await page.keyboard.press("KeyZ");
+  await page.waitForFunction(() =>
+    (window as any).__game.sim.fireballs.some((f: any) => f.owner === "player"),
+  );
+  const fire = (await page
+    .getByRole("button", { name: "Fire", exact: true })
+    .boundingBox())!;
+  await page.mouse.move(fire.x + fire.width / 2, fire.y + fire.height / 2);
+  await page.mouse.down();
+  await page.waitForFunction(() => (window as any).__game.input.fire);
+  await page.mouse.up();
+});
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+]) {
+  test(`render and controls ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("/");
+    await expect(
+      page.getByRole("button", { name: "START GAME" }),
+    ).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: `test-results/title-${viewport.width}.png` });
+    const colors = await page.locator("canvas").evaluate((canvas) => {
+      const source = canvas as HTMLCanvasElement;
+      const copy = document.createElement("canvas");
+      copy.width = 120;
+      copy.height = 80;
+      const ctx = copy.getContext("2d")!;
+      ctx.drawImage(source, 0, 0, 120, 80);
+      const pixels = ctx.getImageData(0, 0, 120, 80).data;
+      const unique = new Set<string>();
+      for (let i = 0; i < pixels.length; i += 4)
+        unique.add(`${pixels[i]},${pixels[i + 1]},${pixels[i + 2]}`);
+      return unique.size;
+    });
+    expect(colors).toBeGreaterThan(30);
+    await page.getByRole("button", { name: "START GAME" }).click();
+    await expect(page.getByTestId("saved")).toContainText("00");
+    const before = await page.evaluate(
+      () => (window as any).__game.sim.player.body.position.x,
+    );
+    const pixelsBefore = await page
+      .locator("canvas")
+      .evaluate((c) => (c as HTMLCanvasElement).toDataURL());
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(() => {
+      const s = (window as any).__game.sim;
+      return (
+        Math.abs(s.player.body.position.x - s.npcs[0].body.position.x) < 140
+      );
+    });
+    await page.keyboard.up("ArrowRight");
+    const after = await page.evaluate(
+      () => (window as any).__game.sim.player.body.position.x,
+    );
+    expect(after).toBeGreaterThan(before + 50);
+    expect(
+      await page
+        .locator("canvas")
+        .evaluate((c) => (c as HTMLCanvasElement).toDataURL()),
+    ).not.toBe(pixelsBefore);
+    await page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      s.player.body.position.x = s.npcs[0].body.position.x;
+      s.player.body.position.y = s.npcs[0].body.position.y;
+    });
+    await expect(page.locator(".speech")).toBeVisible();
+    await expect.poll(() => page.getByTestId("warned").textContent()).toMatch(
+      /0[1-9]|[1-9][0-9]/,
+    );
+    await page.screenshot({ path: `test-results/game-${viewport.width}.png` });
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
+    const elapsed = await page.evaluate(
+      () => (window as any).__game.sim.elapsed,
+    );
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => (window as any).__game.sim.elapsed)).toBe(
+      elapsed,
+    );
+    await page
+      .getByRole("button", { name: "RESUME", exact: true })
+      .last()
+      .click();
+    await expect(page.getByRole("heading", { name: "PAUSED" })).toBeHidden();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    );
+    expect(overflow).toBe(false);
+    for (const button of await page.locator(".controls button").all()) {
+      const box = (await button.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+test("touch movement supports simultaneous jump and clears on release", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).tap();
+  const client = await context.newCDPSession(page);
+  const right = (await page
+    .getByRole("button", { name: "Right", exact: true })
+    .boundingBox())!;
+  const jump = (await page
+    .getByRole("button", { name: "Jump", exact: true })
+    .boundingBox())!;
+  const points = [
+    { x: right.x + right.width / 2, y: right.y + right.height / 2, id: 1 },
+    { x: jump.x + jump.width / 2, y: jump.y + jump.height / 2, id: 2 },
+  ];
+  await page.waitForTimeout(200);
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: points,
+  });
+  await page.waitForTimeout(160);
+  const active = await page.evaluate(() => ({
+    ...(window as any).__game.input,
+    y: (window as any).__game.sim.player.body.position.y,
+  }));
+  expect(active.right).toBe(true);
+  expect(active.jump).toBe(true);
+  expect(active.y).toBeLessThan(405);
+  // Exercise a long two-finger hold, beyond the browser's long-press threshold.
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(() => (window as any).__game.input.right)).toBe(true);
+  expect(await page.evaluate(() => (window as any).__game.input.jump)).toBe(true);
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  expect(await page.evaluate(() => (window as any).__game.input.right)).toBe(
+    false,
+  );
+  expect(await page.evaluate(() => (window as any).__game.input.jump)).toBe(
+    false,
+  );
+  await context.close();
+});
+
+test("death restart, impossible quota, finish window, and final score screens", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.kill(s.player);
+  });
+  await expect(page.getByRole("heading", { name: "STOMPED!" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "STOMPED!" })).toBeHidden();
+  await expect(page.getByTestId("warned")).toContainText("00");
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.npcs.slice(0, s.npcs.length - 4).forEach((n: any) => s.kill(n));
+  });
+  await expect(
+    page.getByText("TOO MANY LOST. THE GOAL IS LOCKED."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "TRY AGAIN" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("button", { name: "RESTART LEVEL" }).click();
+  await page.evaluate((required) => {
+    const s = (window as any).__game.sim;
+    s.npcs.slice(0, required).forEach((n: any) => s.save(n));
+    s.finish();
+  }, T.required);
+  await expect(page.locator(".finish-banner")).toBeVisible();
+  await expect(page.getByRole("button", { name: "PLAY AGAIN" })).toBeVisible({
+    timeout: 8000,
+  });
+  await expect(page.locator(".final-counts")).toContainText(String(T.required));
+  await page.screenshot({ path: "test-results/victory.png" });
+  await page.getByRole("button", { name: "PLAY AGAIN" }).click();
+  await expect(page.getByTestId("saved")).toContainText("00");
+  await page.getByRole("button", { name: "Mute", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Unmute", exact: true }),
+  ).toBeVisible();
+});
+
+test("standalone production HTML runs without a server or external assets", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  const network: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("request", (r) => {
+    if (/^https?:/.test(r.url())) network.push(r.url());
+  });
+  await page.goto(pathToFileURL(resolve("dist/index.html")).href);
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await expect(page.getByTestId("saved")).toContainText("00");
+  expect(await page.evaluate(() => "__game" in window)).toBe(false);
+  expect(errors).toEqual([]);
+  expect(network).toEqual([]);
+});
+
+test("background music produces audio, pauses, and mutes", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.evaluate(() => {
+    const game = (window as any).__game;
+    game.sim.marioReturn = 1000;
+    const analyser = game.audio.context.createAnalyser();
+    analyser.fftSize = 2048;
+    game.audio.masterGain.connect(analyser);
+    (window as any).__musicAnalyser = analyser;
+  });
+  const level = () =>
+    page.evaluate(() => {
+      const analyser = (window as any).__musicAnalyser;
+      const data = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(data);
+      return Math.max(...data.map(Math.abs));
+    });
+  await expect.poll(level).toBeGreaterThan(0.001);
+  await page.getByRole("button", { name: "Mute", exact: true }).click();
+  await expect.poll(level).toBe(0);
+  await page.getByRole("button", { name: "Unmute", exact: true }).click();
+  await expect.poll(level).toBeGreaterThan(0.001);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.audio.context.state))
+    .toBe("suspended");
+  await page.getByRole("button", { name: "RESUME", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.audio.context.state))
+    .toBe("running");
+  await expect.poll(level).toBeGreaterThan(0.001);
+});
+
+test("original recordings decode and play as effects, with level clear replacing music", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.waitForFunction(
+    () => (window as any).__game.audio.buffers.size === 12,
+  );
+  const playback = await page.evaluate(() => {
+    const a = (window as any).__game.audio;
+    const effects = [
+      "jump",
+      "saved",
+      "hide",
+      "fire",
+      "break",
+      "power",
+      "splat",
+    ];
+    const names = [
+      "jump",
+      "coin",
+      "pipe",
+      "fireball",
+      "brick",
+      "powerup",
+      "stomp",
+    ];
+    const valid = effects.every((event, i) => {
+      a.event(event);
+      return [...a.effects].some(
+        (source: any) => source.buffer === a.buffers.get(names[i]),
+      );
+    });
+    a.event("warn");
+    const duration = a.buffers.get("overworld").duration;
+    const loop = a.music.loopEnd - a.music.loopStart;
+    (window as any).__game.sim.finish();
+    a.event("win");
+    return {
+      valid,
+      duration,
+      loop,
+      musicStopped: a.music === null,
+      clearPlaying: [...a.effects].some(
+        (source: any) => source.buffer === a.buffers.get("clear"),
+      ),
+    };
+  });
+  expect(playback.valid).toBe(true);
+  expect(playback.duration).toBeGreaterThan(180);
+  expect(playback.loop).toBeCloseTo(86.4);
+  expect(playback.musicStopped).toBe(true);
+  expect(playback.clearPlaying).toBe(true);
+});
+
+test("game text and controls cannot be selected by dragging", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const title = (await page
+    .getByRole("heading", { name: "Super Goomba Bros" })
+    .boundingBox())!;
+  await page.mouse.move(title.x, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(title.x + title.width, title.y + title.height / 2, {
+    steps: 12,
+  });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  for (const selector of [".counters", ".brand img"]) {
+    expect(
+      await page
+        .locator(selector)
+        .evaluate((el) => getComputedStyle(el).userSelect),
+    ).toBe("none");
+  }
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+});
+
+test("pixel sprite poses render at native proportions", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => !!(window as any).__game);
+  const count = await page.evaluate(() => {
+    const textures = (window as any).__game.renderer.art.textures;
+    const names = [
+      "goomba",
+      "goombaWalk",
+      "koopa",
+      "koopaWalk",
+      "mario",
+      "marioWalk",
+      "marioJump",
+      "fireMario",
+    ];
+    const canvas = document.createElement("canvas");
+    canvas.id = "debug-sprite-sheet";
+    canvas.width = 640;
+    canvas.height = 160;
+    canvas.style.cssText = "position:fixed;top:100px;left:0;z-index:100";
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#7dc9d1";
+    ctx.fillRect(0, 0, 640, 160);
+    ctx.imageSmoothingEnabled = false;
+    names.forEach((name, i) => {
+      const image = textures[name].image;
+      if (image.width !== 16) throw new Error(`Invalid sprite width: ${name}`);
+      ctx.drawImage(
+        image,
+        i * 80 + 8,
+        144 - image.height * 4,
+        64,
+        image.height * 4,
+      );
+    });
+    document.body.append(canvas);
+    return names.length;
+  });
+  expect(count).toBe(8);
+  await page
+    .locator("#debug-sprite-sheet")
+    .screenshot({ path: "test-results/sprite-poses.png" });
+});
+
+test("NES scenery, solid pipes, brick debris, and blood are visible together", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  const effect = await page.evaluate(() => {
+    const game = (window as any).__game;
+    game.paused = true;
+    const s = game.sim;
+    s.marioReturn = 1e6;
+    const input = {
+      left: false,
+      right: true,
+      jump: false,
+      hide: false,
+      warn: false,
+    };
+    for (let i = 0; i < 400 && s.player.body.position.x < 1080; i++)
+      s.step(1 / 60, input);
+    const n = [...s.npcs]
+      .filter((a: any) => a.alive && !a.saved)
+      .sort(
+        (a: any, b: any) =>
+          Math.abs(a.body.position.x - s.player.body.position.x) -
+          Math.abs(b.body.position.x - s.player.body.position.x),
+      )[0];
+    s.kill(n);
+    const brick = s.covers.find((c: any) => c.kind === "brick" && c.x === 784);
+    s.breakBrick(brick);
+    input.right = false;
+    for (let i = 0; i < 10; i++) s.step(1 / 60, input);
+    return {
+      particles: s.particles.length,
+      bricks: s.covers.filter((c: any) => c.broken).length,
+    };
+  });
+  expect(effect.particles).toBeGreaterThan(32);
+  expect(effect.bricks).toBe(1);
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: "test-results/chaos-scenery.png" });
+  const red = await page.locator(".world canvas").evaluate((el) => {
+    const c = document.createElement("canvas");
+    c.width = 1440;
+    c.height = 900;
+    const ctx = c.getContext("2d")!;
+    ctx.drawImage(el as HTMLCanvasElement, 0, 0, 1440, 900);
+    const data = ctx.getImageData(0, 0, 1440, 900).data;
+    let pixels = 0;
+    for (let i = 0; i < data.length; i += 4)
+      if (
+        data[i] > 150 &&
+        data[i + 1] < 45 &&
+        data[i + 2] > 10 &&
+        data[i + 2] < 70
+      )
+        pixels++;
+    return pixels;
+  });
+  expect(red).toBeGreaterThan(100);
+  const sceneryHasNoBrickOverlays = await page.evaluate(() => {
+    const g = (window as any).__game;
+    return g.sim.covers
+      .filter((c: any) => c.kind !== "brick")
+      .every((c: any) => !g.renderer.covers.has(c.id));
+  });
+  expect(sceneryHasNoBrickOverlays).toBe(true);
+});
+
+test("original 1-1 map art and collision anchors agree", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  const map = await page.evaluate(() => {
+    const game = (window as any).__game;
+    const textures = game.renderer.art.textures;
+    const tiles = Object.keys(textures).filter((k) => /^tile\d+$/.test(k));
+    return {
+      noBackdrop: !textures.world,
+      tiles: tiles.length,
+      native: tiles.every(
+        (k) =>
+          textures[k].image.width === 16 && textures[k].image.height === 16,
+      ),
+      instances: game.renderer.world.children
+        .filter((m: any) => m.isInstancedMesh)
+        .reduce((n: number, m: any) => n + m.count, 0),
+      pipe: game.sim.covers.find((c: any) => c.kind === "pipe").body.bounds,
+      question: game.sim.covers.find((c: any) => c.question && c.x === 528).body
+        .bounds,
+    };
+  });
+  expect(map.noBackdrop).toBe(true);
+  expect(map.tiles).toBeGreaterThan(20);
+  expect(map.native).toBe(true);
+  expect(map.instances).toBeGreaterThan(500);
+  expect(map.pipe.min).toEqual({ x: 896, y: 366 });
+  expect(map.pipe.max).toEqual({ x: 960, y: 430 });
+  expect(map.question.min).toEqual({ x: 512, y: 302 });
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    g.sim.player.body.position.x = 6120;
+  });
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: "test-results/world-1-1-finish.png" });
+});
