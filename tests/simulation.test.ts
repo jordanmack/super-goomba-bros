@@ -1,14 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import Matter from "matter-js";
+import { Body, overlaps } from "../src/game/physics.ts";
+import { physics } from "./support/arcade.ts";
 import {
-  Simulation,
+  Simulation as RulesSimulation,
   emptyInput,
   rescueImpossible,
 } from "../src/game/simulation.ts";
 import { GAPS, TUNING as T } from "../src/game/config.ts";
 import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
+
+class Simulation extends RulesSimulation {
+  constructor(random = Math.random) { super(random, physics()); }
+}
 
 const dt = 1 / 60;
 function game() {
@@ -22,8 +27,8 @@ function tick(s: Simulation, seconds: number, input: Partial<Input> = {}) {
     s.step(dt, { ...emptyInput(), ...input });
 }
 function at(s: Simulation, x: number, y = 415) {
-  Matter.Body.setPosition(s.player.body, { x, y });
-  Matter.Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  Body.setPosition(s.player.body, { x, y });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
 }
 
 function give(s: Simulation, actor: Actor, kind: ItemKind) {
@@ -60,14 +65,14 @@ test("small and giant player jumps stay at standard height even when held", () =
 test("active Mario collects a star by contact and its immunity expires", () => {
   const s = game();
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 250, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 250, y: 411 });
   const box = s.covers.find((c) => c.question)!;
   s.hitBlock(box, s.player);
   const item = s.items[0];
   item.kind = "star";
   item.emerge = 0;
-  Matter.Body.setPosition(item.body, { ...s.mario.body.position });
+  Body.setPosition(item.body, { ...s.mario.body.position });
   tick(s, dt);
   assert.equal(s.items.length, 0);
   assert.equal(s.mario.starLeft, T.starSeconds);
@@ -116,7 +121,7 @@ test("idle NPCs leave isolated blocks and stairs without rapidly flipping direct
     const s = game();
     const n = s.npcs[0];
     n.homeX = x;
-    Matter.Body.setPosition(n.body, { x, y: top - 14 });
+    Body.setPosition(n.body, { x, y: top - 14 });
     let turns = 0,
       lastFacing = n.facing,
       landedBelow = false,
@@ -144,9 +149,9 @@ test("giant head hits break bricks and let NPCs on top fall safely", () => {
     (c) => c.kind === "brick" && !c.question && c.y > 300,
   )!;
   at(s, brick.x, brick.y + 16 + 14 * T.giantScale + 5);
-  Matter.Body.setVelocity(s.player.body, { x: 0, y: -6 });
+  Body.setVelocity(s.player.body, { x: 0, y: -6 });
   const n = s.npcs[0];
-  Matter.Body.setPosition(n.body, { x: brick.x, y: brick.y - 16 - 14 });
+  Body.setPosition(n.body, { x: brick.x, y: brick.y - 16 - 14 });
   n.idleWalking = false;
   n.idleWait = 2;
   tick(s, dt);
@@ -168,7 +173,7 @@ test("player brick destruction releases an NPC hiding inside without killing it"
   n.state = "hidden";
   n.cover = brick.id;
   n.entry = { x: brick.x, y: brick.y - 32 };
-  Matter.Body.setStatic(n.body, true);
+  Body.setFrozen(n.body, true);
   s.hitBlock(brick, s.player);
   assert.ok(brick.broken && n.alive && !n.body.isStatic);
   assert.equal(n.cover, null);
@@ -240,12 +245,12 @@ test("NPCs pick up falling items by contact without being warned or seeking them
     const item = s.items[0];
     item.kind = kind;
     item.emerge = 0;
-    Matter.Body.setStatic(item.body, false);
-    Matter.Body.setPosition(item.body, {
+    Body.setFrozen(item.body, false);
+    Body.setPosition(item.body, {
       x: n.body.position.x,
       y: n.body.position.y - 40,
     });
-    Matter.Body.setVelocity(item.body, { x: 0, y: 3 });
+    Body.setVelocity(item.body, { x: 0, y: 3 });
     tick(s, 0.3);
     assert.equal(s.items.length, 0);
     assert.equal(n.warned, false);
@@ -254,7 +259,7 @@ test("NPCs pick up falling items by contact without being warned or seeking them
     if (kind === "flower") assert.equal(n.flower, true);
     if (kind === "mushroom") {
       assert.equal(n.scale, 3);
-      assert.equal(n.body.inertia, Infinity);
+      assert.equal(n.body.native!.allowRotation, false);
       assert.ok(Math.abs(n.body.bounds.max.x - n.body.bounds.min.x) >= 72);
     }
   }
@@ -274,8 +279,8 @@ test("Mario avoids stars and touching a star holder kills him until his return",
   give(s, s.player, "star");
   at(s, 200);
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 100, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 100, y: 411 });
   tick(s, dt);
   assert.ok(s.mario.body.velocity.x < 0);
   at(s, s.mario.body.position.x, s.mario.body.position.y);
@@ -295,8 +300,8 @@ test("NPC star contact also kills Mario, but giant NPC contact does not", () => 
     give(s, n, kind);
     s.marioActive = true;
     s.marioStun = 1;
-    Matter.Body.setStatic(s.mario.body, false);
-    Matter.Body.setPosition(s.mario.body, { ...n.body.position });
+    Body.setFrozen(s.mario.body, false);
+    Body.setPosition(s.mario.body, { ...n.body.position });
     tick(s, dt);
     assert.equal(s.mario.alive, kind === "mushroom");
     assert.ok(n.alive);
@@ -307,10 +312,10 @@ test("giant player stomps kill Mario, play his death cue, and bounce the player 
   const s = game();
   give(s, s.player, "mushroom");
   at(s, 100, 388 - 14 * T.giantScale);
-  Matter.Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 100, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 100, y: 411 });
   tick(s, dt);
   assert.ok(s.marioDeath);
   assert.ok(!s.mario.alive && s.player.alive);
@@ -346,9 +351,9 @@ test("flowers enable player fireballs; hits stun Mario and never hurt NPCs", () 
   give(s, s.player, "flower");
   s.marioActive = true;
   s.marioStun = 0.1;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 150, y: 411 });
-  Matter.Body.setPosition(s.npcs[0].body, { x: 130, y: 415 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 150, y: 411 });
+  Body.setPosition(s.npcs[0].body, { x: 130, y: 415 });
   tick(s, 0.12, { fire: true });
   assert.ok(s.marioStun > 1);
   assert.ok(s.mario.alive && s.npcs[0].alive);
@@ -364,8 +369,8 @@ test("flowers enable player fireballs; hits stun Mario and never hurt NPCs", () 
 test("player fireballs step Mario from fire to big to small, then defeat him", () => {
   const s = game();
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 140, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 140, y: 411 });
   at(s, 140, 411);
   s.marioStage = 2;
   s.mario.flower = true;
@@ -476,7 +481,7 @@ function crowdGame(count: number) {
     const n = s.npcs[i];
     n.warned = true;
     n.state = "run";
-    Matter.Body.setPosition(n.body, { x: 340 + i * 30, y: 415 });
+    Body.setPosition(n.body, { x: 340 + i * 30, y: 415 });
   }
   return s;
 }
@@ -525,7 +530,7 @@ test("running crowds attract Mario sooner and accelerate attack cooldowns", () =
   for (const s of [quiet, loud]) {
     s.marioActive = true;
     s.marioPipe = 10;
-    Matter.Body.setPosition(s.mario.body, { x: 200, y: 411 });
+    Body.setPosition(s.mario.body, { x: 200, y: 411 });
     s.fireCooldown = 2;
     s.marioJumpWait = 2;
   }
@@ -551,15 +556,15 @@ test("a loud crowd draws Mario from beyond normal sight range", () => {
       n.warned = i < 6;
       n.fear = 0;
       n.state = i < 6 ? "run" : "idle";
-      Matter.Body.setPosition(n.body, {
+      Body.setPosition(n.body, {
         x: i < 6 ? 630 + i * 20 : 2000,
         y: 415,
       });
     }
     s.marioPressure = pressure;
     s.marioActive = true;
-    Matter.Body.setStatic(s.mario.body, false);
-    Matter.Body.setPosition(s.mario.body, { x: 0, y: 411 });
+    Body.setFrozen(s.mario.body, false);
+    Body.setPosition(s.mario.body, { x: 0, y: 411 });
     tick(s, dt);
     assert.equal(s.marioTarget, pressure ? s.npcs[0].id : null);
   }
@@ -594,7 +599,7 @@ test("idle patrol turns at gaps and pipes, and a warning starts escape", () => {
   a.homeX = GAPS[0][0] - 25;
   b.homeX = pipe.x - T.pipeWidth / 2 - 25;
   for (const n of [a, b])
-    Matter.Body.setPosition(n.body, { x: n.homeX, y: 415 });
+    Body.setPosition(n.body, { x: n.homeX, y: 415 });
   tick(s, 12);
   assert.ok(a.alive && b.alive);
   assert.ok(a.body.position.x < GAPS[0][0] - 12);
@@ -610,7 +615,7 @@ test("idle patrol turns at gaps and pipes, and a warning starts escape", () => {
 test("warnings count nearby groups once, never rescue them", () => {
   const s = game();
   for (const n of s.npcs.slice(0, 2))
-    Matter.Body.setPosition(n.body, { x: 130, y: 415 });
+    Body.setPosition(n.body, { x: 130, y: 415 });
   s.warn();
   assert.equal(s.warned, 2);
   assert.equal(s.saved, 0);
@@ -683,7 +688,7 @@ test("NPCs can enter safety before quota unlocks the player goal", () => {
   tick(s, dt);
   assert.equal(s.mode, "playing");
   assert.ok(s.player.body.position.x < T.goalX);
-  Matter.Body.setPosition(s.npcs[0].body, { x: T.goalX + 2, y: 415 });
+  Body.setPosition(s.npcs[0].body, { x: T.goalX + 2, y: 415 });
   tick(s, dt);
   assert.equal(s.saved, 1);
   assert.equal(s.mode, "playing");
@@ -699,7 +704,7 @@ test("safe player finish counts only arrivals before a fixed cutoff", () => {
   assert.equal(s.mode, "finishing");
   s.kill(s.player);
   assert.equal(s.player.alive, true);
-  Matter.Body.setPosition(s.npcs[T.required].body, { x: T.goalX + 3, y: 415 });
+  Body.setPosition(s.npcs[T.required].body, { x: T.goalX + 3, y: 415 });
   tick(s, 1);
   assert.equal(s.saved, T.required + 1);
   const left = s.finishLeft;
@@ -707,7 +712,7 @@ test("safe player finish counts only arrivals before a fixed cutoff", () => {
   assert.equal(s.finishLeft, left);
   tick(s, 5);
   assert.equal(s.mode, "won");
-  Matter.Body.setPosition(s.npcs[T.required + 1].body, {
+  Body.setPosition(s.npcs[T.required + 1].body, {
     x: T.goalX + 3,
     y: 415,
   });
@@ -759,7 +764,7 @@ test("time escalates Mario and returning does not reset it", () => {
   s.marioReturn = 0;
   tick(s, dt);
   assert.equal(s.marioActive, true);
-  Matter.Body.setPosition(s.mario.body, { x: T.goalX + 200, y: 400 });
+  Body.setPosition(s.mario.body, { x: T.goalX + 200, y: 400 });
   tick(s, dt);
   assert.equal(s.marioActive, false);
   assert.equal(s.phase, 2);
@@ -772,9 +777,9 @@ test("Mario can attack players beside former cover locations", () => {
   const s = game();
   at(s, s.covers[0].x);
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: s.covers[0].x + 2, y: 390 });
-  Matter.Body.setVelocity(s.mario.body, { x: 0, y: 2 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: s.covers[0].x + 2, y: 390 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 2 });
   tick(s, dt);
   assert.equal(s.player.state, "idle");
 });
@@ -787,9 +792,9 @@ test("bricks break without creating occupied hiding states", () => {
   assert.equal(s.protected(s.player), false);
   s.marioActive = true;
   s.brickTarget = brick.id;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: brick.x, y: brick.y + 38 });
-  Matter.Body.setVelocity(s.mario.body, { x: 0, y: -6 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: brick.x, y: brick.y + 38 });
+  Body.setVelocity(s.mario.body, { x: 0, y: -6 });
   tick(s, dt, { hide: true });
   assert.equal(brick.broken, true);
   assert.equal(s.player.alive, true);
@@ -814,8 +819,8 @@ test("late Mario fires visible projectiles when pursuing", () => {
   s.marioChase = 2;
   s.marioJumpWait = 10;
   s.marioLook = 1;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 0, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 0, y: 411 });
   tick(s, dt);
   assert.equal(s.phase, 2);
   assert.equal(s.fireballs.length, 1);
@@ -828,13 +833,13 @@ test("fear traits produce different running urgency", () => {
   const [shy, bold] = s.npcs;
   for (const n of [shy, bold]) {
     n.warned = true;
-    Matter.Body.setPosition(n.body, { x: s.covers[0].x + 5, y: 415 });
+    Body.setPosition(n.body, { x: s.covers[0].x + 5, y: 415 });
   }
   shy.fear = 1;
   bold.fear = 0;
   s.marioActive = true;
   s.marioPipe = 10;
-  Matter.Body.setPosition(s.mario.body, { x: 100, y: 410 });
+  Body.setPosition(s.mario.body, { x: 100, y: 410 });
   tick(s, 0.7);
   assert.equal(shy.state, "run");
   assert.equal(bold.state, "run");
@@ -889,8 +894,8 @@ test("side contact is not a stomp", () => {
   const s = game();
   tick(s, 0.1);
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 102, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 102, y: 411 });
   tick(s, dt);
   assert.equal(s.player.alive, true);
 });
@@ -899,8 +904,8 @@ test("Mario reacts before pursuing and does not update aim between observations"
   const s = game();
   s.random = () => 0;
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 0, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 0, y: 411 });
   tick(s, dt);
   assert.equal(s.marioTarget, s.player.id);
   assert.ok(s.marioReaction >= T.marioReaction);
@@ -916,8 +921,8 @@ test("Mario actively acquires visible NPCs even on a high random roll", () => {
   s.random = () => 0.99;
   at(s, 900);
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 300, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 300, y: 411 });
   tick(s, dt);
   assert.ok(s.marioChase > 0);
   assert.equal(s.marioTarget, s.npcs[0].id);
@@ -930,9 +935,9 @@ test("Mario cannot reverse a jump to follow a dodge", () => {
   s.marioTarget = s.player.id;
   s.marioLook = 1;
   s.marioAim = -100;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 0, y: 330 });
-  Matter.Body.setVelocity(s.mario.body, { x: 2.2, y: -2 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 0, y: 330 });
+  Body.setVelocity(s.mario.body, { x: 2.2, y: -2 });
   tick(s, dt);
   assert.ok(s.mario.body.velocity.x > 2);
 });
@@ -945,8 +950,8 @@ test("cover input does not break pursuit or create an invisible target", () => {
   s.marioChase = 3;
   s.marioTarget = s.player.id;
   s.marioAim = 300;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 0, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 0, y: 411 });
   tick(s, 1.5, { hide: true });
   assert.equal(s.marioTarget, s.player.id);
   assert.ok(s.marioChase > 0);
@@ -979,7 +984,9 @@ test("pipes remain solid obstacles and are not hiding entrances", () => {
   at(s, pipe.x - 100);
   tick(s, 0.2, { hide: true, right: true });
   assert.equal(s.player.state, "idle");
-  assert.ok(Matter.Query.collides(s.player.body, [pipe.body!]).length >= 0);
+  tick(s, 1, { right: true });
+  assert.equal(overlaps(s.player.body, [pipe.body!]).length, 0);
+  assert.ok(Math.abs(s.player.body.bounds.max.x - pipe.body!.bounds.min.x) < 0.1);
 });
 
 test("every floating brick has a solid top and can be destroyed and restored", () => {
@@ -1009,11 +1016,11 @@ test("Mario breaks ordinary bricks by striking from below, not merely standing n
   s.marioActive = true;
   s.marioLook = 10;
   s.marioDecision = 10;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: brick.x, y: brick.y + 16 + 22 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: brick.x, y: brick.y + 16 + 22 });
   tick(s, dt);
   assert.equal(brick.broken, false);
-  Matter.Body.setVelocity(s.mario.body, { x: 0, y: -7 });
+  Body.setVelocity(s.mario.body, { x: 0, y: -7 });
   tick(s, dt);
   assert.equal(brick.broken, true);
   assert.ok(s.particles.length >= 12);
@@ -1045,12 +1052,12 @@ test("Mario hunts an NPC, lands a stomp, then acquires another victim", () => {
   const s = game();
   at(s, 4300);
   for (let i = 2; i < s.npcs.length; i++)
-    Matter.Body.setPosition(s.npcs[i].body, { x: 4200, y: 415 });
-  Matter.Body.setPosition(s.npcs[0].body, { x: 220, y: 415 });
-  Matter.Body.setPosition(s.npcs[1].body, { x: 350, y: 415 });
+    Body.setPosition(s.npcs[i].body, { x: 4200, y: 415 });
+  Body.setPosition(s.npcs[0].body, { x: 220, y: 415 });
+  Body.setPosition(s.npcs[1].body, { x: 350, y: 415 });
   s.marioActive = true;
-  Matter.Body.setStatic(s.mario.body, false);
-  Matter.Body.setPosition(s.mario.body, { x: 100, y: 411 });
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 100, y: 411 });
   tick(s, 5);
   assert.equal(s.npcs[0].alive, false);
   assert.ok(!s.npcs[1].alive || s.marioTarget === s.npcs[1].id);

@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { Boot } from "./scenes/Boot";
 import { Play } from "./scenes/Play";
 import type { Simulation } from "./simulation";
+import type { PhysicsWorld } from "./physics";
 
 // React owns screens and HUD; Phaser owns the canvas and its update loop.
 export class PhaserGame {
@@ -36,6 +37,7 @@ export class PhaserGame {
     this.width = 540 * this.host.clientWidth / Math.max(1, this.host.clientHeight);
     if (this.game.isBooted) this.game.scale.setGameSize(this.width, this.height);
   }
+  bindPhysics(physics: PhysicsWorld) { physics.bind(this.play!.physics.world, Phaser.Physics.Arcade); }
   render(sim: Simulation, _time: number) { this.play?.renderState(sim, this.width); }
   screen(x: number, y: number, sim: Simulation) {
     return { x: (x - sim.cameraX) / this.width * 100, y: y / this.height * this.host.clientHeight / this.host.parentElement!.clientHeight * 100 };

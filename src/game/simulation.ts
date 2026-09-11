@@ -1,8 +1,7 @@
-import Matter from "matter-js";
+import { Body, PhysicsWorld, overlaps, rayBlocked } from "./physics.ts";
 import { COVER_LAYOUT, GAPS, PHRASES, MAP_TOP, TUNING as T } from "./config.ts";
 import { WORLD_1_1 as LEVEL } from "./world-1-1.ts";
 
-const { Engine, Bodies, Body, Composite, Query } = Matter;
 export type Input = {
   left: boolean;
   right: boolean;
@@ -26,7 +25,7 @@ export type Cover = {
   y: number;
   kind: "bush" | "pipe" | "brick";
   broken: boolean;
-  body?: Matter.Body;
+  body?: Body;
   height?: number;
   question?: boolean;
   used: boolean;
@@ -35,7 +34,7 @@ export type Cover = {
 };
 export type Actor = {
   id: number;
-  body: Matter.Body;
+  body: Body;
   kind: "goomba" | "koopa" | "mario";
   alive: boolean;
   saved: boolean;
@@ -99,7 +98,7 @@ export type ItemKind = "star" | "mushroom" | "flower";
 export type Item = {
   id: number;
   kind: ItemKind;
-  body: Matter.Body;
+  body: Body;
   emerge: number;
   originY: number;
   direction: number;
@@ -112,8 +111,8 @@ export const rescueImpossible = (
 ) => saved + living < required;
 
 export class Simulation {
-  engine = Engine.create({ gravity: { x: 0, y: 1.5 } });
-  solids: Matter.Body[] = [];
+  physics: PhysicsWorld;
+  solids: Body[] = [];
   player!: Actor;
   npcs: Actor[] = [];
   mario!: Actor;
@@ -162,14 +161,14 @@ export class Simulation {
   private jumped = false;
   random: () => number;
 
-  constructor(random = Math.random) {
+  constructor(random = Math.random, physics = new PhysicsWorld()) {
+    this.physics = physics;
     this.random = random;
     this.reset("title");
   }
 
   reset(mode: Mode = "playing") {
-    Composite.clear(this.engine.world, false);
-    Engine.clear(this.engine);
+    this.physics.clear();
     this.nextId = 1;
     this.solids = [];
     let edge = -300;
@@ -178,12 +177,12 @@ export class Simulation {
       [T.worldWidth + 300, T.worldWidth + 300],
     ]) {
       this.solids.push(
-        Bodies.rectangle(
+        this.physics.rectangle(
           (edge + start) / 2,
           T.groundY + 80,
           start - edge,
           160,
-          { isStatic: true, friction: 0 },
+          true,
         ),
       );
       edge = end;
@@ -203,36 +202,29 @@ export class Simulation {
       if (rows.length) {
         const top = MAP_TOP + Math.min(...rows) * 32;
         this.solids.push(
-          Bodies.rectangle(
+          this.physics.rectangle(
             column * 32 + 16,
             (top + T.groundY) / 2,
             32,
             T.groundY - top,
-            {
-              isStatic: true,
-              friction: 0,
-            },
+            true,
           ),
         );
       }
     }
     for (const c of this.covers) {
       if (c.kind === "brick")
-        c.body = Bodies.rectangle(c.x, c.y, T.brickSize, T.brickSize, {
-          isStatic: true,
-          friction: 0,
-        });
+        c.body = this.physics.rectangle(c.x, c.y, T.brickSize, T.brickSize, true);
       if (c.kind === "pipe")
-        c.body = Bodies.rectangle(
+        c.body = this.physics.rectangle(
           c.x,
           T.groundY - (c.height ?? T.pipeHeight) / 2,
           T.pipeWidth,
           c.height ?? T.pipeHeight,
-          { isStatic: true, friction: 0 },
+          true,
         );
       if (c.body) this.solids.push(c.body);
     }
-    Composite.add(this.engine.world, this.solids);
     this.player = this.actor(100, "goomba");
     this.npcs = Array.from({ length: T.population }, (_, i) => {
       let x = 390 + i * ((T.goalX - 650) / T.population) + this.random() * 65;
@@ -257,7 +249,7 @@ export class Simulation {
     });
     this.mario = this.actor(-200, "mario");
     this.setMarioStage(1);
-    Body.setStatic(this.mario.body, true);
+    Body.setFrozen(this.mario.body, true);
     this.mode = mode;
     this.elapsed =
       this.warned =
@@ -300,20 +292,13 @@ export class Simulation {
   }
 
   private actor(x: number, kind: Actor["kind"]): Actor {
-    const body = Bodies.rectangle(
+    const body = this.physics.rectangle(
       x,
       T.groundY - 18,
       24,
       kind === "mario" ? 38 : 28,
-      {
-        inertia: Infinity,
-        friction: 0,
-        frictionAir: 0,
-        restitution: 0,
-        collisionFilter: { category: 2, mask: 1 },
-      },
+      false,
     );
-    Composite.add(this.engine.world, body);
     return {
       id: this.nextId++,
       body,
@@ -454,7 +439,7 @@ export class Simulation {
   private expose(a: Actor) {
     if (a.state === "hidden" || a.state === "entering") {
       if (a.entry) Body.setPosition(a.body, a.entry);
-      Body.setStatic(a.body, false);
+      Body.setFrozen(a.body, false);
       Body.setVelocity(a.body, { x: 0, y: 0 });
     }
     a.entry = undefined;
@@ -500,7 +485,7 @@ export class Simulation {
       this.burst(a.body.position.x, a.body.position.y, true);
       this.events.push("splat");
     }
-    Composite.remove(this.engine.world, a.body);
+    this.physics.remove(a.body);
     if (a === this.player) {
       this.mode = "dead";
       this.deadLeft = T.deathSequenceSeconds;
@@ -528,15 +513,9 @@ export class Simulation {
       c.content = (["star", "mushroom", "flower"] as const)[
         Math.min(2, Math.floor(this.random() * 3))
       ];
-      const body = Bodies.rectangle(c.x, c.y, 24, 28, {
-        inertia: Infinity,
-        friction: 0,
-        frictionAir: 0,
-        collisionFilter: { category: 4, mask: 1 },
-      });
-      Body.setStatic(body, true);
-      Composite.add(this.engine.world, body);
-      this.items.push({
+      const body = this.physics.rectangle(c.x, c.y, 24, 28, false);
+      Body.setFrozen(body, true);
+        this.items.push({
         id: this.nextId++,
         kind: c.content,
         body,
@@ -567,21 +546,18 @@ export class Simulation {
       const feet = a.body.position.y + 14;
       a.scale = T.giantScale;
       Body.scale(a.body, a.scale, a.scale);
-      Body.setInertia(a.body, Infinity);
       Body.setPosition(a.body, {
         x: a.body.position.x,
         y: feet - 14 * a.scale,
       });
       // Growing below a ceiling must never leave the larger body embedded.
       for (let i = 0; i < 16; i++) {
-        const hits = Query.collides(a.body, this.solids).filter(
-          (hit) => hit.depth > 0.1,
-        );
+        const hits = overlaps(a.body, this.solids, 0.1);
         if (!hits.length) break;
         const top = Math.min(
           ...hits.map(
             (hit) =>
-              (hit.bodyA === a.body ? hit.bodyB : hit.bodyA).bounds.min.y,
+              hit.bounds.min.y,
           ),
         );
         Body.setPosition(a.body, {
@@ -590,7 +566,7 @@ export class Simulation {
         });
       }
     }
-    Composite.remove(this.engine.world, item.body);
+    this.physics.remove(item.body);
     this.items = this.items.filter((i) => i !== item);
     this.events.push("power");
   }
@@ -604,7 +580,7 @@ export class Simulation {
           x: item.body.position.x,
           y: item.originY - 32 * (1 - item.emerge / 0.45),
         });
-        if (item.emerge === 0) Body.setStatic(item.body, false);
+        if (item.emerge === 0) Body.setFrozen(item.body, false);
         continue;
       }
       const p = item.body.position;
@@ -647,7 +623,7 @@ export class Simulation {
         }
       }
       if (p.y > 640 || item.age > 40) {
-        Composite.remove(this.engine.world, item.body);
+        this.physics.remove(item.body);
         this.items = this.items.filter((i) => i !== item);
       }
     }
@@ -669,7 +645,7 @@ export class Simulation {
     this.marioReturn = T.marioDefeatSeconds;
     this.marioTarget = null;
     this.marioChase = this.marioStun = this.marioPipe = 0;
-    Body.setStatic(this.mario.body, true);
+    Body.setFrozen(this.mario.body, true);
     this.fireballs = this.fireballs.filter((f) => f.owner === "player");
   }
 
@@ -742,7 +718,7 @@ export class Simulation {
     if (c.kind !== "brick" || c.broken) return;
     c.broken = true;
     if (c.body) {
-      Composite.remove(this.engine.world, c.body);
+      this.physics.remove(c.body);
       this.solids = this.solids.filter((s) => s !== c.body);
     }
     this.burst(c.x, c.y, false);
@@ -779,7 +755,7 @@ export class Simulation {
     if (!n.alive || n.saved) return;
     n.saved = true;
     this.saved++;
-    Composite.remove(this.engine.world, n.body);
+    this.physics.remove(n.body);
     this.events.push("saved");
   }
   finish() {
@@ -787,7 +763,7 @@ export class Simulation {
     this.mode = "finishing";
     this.finishLeft = T.finishWindow;
     this.player.saved = true;
-    Body.setStatic(this.player.body, true);
+    Body.setFrozen(this.player.body, true);
     this.events.push("win");
   }
 
@@ -861,7 +837,7 @@ export class Simulation {
       }));
     const playerBottom = this.player.body.position.y + 14 * this.player.scale;
     const playerFalling = this.player.body.velocity.y > 0.2;
-    Engine.update(this.engine, dt * 1000);
+    this.physics.step(dt);
     this.contactWarning();
     for (const { actor, top } of hitters)
       for (const c of this.covers) {
@@ -1099,7 +1075,7 @@ export class Simulation {
       this.mario.alive = true;
       this.mario.starLeft = 0;
       this.setMarioStage((this.phase === 0 ? 1 : this.phase) as 0 | 1 | 2);
-      Body.setStatic(this.mario.body, false);
+      Body.setFrozen(this.mario.body, false);
       Body.setPosition(this.mario.body, { x: this.cameraX - 110, y: 350 });
       Body.setVelocity(this.mario.body, { x: 0, y: 0 });
       this.mario.facing = 1;
@@ -1138,7 +1114,7 @@ export class Simulation {
     ) {
       this.marioActive = false;
       this.marioReturn = 2.5 + this.random() * 2.5;
-      Body.setStatic(this.mario.body, true);
+      Body.setFrozen(this.mario.body, true);
       return;
     }
     if (this.marioPipe > 0) {
@@ -1156,7 +1132,7 @@ export class Simulation {
         a.starLeft > 0 &&
         !this.protected(a) &&
         Math.abs(a.body.position.x - m.x) < 220 &&
-        Query.ray(this.solids, m, a.body.position).length === 0,
+        !rayBlocked(this.solids, m, a.body.position),
     );
     if (starThreat) {
       this.marioRunning = true;
@@ -1174,7 +1150,7 @@ export class Simulation {
     );
     const sees = (a: Actor) =>
       Math.abs(a.body.position.x - m.x) < T.marioSight &&
-      Query.ray(this.solids, m, a.body.position).length === 0;
+      !rayBlocked(this.solids, m, a.body.position);
     const runners = new Set(this.runningCrowd().map((n) => n.id));
     const hearsCrowd = (a: Actor) =>
       runners.has(a.id) &&

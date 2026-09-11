@@ -8,6 +8,7 @@ export const TUNING = {
   finishWindow: 5,
   walkSpeed: 2.6,
   jumpSpeed: 11,
+  gravity: 1500,
   deathSequenceSeconds: 2.8,
   warningRange: 185,
   hearingRange: 440,

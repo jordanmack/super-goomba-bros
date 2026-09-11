@@ -116,6 +116,7 @@ export default function App() {
     let disposed = false;
     void renderer.ready.then(() => {
       if (disposed) return;
+      renderer.bindPhysics(sim.physics);
       setPortrait(renderer.game.registry.get("portrait"));
       setReady(true);
       renderer.play!.tick = update;
