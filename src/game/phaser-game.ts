@@ -22,6 +22,11 @@ export class PhaserGame {
       backgroundColor: "#5c94fc", pixelArt: true, banner: false,
       render: { preserveDrawingBuffer: true },
       scale: { mode: Phaser.Scale.FIT, expandParent: false },
+      input: {
+        activePointers: 5, windowEvents: false,
+        touch: { target: document, capture: false },
+        mouse: { target: document, preventDefaultDown: false, preventDefaultUp: false, preventDefaultMove: false, preventDefaultWheel: false },
+      },
       physics: { default: "arcade", arcade: { gravity: { x: 0, y: 1500 }, customUpdate: true } },
       scene: [Boot, Play],
     });

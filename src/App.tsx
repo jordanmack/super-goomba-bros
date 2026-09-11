@@ -17,6 +17,7 @@ import type { Input, Mode } from "./game/simulation";
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
+import { GameControls } from "./game/controls";
 
 type Runtime = {
   sim: Simulation;
@@ -61,17 +62,6 @@ const initial: Snapshot = {
   finishLeft: 0,
   progress: 0,
 };
-const keyMap: Record<string, keyof Input> = {
-  ArrowLeft: "left",
-  KeyA: "left",
-  ArrowRight: "right",
-  KeyD: "right",
-  Space: "jump",
-  ArrowUp: "jump",
-  KeyW: "jump",
-  KeyZ: "fire",
-};
-
 export default function App() {
   const surface = useRef<HTMLElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -114,9 +104,19 @@ export default function App() {
     };
     runtime.current = game;
     let disposed = false;
+    let controls: GameControls | undefined;
     void renderer.ready.then(() => {
       if (disposed) return;
       renderer.bindPhysics(sim.physics);
+      controls = new GameControls(renderer.play!.input, surface.current!, game, () => {
+        game.paused = !game.paused; setPaused(game.paused); game.clearInput();
+        if (game.paused) audio.pause(); else startAudio(game);
+      }, () => {
+        if (sim.mode === "playing" || sim.mode === "finishing") {
+          game.paused = true; setPaused(true); audio.pause();
+        }
+      });
+      game.clearInput = () => controls?.clear();
       setPortrait(renderer.game.registry.get("portrait"));
       setReady(true);
       renderer.play!.tick = update;
@@ -175,201 +175,9 @@ export default function App() {
         });
       }
     };
-    const root = surface.current!;
-    // Touch identifiers, pointer IDs, and keyboard keys are independent holds.
-    const held = new Map<string, keyof Input | null>();
-    const playing = () => !game.paused && sim.mode === "playing";
-    const sync = () => {
-      const next = emptyInput();
-      for (const action of held.values()) if (action) next[action] = true;
-      for (const action of ["jump", "fire"] as const)
-        if (next[action] && !game.input[action]) game.pulses[action] = true;
-      Object.assign(game.input, next);
-      for (const button of root.querySelectorAll<HTMLButtonElement>(
-        "[data-control]",
-      ))
-        button.toggleAttribute(
-          "data-pressed",
-          next[button.dataset.control as keyof Input],
-        );
-    };
-    const clear = () => {
-      const pointers = [...held.keys()]
-        .filter((id) => id.startsWith("pointer:"))
-        .map((id) => Number(id.slice(8)));
-      held.clear();
-      sync();
-      game.pulses = {};
-      for (const id of pointers)
-        if (root.hasPointerCapture(id)) root.releasePointerCapture(id);
-    };
-    game.clearInput = clear;
-    const inControls = (target: EventTarget | null) =>
-      target instanceof Element &&
-      !!target.closest(".controls") &&
-      root.contains(target);
-    const actionAt = (x: number, y: number): keyof Input | null => {
-      const button = document
-        .elementFromPoint(x, y)
-        ?.closest<HTMLButtonElement>("[data-control]");
-      return button && root.contains(button) && !button.disabled
-        ? (button.dataset.control as keyof Input)
-        : null;
-    };
-    const preventGesture = (event: Event) => {
-      if (event.cancelable) event.preventDefault();
-    };
-    const reconcileTouches = (event: TouchEvent) => {
-      const active = new Set(
-        Array.from(event.touches, (touch) => `touch:${touch.identifier}`),
-      );
-      for (const id of held.keys())
-        if (id.startsWith("touch:") && !active.has(id)) held.delete(id);
-      sync();
-    };
-    const touchStart = (event: TouchEvent) => {
-      if (!inControls(event.target)) return;
-      // Native non-passive touch listeners suppress Safari's tap-and-hold loupe.
-      // Touch events alone own finger input; ignore their companion pointer events.
-      preventGesture(event);
-      if (!playing()) return;
-      for (const touch of event.changedTouches)
-        held.set(
-          `touch:${touch.identifier}`,
-          actionAt(touch.clientX, touch.clientY),
-        );
-      reconcileTouches(event);
-    };
-    const touchMove = (event: TouchEvent) => {
-      for (const touch of event.changedTouches) {
-        const id = `touch:${touch.identifier}`;
-        if (!held.has(id)) continue;
-        preventGesture(event);
-        held.set(id, actionAt(touch.clientX, touch.clientY));
-      }
-      reconcileTouches(event);
-    };
-    const touchEnd = (event: TouchEvent) => {
-      for (const touch of event.changedTouches)
-        held.delete(`touch:${touch.identifier}`);
-      reconcileTouches(event);
-    };
-    const pointerDown = (event: PointerEvent) => {
-      if (
-        event.pointerType === "touch" ||
-        event.button !== 0 ||
-        !playing() ||
-        !inControls(event.target)
-      )
-        return;
-      preventGesture(event);
-      root.setPointerCapture(event.pointerId);
-      held.set(`pointer:${event.pointerId}`, actionAt(event.clientX, event.clientY));
-      sync();
-    };
-    const pointerEnd = (event: PointerEvent) => {
-      if (!held.delete(`pointer:${event.pointerId}`)) return;
-      sync();
-      if (root.hasPointerCapture(event.pointerId))
-        root.releasePointerCapture(event.pointerId);
-    };
-    const pointerMove = (event: PointerEvent) => {
-      const id = `pointer:${event.pointerId}`;
-      if (!held.has(id)) return;
-      if (event.buttons === 0) return pointerEnd(event);
-      held.set(id, actionAt(event.clientX, event.clientY));
-      sync();
-    };
-    const contextMenu = (event: Event) => {
-      if (!inControls(event.target)) return;
-      preventGesture(event);
-      clear();
-    };
-    const key = (event: KeyboardEvent, down: boolean) => {
-      const action = keyMap[event.code];
-      if (action) {
-        if (
-          down &&
-          (!playing() ||
-            (event.target instanceof Element &&
-              event.target.closest("button") &&
-              event.code === "Space"))
-        )
-          return;
-        if (!down && !held.has(`key:${event.code}`)) return;
-        event.preventDefault();
-        // A repeat after an interruption must not restore a cleared hold.
-        if (down && event.repeat && !held.has(`key:${event.code}`)) return;
-        if (down) held.set(`key:${event.code}`, action);
-        else held.delete(`key:${event.code}`);
-        sync();
-      }
-      if (
-        down &&
-        !event.repeat &&
-        event.code === "Escape" &&
-        sim.mode !== "title"
-      ) {
-        game.paused = !game.paused;
-        setPaused(game.paused);
-        clear();
-        if (game.paused) audio.pause();
-        else startAudio(game);
-      }
-    };
-    const down = (e: KeyboardEvent) => key(e, true);
-    const up = (e: KeyboardEvent) => key(e, false);
-    const blur = () => {
-      clear();
-      if (sim.mode === "playing" || sim.mode === "finishing") {
-        game.paused = true;
-        setPaused(true);
-        audio.pause();
-      }
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    window.addEventListener("blur", blur);
-    window.addEventListener("pagehide", blur);
-    window.addEventListener("orientationchange", blur);
-    screen.orientation?.addEventListener("change", blur);
-    root.addEventListener("touchstart", touchStart, { passive: false });
-    root.addEventListener("pointerdown", pointerDown);
-    root.addEventListener("contextmenu", contextMenu);
-    document.addEventListener("touchmove", touchMove, {
-      capture: true,
-      passive: false,
-    });
-    document.addEventListener("touchend", touchEnd, true);
-    document.addEventListener("touchcancel", touchEnd, true);
-    document.addEventListener("pointermove", pointerMove, true);
-    document.addEventListener("pointerup", pointerEnd, true);
-    document.addEventListener("pointercancel", pointerEnd, true);
-    document.addEventListener("lostpointercapture", pointerEnd, true);
-    const visibility = () => {
-      if (document.hidden) blur();
-    };
-    document.addEventListener("visibilitychange", visibility);
     return () => {
       disposed = true;
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-      window.removeEventListener("blur", blur);
-      window.removeEventListener("pagehide", blur);
-      window.removeEventListener("orientationchange", blur);
-      screen.orientation?.removeEventListener("change", blur);
-      root.removeEventListener("touchstart", touchStart);
-      root.removeEventListener("pointerdown", pointerDown);
-      root.removeEventListener("contextmenu", contextMenu);
-      document.removeEventListener("touchmove", touchMove, true);
-      document.removeEventListener("touchend", touchEnd, true);
-      document.removeEventListener("touchcancel", touchEnd, true);
-      document.removeEventListener("pointermove", pointerMove, true);
-      document.removeEventListener("pointerup", pointerEnd, true);
-      document.removeEventListener("pointercancel", pointerEnd, true);
-      document.removeEventListener("lostpointercapture", pointerEnd, true);
-      document.removeEventListener("visibilitychange", visibility);
-      clear();
+      controls?.dispose();
       audio.dispose();
       renderer.dispose();
       runtime.current = null;

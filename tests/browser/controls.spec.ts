@@ -18,7 +18,7 @@ async function touch(page: Page, type: string, active: Point[], changed = active
     if (type === "touchstart")
       for (const p of changed) targets.set(p.id, document.elementFromPoint(p.x, p.y)!);
     const list = (points: typeof active) => points.map((p) => ({
-      identifier: p.id, clientX: p.x, clientY: p.y, target: targets.get(p.id),
+      identifier: p.id, clientX: p.x, clientY: p.y, pageX: p.x, pageY: p.y, target: targets.get(p.id),
     }));
     const event = new Event(type, { bubbles: true, cancelable: true });
     Object.defineProperties(event, {
