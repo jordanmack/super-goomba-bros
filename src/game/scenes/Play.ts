@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import { GAPS, MAP_TOP, TUNING as T } from "../config";
-import { WORLD_TILES } from "../world-tiles";
 import area from "../../assets/levels/area-25.json";
 import type { Actor, Simulation } from "../simulation";
 
@@ -15,16 +14,6 @@ export class Play extends Phaser.Scene {
   constructor() { super("Play"); }
 
   create() {
-    // Register original metatile IDs using the matching reference-map pixels.
-    const atlas = this.textures.createCanvas("metatiles", 256, 208)!;
-    const seen = new Set<number>();
-    area.tiles.forEach((row, y) => row.forEach((id, x) => {
-      if (seen.has(id) || id === 0) return;
-      seen.add(id);
-      atlas.context.drawImage(this.textures.get(`tile${WORLD_TILES[y][x]}`).getSourceImage() as HTMLCanvasElement,
-        (id % 16) * 16, Math.floor(id / 16) * 16);
-    }));
-    atlas.refresh();
     const blocks = new Set(area.blocks.map(b => `${b.column},${b.row}`));
     const data = area.tiles.map((row, y) => row.map((id, x) => !id || blocks.has(`${x},${y}`) ? -1 : id));
     for (let row = 15; row < 18; row++) data.push(Array.from({ length: area.width }, (_, x) =>

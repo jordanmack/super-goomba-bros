@@ -5,12 +5,14 @@ import mario from "../../assets/smb/mario.png";
 import enemies from "../../assets/smb/enemies.png";
 import scenery from "../../assets/smb/scenery.png";
 import tiles from "../../assets/smb/world-tiles.png";
+import metatiles from "../../assets/smb/metatiles.png";
 import { RECORDINGS } from "../audio";
 
 export class Boot extends Phaser.Scene {
   constructor() { super("Boot"); }
 
   preload() {
+    this.load.image("metatiles", metatiles);
     for (const [name, url] of Object.entries({ mario, enemies, scenery, tiles }))
       this.load.image(`source-${name}`, url);
     for (const [name, url] of Object.entries(RECORDINGS)) this.load.audio(name, url);

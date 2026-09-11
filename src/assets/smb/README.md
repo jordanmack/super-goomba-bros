@@ -1,5 +1,18 @@
 # NES Super Mario Bros. sprite sheets
 
+## Phaser metatile atlas
+
+`metatiles.png` holds individual original metatiles in six palette variants.
+`metatiles.json` records every source URL, palette order, and covered tile IDs.
+The sources are Rick N. Bruns's background-only maps at NESMaps. The converter
+is `../../../scripts/extract-metatiles.mjs`; it uses the decoded disassembly
+coordinates to collect native 16-pixel graphics, and retains the most common
+sample for each tile. It does not infer geometry from the images. Identical
+graphic IDs share frames, and missing palette variants reuse recolored frames.
+Reference map images stay outside the build. Only the small tile atlas is used
+for rendering. Original Nintendo graphics are retained; the archive is not a
+license grant. See the generated source list for exact image URLs.
+
 ## World 1-1 map
 
 `world-tiles.png` contains the unique 16×16 sprites extracted offline from the
