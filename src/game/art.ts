@@ -1,5 +1,5 @@
-import * as THREE from "three";
 import { characterSprites, scenerySprites } from "./smb-sprites";
+import type { SpriteSources } from "./smb-sprites";
 
 function pixels(rows: string[], palette: Record<string, string>) {
   const canvas = document.createElement("canvas");
@@ -16,11 +16,11 @@ function pixels(rows: string[], palette: Record<string, string>) {
   return canvas;
 }
 
-export function makeArt() {
-  const characters = characterSprites();
+export function makeArt(sources: SpriteSources) {
+  const characters = characterSprites(sources);
   const assets = {
     ...characters,
-    ...scenerySprites(),
+    ...scenerySprites(sources),
     star: pixels(
       [
         ".......KK.......",
@@ -83,13 +83,5 @@ export function makeArt() {
       { O: "#d82800", Y: "#fcb800", W: "#ffffff", K: "#000000", G: "#80d010" },
     ),
   };
-  const textures: Record<string, THREE.CanvasTexture> = Object.fromEntries(
-    Object.entries(assets).map(([name, canvas]) => {
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.magFilter = texture.minFilter = THREE.NearestFilter;
-      texture.colorSpace = THREE.SRGBColorSpace;
-      return [name, texture];
-    }),
-  );
-  return { textures, portrait: characters.goomba.toDataURL() };
+  return { assets, portrait: characters.goomba.toDataURL() };
 }

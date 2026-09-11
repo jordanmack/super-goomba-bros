@@ -1,25 +1,6 @@
-import marioUrl from "../assets/smb/mario.png";
-import enemiesUrl from "../assets/smb/enemies.png";
-import sceneryUrl from "../assets/smb/scenery.png";
-import tilesUrl from "../assets/smb/world-tiles.png";
 import { TILE_COUNT, WORLD_TILES } from "./world-tiles";
 
-const mario = new Image();
-const enemies = new Image();
-const scenery = new Image();
-const tiles = new Image();
-export async function loadCharacterSprites() {
-  mario.src = marioUrl;
-  enemies.src = enemiesUrl;
-  scenery.src = sceneryUrl;
-  tiles.src = tilesUrl;
-  await Promise.all([
-    mario.decode(),
-    enemies.decode(),
-    scenery.decode(),
-    tiles.decode(),
-  ]);
-}
+export type SpriteSources = Record<"mario" | "enemies" | "scenery" | "tiles", HTMLImageElement>;
 
 function crop(
   image: HTMLImageElement,
@@ -42,7 +23,7 @@ function crop(
   return canvas;
 }
 
-export function characterSprites() {
+export function characterSprites({ mario, enemies }: SpriteSources) {
   const goomba = crop(enemies, 0, 4, 16, 16);
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
   const koopa = crop(enemies, 150, 0, 16, 24, true);
@@ -113,7 +94,8 @@ function firePalette(source: HTMLCanvasElement) {
   return canvas;
 }
 
-export function scenerySprites() {
+export function scenerySprites({ scenery, tiles, enemies }: SpriteSources) {
+  const tile = (id: number) => crop(tiles, (id % 16) * 16, Math.floor(id / 16) * 16, 16, 16);
   return {
     ...Object.fromEntries(
       Array.from({ length: TILE_COUNT }, (_, id) => [
@@ -127,10 +109,6 @@ export function scenerySprites() {
     used: crop(scenery, 48, 0, 16, 16),
     fireball: crop(enemies, 360, 184, 16, 16),
   };
-}
-
-function tile(id: number) {
-  return crop(tiles, (id % 16) * 16, Math.floor(id / 16) * 16, 16, 16);
 }
 
 export function movementPose(

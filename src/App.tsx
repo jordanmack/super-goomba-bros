@@ -14,13 +14,13 @@ import {
 } from "lucide-react";
 import { Simulation, emptyInput } from "./game/simulation";
 import type { Input, Mode } from "./game/simulation";
-import { GameRenderer } from "./game/renderer";
+import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
 
 type Runtime = {
   sim: Simulation;
-  renderer: GameRenderer;
+  renderer: PhaserGame;
   audio: GameAudio;
   input: Input;
   pulses: Partial<Input>;
@@ -81,6 +81,7 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");
   const [portrait, setPortrait] = useState("");
+  const [ready, setReady] = useState(false);
   const startAudio = (game: Runtime) => {
     void game.audio.start().catch(() => {
       game.audio.muted = true;
@@ -89,9 +90,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    let renderer: GameRenderer;
+    let renderer: PhaserGame;
     try {
-      renderer = new GameRenderer(host.current!);
+      renderer = new PhaserGame(host.current!);
     } catch {
       queueMicrotask(() =>
         setError(
@@ -101,7 +102,7 @@ export default function App() {
       return;
     }
     const sim = new Simulation();
-    const audio = new GameAudio();
+    const audio = new GameAudio(renderer.game);
     const game: Runtime = {
       sim,
       renderer,
@@ -112,17 +113,21 @@ export default function App() {
       clearInput: () => {},
     };
     runtime.current = game;
-    queueMicrotask(() => setPortrait(renderer.art.portrait));
+    let disposed = false;
+    void renderer.ready.then(() => {
+      if (disposed) return;
+      setPortrait(renderer.game.registry.get("portrait"));
+      setReady(true);
+      renderer.play!.tick = update;
+    }).catch((error: Error) => { if (!disposed) setError(error.message); });
     // Development-only access supports deterministic browser checks, never the built game.
     if (import.meta.env.DEV)
       (window as unknown as { __game: Runtime }).__game = game;
-    let frame = 0,
-      last = performance.now(),
-      accumulator = 0,
+    let accumulator = 0,
       ticks = 0;
-    const update = (now: number) => {
-      const delta = Math.min(0.1, (now - last) / 1000);
-      last = now;
+    const update = (now: number, frameDelta: number) => {
+      const delta = Math.min(0.1, frameDelta / 1000);
+      renderer.game.anims.globalTimeScale = game.paused ? 0 : 1;
       if (!game.paused) {
         accumulator += delta;
         while (accumulator >= 1 / 60) {
@@ -168,9 +173,7 @@ export default function App() {
           progress: Math.min(1, p.x / T.goalX),
         });
       }
-      frame = requestAnimationFrame(update);
     };
-    frame = requestAnimationFrame(update);
     const root = surface.current!;
     // Touch identifiers, pointer IDs, and keyboard keys are independent holds.
     const held = new Map<string, keyof Input | null>();
@@ -309,7 +312,7 @@ export default function App() {
         game.paused = !game.paused;
         setPaused(game.paused);
         clear();
-        if (game.paused) void audio.context?.suspend();
+        if (game.paused) audio.pause();
         else startAudio(game);
       }
     };
@@ -320,7 +323,7 @@ export default function App() {
       if (sim.mode === "playing" || sim.mode === "finishing") {
         game.paused = true;
         setPaused(true);
-        void audio.context?.suspend();
+        audio.pause();
       }
     };
     window.addEventListener("keydown", down);
@@ -347,7 +350,7 @@ export default function App() {
     };
     document.addEventListener("visibilitychange", visibility);
     return () => {
-      cancelAnimationFrame(frame);
+      disposed = true;
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
@@ -366,15 +369,15 @@ export default function App() {
       document.removeEventListener("lostpointercapture", pointerEnd, true);
       document.removeEventListener("visibilitychange", visibility);
       clear();
-      renderer.dispose();
       audio.dispose();
+      renderer.dispose();
       runtime.current = null;
     };
   }, []);
 
   const start = () => {
     const game = runtime.current;
-    if (!game) return;
+    if (!game || !ready) return;
     game.sim.reset();
     game.audio.resetMusic();
     game.clearInput();
@@ -389,7 +392,7 @@ export default function App() {
     game.paused = !game.paused;
     game.clearInput();
     setPaused(game.paused);
-    if (game.paused) void game.audio.context?.suspend();
+    if (game.paused) game.audio.pause();
     else startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
   };
@@ -487,7 +490,7 @@ export default function App() {
           <h1 aria-label="Super Goomba Bros">
             <span>SUPER</span>GOOMBA<span>BROS</span>
           </h1>
-          <button className="primary" onClick={start} disabled={!!error}>
+          <button className="primary" onClick={start} disabled={!!error || !ready}>
             <Play size={20} fill="currentColor" /> START GAME
           </button>
           <p className="edition">

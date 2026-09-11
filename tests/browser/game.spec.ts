@@ -17,7 +17,7 @@ test("Starman music follows only player and Mario stars and respects death cues"
   });
   const isStarMusic = () => page.evaluate(() => {
     const a = (window as any).__game.audio;
-    return a.music?.buffer === a.buffers.get("starman");
+    return a.music?.audioBuffer === a.buffers.get("starman");
   });
   const giveStar = (who: "player" | "mario" | "npc") => page.evaluate((who) => {
     const s = (window as any).__game.sim;
@@ -54,14 +54,14 @@ test("Starman music follows only player and Mario stars and respects death cues"
   await expect.poll(() => page.evaluate(() => {
     const a = (window as any).__game.audio;
     return !a.music && a.musicHoldUntil > a.context.currentTime &&
-      [...a.effects].some((source: any) => source.buffer === a.buffers.get("death"));
+      [...a.effects].some((source: any) => source.audioBuffer === a.buffers.get("death"));
   })).toBe(true);
   await expect.poll(isStarMusic, { timeout: 6000 }).toBe(true);
 });
 
 test("pipe segments and background bushes retain their map pixels", async ({ page }) => {
   await page.goto("/");
-  await page.waitForFunction(() => !!(window as any).__game);
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
   const cells = LEVEL.pipes.flatMap(({ column, height }) =>
     Array.from({ length: height }, (_, i) =>
       [column, column + 1].map((x) => [x, LEVEL.groundRow - height + i]),
@@ -69,7 +69,7 @@ test("pipe segments and background bushes retain their map pixels", async ({ pag
   );
   // The removed cover overlays also obscured several bushes near ground level.
   cells.push([13, 12], [24, 12], [43, 12]);
-  const mismatches = await page.evaluate((samples) => {
+  const mismatches = await page.evaluate(async (samples) => {
     const g = (window as any).__game;
     const s = g.sim;
     g.paused = true;
@@ -77,7 +77,7 @@ test("pipe segments and background bushes retain their map pixels", async ({ pag
     for (const n of s.npcs) n.alive = false;
     s.marioActive = false;
     const canvas = document.createElement("canvas");
-    const source = g.renderer.renderer.domElement;
+    const source = g.renderer.game.canvas;
     canvas.width = source.width;
     canvas.height = source.height;
     const ctx = canvas.getContext("2d")!;
@@ -88,12 +88,14 @@ test("pipe segments and background bushes retain their map pixels", async ({ pag
       const worldY = 14 + y * 32 + 17;
       s.player.body.position.x = worldX;
       g.renderer.render(s, 0);
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
       ctx.drawImage(source, 0, 0);
       const pixel = ctx.getImageData(
         Math.floor((worldX - s.cameraX) / g.renderer.width * canvas.width),
         Math.floor(worldY / 540 * canvas.height), 1, 1,
       ).data;
-      const expected = g.renderer.art.textures[`tile${id}`].image
+      const expected = g.renderer.game.textures.get(`tile${id}`).getSourceImage()
         .getContext("2d").getImageData(8, 8, 1, 1).data;
       if ([0, 1, 2].some((i) => Math.abs(pixel[i] - expected[i]) > 2))
         errors.push(`tile ${x},${y}: ${Array.from(pixel)} vs ${Array.from(expected)}`);
@@ -136,8 +138,8 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
     s.items[0].kind = "flower";
     s.collect(s.player, s.items[0]);
     g.renderer.render(s, 0);
-    const texture = g.renderer.actors.get(s.player.id).material.map;
-    const data = texture.image.getContext("2d").getImageData(0, 0, 16, 16).data;
+    const texture = g.renderer.play.actors.get(s.player.id).texture;
+    const data = texture.getSourceImage().getContext("2d").getImageData(0, 0, 16, 16).data;
     let white = 0,
       dark = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -150,8 +152,8 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
     s.mario.body.position.y = 350;
     s.setMarioStage(2);
     g.renderer.render(s, 0);
-    const marioTexture = g.renderer.actors.get(s.mario.id).material.map;
-    const marioData = marioTexture.image
+    const marioTexture = g.renderer.play.actors.get(s.mario.id).texture;
+    const marioData = marioTexture.getSourceImage()
       .getContext("2d")
       .getImageData(0, 0, 16, 32).data;
     let marioWhite = 0;
@@ -169,10 +171,10 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
     return {
       white,
       dark,
-      deathVisible: g.renderer.actors.get(s.mario.id).visible,
+      deathVisible: g.renderer.play.actors.get(s.mario.id).visible,
       deathPose:
-        g.renderer.actors.get(s.mario.id).material.map ===
-        g.renderer.art.textures.marioDeath,
+        g.renderer.play.actors.get(s.mario.id).texture ===
+        g.renderer.game.textures.get("marioDeath"),
       marioWhite,
     };
   });
@@ -191,7 +193,7 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
         return (
           !a.music &&
           [...a.effects].some(
-            (source: any) => source.buffer === a.buffers.get("death"),
+            (source: any) => source.audioBuffer === a.buffers.get("death"),
           )
         );
       }),
@@ -227,8 +229,8 @@ test("blocks bounce and disappear independently; item powers render with touch f
         fire: false,
       });
     g.renderer.render(s, 0);
-    const mesh = g.renderer.covers.get(brick.id);
-    const bounced = mesh.visible && mesh.position.y < brick.y;
+    const mesh = g.renderer.play.covers.get(brick.id);
+    const bounced = mesh.visible && mesh.y < brick.y;
     s.breakBrick(brick);
     g.renderer.render(s, 0);
     const disappeared = !mesh.visible;
@@ -243,7 +245,7 @@ test("blocks bounce and disappear independently; item powers render with touch f
     return {
       bounced,
       disappeared,
-      scale: g.renderer.actors.get(s.player.id).scale.x,
+      scale: g.renderer.play.actors.get(s.player.id).displayWidth,
     };
   });
   expect(blocks).toEqual({ bounced: true, disappeared: true, scale: 96 });
@@ -288,7 +290,7 @@ for (const viewport of [
     await page.goto("/");
     await expect(
       page.getByRole("button", { name: "START GAME" }),
-    ).toBeVisible();
+    ).toBeEnabled();
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: `test-results/title-${viewport.width}.png` });
     const colors = await page.locator("canvas").evaluate((canvas) => {
@@ -503,12 +505,13 @@ test("background music produces audio, pauses, and mutes", async ({ page }) => {
   await expect.poll(level).toBeGreaterThan(0.001);
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect
-    .poll(() => page.evaluate(() => (window as any).__game.audio.context.state))
-    .toBe("suspended");
+    .poll(() => page.evaluate(() => (window as any).__game.audio.music.isPaused))
+    .toBe(true);
+  await expect.poll(level).toBe(0);
   await page.getByRole("button", { name: "RESUME", exact: true }).click();
   await expect
-    .poll(() => page.evaluate(() => (window as any).__game.audio.context.state))
-    .toBe("running");
+    .poll(() => page.evaluate(() => (window as any).__game.audio.music.isPlaying))
+    .toBe(true);
   await expect.poll(level).toBeGreaterThan(0.001);
 });
 
@@ -543,12 +546,12 @@ test("original recordings decode and play as effects, with level clear replacing
     const valid = effects.every((event, i) => {
       a.event(event);
       return [...a.effects].some(
-        (source: any) => source.buffer === a.buffers.get(names[i]),
+        (source: any) => source.audioBuffer === a.buffers.get(names[i]),
       );
     });
     a.event("warn");
     const duration = a.buffers.get("overworld").duration;
-    const loop = a.music.loopEnd - a.music.loopStart;
+    const loop = a.music.markers.loop.duration;
     (window as any).__game.sim.finish();
     a.event("win");
     return {
@@ -557,7 +560,7 @@ test("original recordings decode and play as effects, with level clear replacing
       loop,
       musicStopped: a.music === null,
       clearPlaying: [...a.effects].some(
-        (source: any) => source.buffer === a.buffers.get("clear"),
+        (source: any) => source.audioBuffer === a.buffers.get("clear"),
       ),
     };
   });
@@ -595,9 +598,9 @@ test("game text and controls cannot be selected by dragging", async ({
 
 test("pixel sprite poses render at native proportions", async ({ page }) => {
   await page.goto("/");
-  await page.waitForFunction(() => !!(window as any).__game);
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
   const count = await page.evaluate(() => {
-    const textures = (window as any).__game.renderer.art.textures;
+    const textures = (window as any).__game.renderer.game.textures.list;
     const names = [
       "goomba",
       "goombaWalk",
@@ -618,7 +621,7 @@ test("pixel sprite poses render at native proportions", async ({ page }) => {
     ctx.fillRect(0, 0, 640, 160);
     ctx.imageSmoothingEnabled = false;
     names.forEach((name, i) => {
-      const image = textures[name].image;
+      const image = textures[name].getSourceImage();
       if (image.width !== 16) throw new Error(`Invalid sprite width: ${name}`);
       ctx.drawImage(
         image,
@@ -701,7 +704,7 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
     const g = (window as any).__game;
     return g.sim.covers
       .filter((c: any) => c.kind !== "brick")
-      .every((c: any) => !g.renderer.covers.has(c.id));
+      .every((c: any) => !g.renderer.play.covers.has(c.id));
   });
   expect(sceneryHasNoBrickOverlays).toBe(true);
 });
@@ -711,18 +714,16 @@ test("original 1-1 map art and collision anchors agree", async ({ page }) => {
   await page.getByRole("button", { name: "START GAME" }).click();
   const map = await page.evaluate(() => {
     const game = (window as any).__game;
-    const textures = game.renderer.art.textures;
+    const textures = game.renderer.game.textures.list;
     const tiles = Object.keys(textures).filter((k) => /^tile\d+$/.test(k));
     return {
       noBackdrop: !textures.world,
       tiles: tiles.length,
       native: tiles.every(
         (k) =>
-          textures[k].image.width === 16 && textures[k].image.height === 16,
+          textures[k].getSourceImage().width === 16 && textures[k].getSourceImage().height === 16,
       ),
-      instances: game.renderer.world.children
-        .filter((m: any) => m.isInstancedMesh)
-        .reduce((n: number, m: any) => n + m.count, 0),
+      instances: game.renderer.play.tiles.layer.data.flat().filter((tile: any) => tile.index >= 0).length,
       pipe: game.sim.covers.find((c: any) => c.kind === "pipe").body.bounds,
       question: game.sim.covers.find((c: any) => c.question && c.x === 528).body
         .bounds,

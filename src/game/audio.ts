@@ -1,4 +1,5 @@
 import type { GameEvent } from "./simulation";
+import type Phaser from "phaser";
 import overworld from "../assets/audio/overworld.mp3?inline";
 import starman from "../assets/audio/starman.mp3?inline";
 import jump from "../assets/audio/jumpsmall.wav?inline";
@@ -12,7 +13,7 @@ import fireball from "../assets/audio/fireball.wav?inline";
 import brick from "../assets/audio/breakblock.wav?inline";
 import powerup from "../assets/audio/powerup.wav?inline";
 
-const RECORDINGS = {
+export const RECORDINGS = {
   overworld,
   starman,
   jump,
@@ -42,98 +43,49 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
 };
 
 export class GameAudio {
-  context: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
-  private musicGain: GainNode | null = null;
-  private buffers = new Map<string, AudioBuffer>();
-  private loading: Promise<void> | null = null;
-  private music: AudioBufferSourceNode | null = null;
-  private effects = new Set<AudioBufferSourceNode>();
-  private silent = false;
-  private disposed = false;
-  private musicHoldUntil = 0;
+  private game: Phaser.Game;
+  music: Phaser.Sound.WebAudioSound | null = null;
+  effects = new Set<Phaser.Sound.WebAudioSound>();
+  musicHoldUntil = 0;
+  private pausedAt: number | null = null;
+  private voices = new Set<OscillatorNode>();
 
-  get muted() {
-    return this.silent;
+  constructor(game: Phaser.Game) { this.game = game; this.manager.volume = 0.8; this.manager.pauseOnBlur = false; }
+  get manager() { return this.game.sound as Phaser.Sound.WebAudioSoundManager; }
+  get context() { return this.manager.context as AudioContext; }
+  get masterGain() { return this.manager.masterVolumeNode; }
+  get buffers(): Map<string, AudioBuffer> {
+    return new Map(Object.keys(RECORDINGS).filter(key => this.game.cache.audio.exists(key)).map(key => [key, this.game.cache.audio.get(key)]));
   }
-  set muted(value: boolean) {
-    this.silent = value;
-    if (this.context && this.masterGain)
-      this.masterGain.gain.setValueAtTime(
-        value ? 0 : 0.8,
-        this.context.currentTime,
-      );
-  }
-
+  get muted() { return this.manager.mute; }
+  set muted(value: boolean) { this.manager.mute = value; }
   async start() {
-    if (this.disposed) return;
-    if (!this.context) {
-      this.context = new AudioContext();
-      this.masterGain = this.context.createGain();
-      this.masterGain.gain.value = this.muted ? 0 : 0.8;
-      this.masterGain.connect(this.context.destination);
-      this.musicGain = this.context.createGain();
-      this.musicGain.connect(this.masterGain);
-    }
-    await this.context.resume();
-    this.loading ??= this.load();
-    try {
-      await this.loading;
-    } catch (error) {
-      this.loading = null;
-      throw error;
+    await this.context?.resume();
+    if (this.pausedAt !== null) {
+      this.musicHoldUntil += this.context.currentTime - this.pausedAt;
+      this.pausedAt = null;
+      this.manager.resumeAll();
     }
   }
-
-  private async load() {
-    await Promise.all(
-      Object.entries(RECORDINGS).map(async ([name, url]) => {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Could not load ${name} audio`);
-        const buffer = await this.context!.decodeAudioData(
-          await response.arrayBuffer(),
-        );
-        if (!this.disposed) this.buffers.set(name, buffer);
-      }),
-    );
+  pause() {
+    if (this.pausedAt !== null) return;
+    this.pausedAt = this.context.currentTime;
+    this.manager.pauseAll();
+    for (const voice of this.voices) voice.stop();
+    this.voices.clear();
   }
-
-  private stopMusic() {
-    this.music?.stop();
-    this.music?.disconnect();
-    this.music = null;
-  }
-  private stopEffects() {
-    for (const source of this.effects) {
-      source.stop();
-      source.disconnect();
-    }
-    this.effects.clear();
-  }
+  private stopMusic() { this.music?.destroy(); this.music = null; }
   resetMusic() {
     this.stopMusic();
-    this.stopEffects();
-    this.musicHoldUntil = 0;
+    for (const effect of this.effects) effect.destroy();
+    this.effects.clear(); this.musicHoldUntil = 0; this.pausedAt = null;
   }
-
   private play(name: keyof typeof RECORDINGS) {
-    const buffer = this.buffers.get(name);
-    if (
-      !this.context ||
-      !buffer ||
-      this.muted ||
-      this.context.state !== "running"
-    )
-      return;
-    const source = this.context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.masterGain!);
-    source.start();
-    this.effects.add(source);
-    source.onended = () => {
-      this.effects.delete(source);
-      source.disconnect();
-    };
+    if (!this.game.cache.audio.exists(name)) return;
+    const effect = this.manager.add(name) as Phaser.Sound.WebAudioSound;
+    this.effects.add(effect);
+    effect.once("complete", () => { this.effects.delete(effect); effect.destroy(); });
+    effect.play();
   }
   private playWarning() {
     if (!this.context || !this.masterGain || this.muted) return;
@@ -147,49 +99,42 @@ export class GameAudio {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(0.16, now + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-    oscillator.connect(gain).connect(this.masterGain);
+    // Feed the custom voice through Phaser's mute and volume nodes too.
+    oscillator.connect(gain).connect(this.manager.masterMuteNode);
     oscillator.start(now);
     oscillator.stop(now + 0.21);
+    this.voices.add(oscillator);
+    oscillator.onended = () => { this.voices.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
   }
 
   event(event: GameEvent) {
-    if (event === "death" || event === "win" || event === "marioDeath")
-      this.resetMusic();
-    if ((event === "death" || event === "marioDeath") && this.context)
-      this.musicHoldUntil =
-        this.context.currentTime +
-        (this.buffers.get("death")?.duration ?? 2.7);
+    if (event === "death" || event === "win" || event === "marioDeath") {
+      this.stopMusic();
+      const name = event === "win" ? "clear" : "death";
+      // Concurrent deaths share a complete cue instead of cutting it off.
+      if ([...this.effects].some(effect => effect.key === name && effect.isPlaying)) return;
+      this.musicHoldUntil = this.context.currentTime + (this.buffers.get(name)?.duration ?? 2.8);
+    }
     if (event === "warn") this.playWarning();
     else this.play(EFFECTS[event]);
   }
 
   update(music = true, star = false) {
-    const buffer = this.buffers.get(star ? "starman" : "overworld");
-    if (this.music && this.music.buffer !== buffer) this.stopMusic();
-    if (
-      music &&
-      !this.music &&
-      buffer &&
-      this.context?.state === "running" &&
-      this.context.currentTime >= this.musicHoldUntil
-    ) {
-      this.music = this.context.createBufferSource();
-      this.music.buffer = buffer;
-      this.music.loop = true;
-      // Loop inside each recording, past the opening silence and before its fade.
-      this.music.loopStart = star ? 0.53 : 5;
-      this.music.loopEnd = star ? 13.33 : 91.4;
-      this.music.connect(this.musicGain!);
-      this.music.start(0, star ? 0.53 : 1.02);
-    } else if (!music) this.stopMusic();
-    if (this.context && this.musicGain)
-      this.musicGain.gain.setTargetAtTime(0.55, this.context.currentTime, 0.1);
+    const key = star ? "starman" : "overworld";
+    if (this.music && (this.music.key !== key || !music)) this.stopMusic();
+    if (!music || this.music || !this.game.cache.audio.exists(key) || this.context?.state !== "running" || this.context.currentTime < this.musicHoldUntil) return;
+    const track = this.manager.add(key, { volume: 0.55 }) as Phaser.Sound.WebAudioSound;
+    this.music = track;
+    track.addMarker({ name: "loop", start: star ? 0.53 : 5, duration: star ? 12.8 : 86.4, config: { loop: true, volume: 0.55 } });
+    if (star) track.play("loop");
+    else {
+      track.addMarker({ name: "intro", start: 1.02, duration: 3.98, config: { volume: 0.55 } });
+      track.once("complete", () => { if (this.music === track) track.play("loop"); });
+      track.play("intro");
+    }
   }
 
   dispose() {
-    this.disposed = true;
     this.resetMusic();
-    this.buffers.clear();
-    void this.context?.close();
   }
 }
