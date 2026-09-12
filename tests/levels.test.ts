@@ -9,6 +9,7 @@ import {
   parseTables,
 } from "../scripts/extract-levels.mjs";
 import { WORLD_1_1 } from "./fixtures/world-1-1.ts";
+import { isFlagpoleTile, isSolidTile } from "../src/game/levels.ts";
 
 const root = new URL("../src/assets/levels/", import.meta.url);
 const read = (name: string) =>
@@ -60,6 +61,20 @@ test("World 1-1 decoded collision anchors match the existing reference map", () 
     ),
     sorted(stairs),
   );
+});
+
+test("flagpole shaft tiles are scenery and World 1-1 keeps its original pole", () => {
+  assert.equal(isFlagpoleTile(36), true);
+  assert.equal(isFlagpoleTile(37), true);
+  assert.equal(isSolidTile(36), false);
+  assert.equal(isSolidTile(37), false);
+  assert.equal(isSolidTile(97), true);
+  const area = decodeArea(tables, 0x25);
+  const pole = area.objects.find((o) => o.opcode === 35);
+  assert.equal(pole?.column, 198);
+  assert.equal(area.tiles[2][198], 36);
+  assert.equal(area.tiles[3][198], 37);
+  assert.equal(area.tiles[12][198], 97);
 });
 
 test("all 32 campaign levels and 34 shared areas reproduce the bundled data", () => {

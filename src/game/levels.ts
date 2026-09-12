@@ -10,7 +10,11 @@ export function areaData(id: string): Area {
   if (!area) throw new Error(`Unknown bundled area: ${id}`);
   return area as Area;
 }
+export function isFlagpoleTile(id: number) {
+  return id === 36 || id === 37;
+}
 export function isSolidTile(id: number) {
+  if (isFlagpoleTile(id)) return false;
   return (
     (id >= 16 && id <= 34) ||
     (id >= 81 && id <= 94) ||

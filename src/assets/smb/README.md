@@ -43,6 +43,7 @@ Mario also has idle, skid, jump, and death poses. Goombas and Koopas use their
 two-frame cycles. Fire Goombas and Koopas use a white power-up palette while
 retaining their original faces and outlines.
 
-Items, coins, platforms, and fireballs also use original sprite frames.
+Items, coins, platforms, fireballs, and flagpole flags also use original sprite
+frames. The Goomba flag recolors the original Mario flag.
 Small fireballs use the native eight-pixel fireball image. Castle doors use
 original metatiles. No log graphics or hiding places are included.

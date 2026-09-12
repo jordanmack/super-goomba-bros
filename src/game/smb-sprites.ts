@@ -110,7 +110,33 @@ function pixelExclaim() {
   return canvas;
 }
 
+function goombaFlag(source: HTMLCanvasElement) {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext("2d")!;
+  context.drawImage(source, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const [r, g, b, alpha] = pixels.data.slice(i, i + 4);
+    if (!alpha) continue;
+    const x = (i / 4) % canvas.width;
+    if (r > 200 && g > 200 && b > 200) {
+      pixels.data[i] = 228;
+      pixels.data[i + 1] = 92;
+      pixels.data[i + 2] = 16;
+    } else if (x > 3 && r > 180 && g < 100 && b < 100) {
+      pixels.data[i] = 252;
+      pixels.data[i + 1] = 216;
+      pixels.data[i + 2] = 168;
+    }
+  }
+  context.putImageData(pixels, 0, 0);
+  return canvas;
+}
+
 export function scenerySprites({ enemies, items }: SpriteSources) {
+  const marioFlag = crop(items, 128, 0, 16, 16);
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
     platform: crop(items, 80, 24, 48, 8),
@@ -118,6 +144,8 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     mushroom: crop(items, 0, 0, 16, 16),
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
+    marioFlag,
+    goombaFlag: goombaFlag(marioFlag),
     exclaim: pixelExclaim(),
   };
 }

@@ -133,6 +133,8 @@ export class Play extends Phaser.Scene {
         .setDisplaySize(w, h)
         .setDepth(depth)
         .setTint(tint)
+        .setFlipX(false)
+        .setRotation(0)
         .setVisible(true);
       return sprite;
     };
@@ -158,6 +160,16 @@ export class Play extends Phaser.Scene {
         .setFrame(palette + 75)
         .setDisplaySize(32, 32);
     }
+    const pole = room.flagpole;
+    if (pole?.claim)
+      image(
+        pole.x - 8,
+        pole.bottom + (pole.top - pole.bottom) * pole.raise,
+        32,
+        32,
+        pole.claim === "mario" ? "marioFlag" : "goombaFlag",
+        6,
+      ).setFlipX(true);
     for (const f of sim.fireballs)
       image(
         f.x,

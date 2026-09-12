@@ -249,6 +249,8 @@ export class Simulation {
   fireCooldown = 2;
   cameraX = 0;
   viewWidth = 960;
+  private flagPrevPlayerX = 0;
+  private flagPrevMarioX = 0;
   private nextId = 1;
   private jumped = false;
   private playerJumping = false;
@@ -325,6 +327,8 @@ export class Simulation {
     this.jumped = false;
     this.playerJumping = false;
     this.bouncedNpcs.clear();
+    this.flagPrevPlayerX = this.player.body.position.x;
+    this.flagPrevMarioX = this.mario.body.position.x;
   }
 
   private actor(x: number, kind: Actor["kind"]): Actor {
@@ -1161,6 +1165,7 @@ export class Simulation {
     for (const a of [this.player, ...this.npcs])
       if (a.alive && !a.saved && a.body.position.y > 640) this.kill(a, false);
     this.updateFireballs(dt);
+    this.updateFlagpoles(dt);
     this.doomed = rescueImpossible(this.saved, this.living(), T.required);
     if (this.mode === "finishing") {
       this.finishLeft -= dt;
@@ -1169,6 +1174,60 @@ export class Simulation {
         this.mode = "won";
       }
     }
+  }
+
+  private updateFlagpoles(dt: number) {
+    const playerX = this.player.body.position.x;
+    const marioX = this.mario.body.position.x;
+    const prevPlayerX = this.flagPrevPlayerX;
+    const prevMarioX = this.flagPrevMarioX;
+    this.flagPrevPlayerX = playerX;
+    this.flagPrevMarioX = marioX;
+    for (const room of this.rooms.values()) {
+      const pole = room.flagpole;
+      if (!pole) continue;
+      if (!pole.claim) {
+        const playerPass = this.flagPass(
+          this.player,
+          room,
+          pole.x,
+          prevPlayerX,
+          playerX,
+          true,
+        );
+        const marioPass = this.flagPass(
+          this.mario,
+          room,
+          pole.x,
+          prevMarioX,
+          marioX,
+          this.marioActive,
+        );
+        if (playerPass !== undefined && marioPass !== undefined)
+          pole.claim = playerPass <= marioPass ? "goomba" : "mario";
+        else if (playerPass !== undefined) pole.claim = "goomba";
+        else if (marioPass !== undefined) pole.claim = "mario";
+      }
+      if (pole.claim)
+        pole.raise = Math.min(1, pole.raise + dt / T.flagRaiseSeconds);
+    }
+  }
+  private flagPass(
+    actor: Actor,
+    room: Room,
+    poleX: number,
+    prevX: number,
+    currX: number,
+    eligible: boolean,
+  ) {
+    if (!eligible || !actor.alive || actor.saved || this.roomFor(actor) !== room)
+      return;
+    if (prevX < poleX && currX >= poleX) {
+      const span = currX - prevX;
+      return span === 0 ? 0 : (poleX - prevX) / span;
+    }
+    if (actor.body.bounds.min.x <= poleX && actor.body.bounds.max.x >= poleX)
+      return 1;
   }
 
   private updateNpcs(dt: number) {

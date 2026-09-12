@@ -38,6 +38,12 @@ function at(s: Simulation, x: number, y = 415) {
   Body.setVelocity(s.player.body, { x: 0, y: 0 });
 }
 
+function poleOf(s: Simulation) {
+  const pole = s.activeRoom.flagpole;
+  assert.ok(pole, "stage has a flagpole");
+  return pole;
+}
+
 function give(s: Simulation, actor: Actor, kind: ItemKind) {
   const box = s.obstacles.find((c) => c.question && !c.used)!;
   s.hitBlock(box, s.player);
@@ -1183,6 +1189,130 @@ test("safe player finish counts only arrivals before a fixed cutoff", () => {
   });
   tick(s, 2);
   assert.equal(s.saved, T.required + 1);
+});
+
+test("first player past the flagpole raises a Goomba flag", () => {
+  const s = game();
+  const pole = poleOf(s);
+  assert.equal(pole.claim, null);
+  assert.equal(pole.raise, 0);
+  Body.setPosition(s.player.body, { x: pole.x - 40, y: pole.top });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(pole.claim, null);
+  Body.setPosition(s.player.body, { x: pole.x, y: pole.top });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(pole.claim, "goomba");
+  Body.setPosition(s.player.body, { x: pole.x + 80, y: pole.top });
+  tick(s, 1);
+  assert.equal(pole.claim, "goomba");
+  assert.equal(pole.raise, 1);
+});
+
+test("first Mario past the flagpole raises a Mario flag", () => {
+  const s = game();
+  const pole = poleOf(s);
+  s.cameraX = pole.x - 400;
+  s.marioActive = true;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: pole.x - 40, y: pole.top });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(pole.claim, null);
+  Body.setPosition(s.mario.body, { x: pole.x, y: pole.top });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(pole.claim, "mario");
+  Body.setPosition(s.player.body, { x: pole.x, y: pole.top });
+  tick(s, dt);
+  assert.equal(pole.claim, "mario");
+  assert.ok(pole.raise > 0);
+});
+
+test("Mario crossing the flagpole first in the same step raises his flag", () => {
+  const s = game();
+  const pole = poleOf(s);
+  s.cameraX = pole.x - 400;
+  s.marioActive = true;
+  s.marioIgnore = 1e6;
+  s.marioChase = 0;
+  s.marioLook = 1e6;
+  s.marioPause = 1e6;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.player.body, { x: pole.x - 80, y: pole.top });
+  Body.setPosition(s.mario.body, { x: pole.x - 20, y: pole.top });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(pole.claim, null);
+  Body.setPosition(s.player.body, { x: pole.x + 40, y: pole.top });
+  Body.setPosition(s.mario.body, { x: pole.x + 40, y: pole.top });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(pole.claim, "mario");
+});
+
+test("NPCs passing the flagpole do not claim it", () => {
+  const s = game();
+  const pole = poleOf(s);
+  const n = s.npcs[0];
+  n.warned = true;
+  Body.setPosition(n.body, { x: pole.x, y: pole.top });
+  Body.setVelocity(n.body, { x: T.walkSpeed, y: 0 });
+  tick(s, 0.5);
+  assert.equal(pole.claim, null);
+  assert.equal(pole.raise, 0);
+  Body.setPosition(s.player.body, { x: pole.x, y: pole.top });
+  tick(s, dt);
+  assert.equal(pole.claim, "goomba");
+});
+
+test("flagpole shaft adds no collision and does not change velocity", () => {
+  const poleX = poleOf(game()).x;
+  const sample = (x: number) => {
+    const s = game();
+    Body.setPosition(s.player.body, { x, y: poleOf(s).top });
+    Body.setVelocity(s.player.body, { x: T.walkSpeed, y: 1 });
+    tick(s, dt, { right: true });
+    return {
+      vx: s.player.body.velocity.x,
+      vy: s.player.body.velocity.y,
+      x: s.player.body.position.x,
+    };
+  };
+  const clear = sample(200);
+  const through = sample(poleX);
+  assert.equal(through.vx, T.walkSpeed);
+  assert.equal(through.vx, clear.vx);
+  assert.equal(through.vy, clear.vy);
+  assert.ok(through.x > poleX);
+  const s = game();
+  const pole = poleOf(s);
+  const shaftHits = s.activeRoom.solids.filter(
+    (solid) =>
+      !solid.headOnly &&
+      solid.bounds.min.x < pole.x + 8 &&
+      solid.bounds.max.x > pole.x - 8 &&
+      solid.bounds.min.y < pole.bottom &&
+      solid.bounds.max.y > pole.top,
+  );
+  assert.equal(shaftHits.length, 0);
+});
+
+test("claiming the flagpole still leaves the castle door as the goal", () => {
+  const s = game();
+  const pole = poleOf(s);
+  s.npcs.slice(0, T.required).forEach((n) => s.save(n));
+  Body.setPosition(s.player.body, { x: pole.x, y: pole.top });
+  tick(s, dt);
+  assert.equal(pole.claim, "goomba");
+  assert.equal(s.mode, "playing");
+  at(s, GOAL_X + 5);
+  tick(s, dt);
+  assert.equal(s.mode, "finishing");
+  assert.equal(pole.claim, "goomba");
 });
 
 test("impossibility includes all living and saved NPCs", () => {

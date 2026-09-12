@@ -6,6 +6,15 @@ import type { Actor, Obstacle } from "./simulation.ts";
 import { swimField } from "./navigation.ts";
 import type { Point } from "./physics.ts";
 
+export type FlagClaim = "goomba" | "mario";
+export type Flagpole = {
+  x: number;
+  top: number;
+  bottom: number;
+  claim: FlagClaim | null;
+  raise: number;
+};
+
 export class Room {
   data: Area;
   offset: number;
@@ -13,6 +22,7 @@ export class Room {
   solids: Body[] = [];
   gaps: [number, number][];
   goalX: number;
+  flagpole?: Flagpole;
   platforms: {
     body: Body;
     origin: { x: number; y: number };
@@ -33,6 +43,15 @@ export class Room {
     this.gaps = areaGaps(this.data, offset);
     this.goalX =
       offset + (this.data.goal?.column ?? this.data.width - 3) * 32 + 16;
+    const pole = this.data.objects.find((o) => o.opcode === 35);
+    if (pole)
+      this.flagpole = {
+        x: offset + pole.column * 32 + 16,
+        top: MAP_TOP + 3 * 32 + 16,
+        bottom: MAP_TOP + 11 * 32 + 16,
+        claim: null,
+        raise: 0,
+      };
     this.data.tiles.forEach((row, y) =>
       row.forEach((tile, x) => {
         if (tile === 194 || tile === 195)
