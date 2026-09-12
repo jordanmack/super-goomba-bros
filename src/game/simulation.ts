@@ -94,6 +94,7 @@ export type Particle = {
   size: number;
   color: string;
   settled: boolean;
+  blood: boolean;
 };
 export type Fireball = {
   id: number;
@@ -810,7 +811,7 @@ export class Simulation {
   }
 
   private burst(x: number, y: number, blood: boolean) {
-    const count = blood ? 32 : 12;
+    const count = blood ? T.bloodBurst : T.brickBurst;
     for (let i = 0; i < count; i++) {
       // Cosmetic randomness must not alter AI decisions or seeded gameplay.
       const angle = Math.random() * Math.PI * 2;
@@ -831,6 +832,7 @@ export class Simulation {
             ? "#c84c0c"
             : "#fcbcb0",
         settled: false,
+        blood,
       });
     }
     if (this.particles.length > 1200)
@@ -858,6 +860,7 @@ export class Simulation {
       p.vy += 520 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
+      if (!p.blood) continue;
       const floor = this.solids.find(
         (s) =>
           p.x >= s.bounds.min.x &&
@@ -870,7 +873,9 @@ export class Simulation {
         p.settled = true;
       }
     }
-    this.particles = this.particles.filter((p) => p.age < p.life);
+    this.particles = this.particles.filter((p) =>
+      p.blood ? p.age < p.life : p.y < 540,
+    );
   }
   save(n: Actor) {
     if (!n.alive || n.saved) return;

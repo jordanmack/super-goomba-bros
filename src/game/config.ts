@@ -43,6 +43,8 @@ export const TUNING = {
   pipeHeight: 64,
   brickSize: 32,
   groundY: 430,
+  bloodBurst: 64,
+  brickBurst: 12,
 } as const;
 
 export const PHRASES = [

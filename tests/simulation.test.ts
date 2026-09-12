@@ -297,7 +297,8 @@ test("Mario avoids stars and touching a star holder kills him until his return",
   assert.equal(s.marioActive, false);
   assert.equal(s.mario.alive, false);
   assert.ok(s.player.alive);
-  assert.ok(s.particles.length >= 32);
+  assert.ok(s.particles.length > 32);
+  assert.equal(s.particles.length, T.bloodBurst);
   tick(s, T.marioDefeatSeconds + dt);
   assert.ok(s.marioActive && s.mario.alive);
 });
@@ -1069,16 +1070,37 @@ test("Mario breaks ordinary bricks by striking from below, not merely standing n
   Body.setVelocity(s.mario.body, { x: 0, y: -7 });
   tick(s, dt);
   assert.equal(brick.broken, true);
-  assert.ok(s.particles.length >= 12);
+  assert.equal(s.particles.length, T.brickBurst);
+  assert.equal(T.brickBurst, 12);
+});
+
+test("brick debris does not settle and leaves the playfield", () => {
+  const s = game();
+  const brick = s.obstacles.find(
+    (c) => c.kind === "brick" && !c.question && c.y > 300,
+  )!;
+  s.breakBrick(brick);
+  assert.equal(s.particles.length, T.brickBurst);
+  assert.ok(s.particles.every((p) => !p.blood && !p.settled));
+  let fellPastGround = false;
+  for (let i = 0; i < 300 && s.particles.length; i++) {
+    tick(s, dt);
+    assert.ok(s.particles.every((p) => !p.settled && !p.blood && p.y < 540));
+    if (s.particles.some((p) => p.y > T.groundY)) fellPastGround = true;
+  }
+  assert.ok(fellPastGround);
+  assert.equal(s.particles.length, 0);
 });
 
 test("kills emit blood once, stains settle, and all effects clear on restart", () => {
   const s = game();
   const n = s.npcs[0];
   s.kill(n);
-  assert.equal(s.particles.length, 32);
+  assert.ok(s.particles.length > 32);
+  assert.equal(s.particles.length, T.bloodBurst);
   s.kill(n);
-  assert.equal(s.particles.length, 32);
+  assert.equal(s.particles.length, T.bloodBurst);
+  assert.ok(s.particles.every((p) => p.blood));
   assert.ok(
     s.particles.every((p) => p.color === "#bc0018" || p.color === "#ff2030"),
   );
