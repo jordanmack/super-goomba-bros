@@ -79,6 +79,7 @@ export class GameAudio {
   private disabled = false;
   private cue: Phaser.Sound.WebAudioSound | null = null;
   private cueQueue: ("death" | "clear")[] = [];
+  private musicResume: { key: string; seek: number } | null = null;
 
   constructor(game: Phaser.Game) {
     this.game = game;
@@ -135,12 +136,24 @@ export class GameAudio {
     for (const voice of this.voices) voice.stop();
     this.voices.clear();
   }
-  private stopMusic() {
+  private stopMusic(saveResume = false) {
+    if (
+      saveResume &&
+      this.music &&
+      (this.music.isPlaying || this.music.isPaused)
+    ) {
+      const marker = this.music.currentMarker;
+      this.musicResume = {
+        key: this.music.key,
+        seek: (marker?.start ?? 0) + this.music.seek,
+      };
+    }
     this.music?.destroy();
     this.music = null;
   }
   resetMusic(preserveCue = false) {
     this.stopMusic();
+    this.musicResume = null;
     for (const voice of this.voices) voice.stop();
     this.voices.clear();
     for (const effect of this.effects) {
@@ -167,8 +180,8 @@ export class GameAudio {
     effect.play();
     return effect;
   }
-  private playCue(name: "death" | "clear") {
-    this.stopMusic();
+  private playCue(name: "death" | "clear", saveResume = false) {
+    this.stopMusic(saveResume);
     if (this.cue) {
       if (this.cue.key !== name && !this.cueQueue.includes(name))
         this.cueQueue.push(name);
@@ -211,7 +224,7 @@ export class GameAudio {
   event(event: GameEvent) {
     if (!this.available) return;
     if (event === "death" || event === "win" || event === "marioDeath") {
-      this.playCue(event === "win" ? "clear" : "death");
+      this.playCue(event === "win" ? "clear" : "death", event === "marioDeath");
       return;
     }
     if (event === "warn") this.playWarning();
@@ -226,6 +239,7 @@ export class GameAudio {
         ? areaType
         : "overworld";
     if (this.music && (this.music.key !== key || !music)) this.stopMusic();
+    if (!music) this.musicResume = null;
     if (
       !music ||
       this.music ||
@@ -247,19 +261,35 @@ export class GameAudio {
       duration: loop.duration,
       config: { loop: true, volume: 0.55 },
     });
-    if (loop.intro === loop.start) track.play("loop");
-    else {
-      track.addMarker({
-        name: "intro",
-        start: loop.intro,
-        duration: loop.start - loop.intro,
-        config: { volume: 0.55 },
-      });
-      track.once("complete", () => {
-        if (this.music === track) track.play("loop");
-      });
-      track.play("intro");
+    const resume =
+      this.musicResume?.key === key ? this.musicResume.seek : null;
+    this.musicResume = null;
+    const resumeAt =
+      resume !== null && Number.isFinite(resume) ? resume : null;
+    const useLoop =
+      loop.intro === loop.start ||
+      (resumeAt !== null && resumeAt >= loop.start);
+    if (useLoop) {
+      const period = loop.duration;
+      const loopSeek =
+        resumeAt === null
+          ? 0
+          : (((resumeAt - loop.start) % period) + period) % period;
+      track.play("loop", loopSeek ? { seek: loopSeek } : undefined);
+      return;
     }
+    track.addMarker({
+      name: "intro",
+      start: loop.intro,
+      duration: loop.start - loop.intro,
+      config: { volume: 0.55 },
+    });
+    track.once("complete", () => {
+      if (this.music === track) track.play("loop");
+    });
+    const introSeek =
+      resumeAt === null ? 0 : Math.max(0, resumeAt - loop.intro);
+    track.play("intro", introSeek ? { seek: introSeek } : undefined);
   }
 
   dispose() {

@@ -87,6 +87,120 @@ test("Starman music follows only player and Mario stars and respects death cues"
   await expect.poll(isStarMusic, { timeout: 6000 }).toBe(true);
 });
 
+test("area music resumes after Mario death from the saved seek", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.waitForFunction(
+    () => (window as any).__game.audio.buffers.size === 15,
+  );
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.sim.step = () => {};
+    g.sim.marioReturn = 1e6;
+  });
+  const musicState = () =>
+    page.evaluate(() => {
+      const a = (window as any).__game.audio;
+      const music = a.music;
+      return {
+        key: music?.key ?? null,
+        marker: music?.currentMarker?.name ?? null,
+        seek: music?.isPlaying ? music.seek : -1,
+        starman: music?.audioBuffer === a.buffers.get("starman"),
+        deathCue: [...a.effects].some(
+          (source: any) => source.audioBuffer === a.buffers.get("death"),
+        ),
+      };
+    });
+  await expect
+    .poll(
+      async () => {
+        const state = await musicState();
+        return (
+          state.key === "overworld" &&
+          state.marker === "loop" &&
+          state.seek > 2
+        );
+      },
+      { timeout: 12000 },
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    const a = g.audio;
+    const music = a.music;
+    (window as any).__savedMusic = {
+      key: music.key,
+      marker: music.currentMarker?.name ?? null,
+      seek: music.seek,
+    };
+    (window as any).__resumedMusic = null;
+    (window as any).__sawDeathCue = false;
+    const tick = () => {
+      const audio = g.audio;
+      const deathCue = [...audio.effects].some(
+        (source: any) => source.audioBuffer === audio.buffers.get("death"),
+      );
+      if (deathCue && !audio.music) (window as any).__sawDeathCue = true;
+      if (
+        (window as any).__sawDeathCue &&
+        audio.music?.isPlaying &&
+        !(window as any).__resumedMusic
+      ) {
+        (window as any).__resumedMusic = {
+          key: audio.music.key,
+          marker: audio.music.currentMarker?.name ?? null,
+          seek: audio.music.seek,
+        };
+        return;
+      }
+      if (!(window as any).__resumedMusic) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    g.sim.events.push("marioDeath");
+  });
+  await expect
+    .poll(
+      () => page.evaluate(() => !!(window as any).__resumedMusic),
+      { timeout: 6000 },
+    )
+    .toBe(true);
+  const pair = await page.evaluate(() => ({
+    saved: (window as any).__savedMusic,
+    resumed: (window as any).__resumedMusic,
+    sawDeathCue: (window as any).__sawDeathCue,
+  }));
+  expect(pair.sawDeathCue).toBe(true);
+  expect(pair.saved.seek).toBeGreaterThan(2);
+  expect(pair.resumed.key).toBe(pair.saved.key);
+  expect(pair.resumed.marker).toBe(pair.saved.marker);
+  expect(pair.resumed.seek).toBeGreaterThan(0);
+  expect(Math.abs(pair.resumed.seek - pair.saved.seek)).toBeLessThan(0.25);
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    const box = s.obstacles.find((c: any) => c.question && !c.used);
+    s.hitBlock(box, s.player);
+    const item = s.items.at(-1);
+    item.kind = "star";
+    s.collect(s.player, item);
+  });
+  await expect.poll(async () => (await musicState()).starman).toBe(true);
+  await page.evaluate(() => {
+    (window as any).__game.sim.events.push("marioDeath");
+  });
+  await expect
+    .poll(async () => {
+      const state = await musicState();
+      return !state.key && state.deathCue;
+    })
+    .toBe(true);
+  await expect
+    .poll(async () => (await musicState()).starman, { timeout: 6000 })
+    .toBe(true);
+});
+
 test("pipe segments and background bushes retain their map pixels", async ({
   page,
 }) => {
