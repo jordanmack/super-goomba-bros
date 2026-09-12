@@ -813,6 +813,7 @@ export class Simulation {
 
   hitBlock(c: Obstacle, hitter: Actor) {
     if (c.broken || c.kind !== "brick" || c.bounce > 0) return;
+    this.collectCoinsOnBlock(c, hitter);
     const prize = c.content === "1-up" || (c.hidden && c.content === "coin");
     if (
       !c.question &&
@@ -865,6 +866,26 @@ export class Simulation {
       direction: facing,
       age: 0,
     });
+  }
+
+  private collectCoin(coin: { collected: boolean }, collector: Actor) {
+    if (coin.collected || !collector.alive || collector.saved) return;
+    coin.collected = true;
+    if (collector === this.player) {
+      this.coins++;
+      this.events.push("coin");
+    }
+  }
+
+  private collectCoinsOnBlock(block: Obstacle, collector: Actor) {
+    const half = T.brickSize / 2;
+    for (const room of this.rooms.values())
+      for (const coin of room.coins)
+        if (
+          Math.abs(coin.x - block.x) < half &&
+          Math.abs(coin.y - (block.y - T.brickSize)) < half
+        )
+          this.collectCoin(coin, collector);
   }
 
   collect(a: Actor, item: Item) {
@@ -1379,13 +1400,7 @@ export class Simulation {
             Math.abs(a.body.position.x - coin.x) < a.body.width / 2 + 8 &&
             Math.abs(a.body.position.y - coin.y) < a.body.height / 2 + 12,
         );
-        if (collector) {
-          coin.collected = true;
-          if (collector === this.player) {
-            this.coins++;
-            this.events.push("coin");
-          }
-        }
+        if (collector) this.collectCoin(coin, collector);
       }
     this.bouncePlayerOffNpcs(playerBottom, playerFalling, prevNpcTops);
     this.pruneBouncedNpcs();

@@ -549,6 +549,52 @@ test("question blocks release each random item once, including on Mario hits", (
   }
 });
 
+test("head hits collect coins sitting on the bumped block", () => {
+  const s = game();
+  const room = s.loadRoom("42");
+  const sitting = room.coins.flatMap((coin) => {
+    const block = room.obstacles.find(
+      (c) =>
+        c.kind === "brick" &&
+        !c.question &&
+        Math.abs(coin.x - c.x) < T.brickSize / 2 &&
+        Math.abs(coin.y - (c.y - T.brickSize)) < T.brickSize / 2,
+    );
+    return block ? [{ coin, block }] : [];
+  });
+  assert.ok(sitting.length >= 3);
+  const [small, broken, marioHit] = sitting;
+  const stray = room.coins.find(
+    (coin) =>
+      !coin.collected && Math.abs(coin.x - small.block.x) >= T.brickSize / 2,
+  );
+  assert.ok(stray);
+  s.hitBlock(small.block, s.player);
+  assert.equal(small.coin.collected, true);
+  assert.equal(small.block.broken, false);
+  assert.ok(small.block.bounce > 0);
+  assert.equal(s.coins, 1);
+  assert.ok(s.events.includes("coin"));
+  assert.equal(stray.collected, false);
+  assert.equal(s.warned, 0);
+  assert.equal(s.saved, 0);
+  const box = s.obstacles.find((c) => c.question && !c.used)!;
+  const qCoin = { x: box.x, y: box.y - T.brickSize, collected: false };
+  s.activeRoom.coins.push(qCoin);
+  s.hitBlock(box, s.player);
+  assert.equal(qCoin.collected, true);
+  assert.equal(box.broken, false);
+  assert.equal(s.coins, 2);
+  give(s, s.player, "mushroom");
+  s.hitBlock(broken.block, s.player);
+  assert.equal(broken.coin.collected, true);
+  assert.equal(broken.block.broken, true);
+  assert.equal(s.coins, 3);
+  s.hitBlock(marioHit.block, s.mario);
+  assert.equal(marioHit.coin.collected, true);
+  assert.equal(s.coins, 3);
+});
+
 test("player coins increment a counter without changing rescue scores", () => {
   const s = game();
   const room = s.loadRoom("42");

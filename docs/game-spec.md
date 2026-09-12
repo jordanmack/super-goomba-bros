@@ -184,6 +184,7 @@ spontaneously change his active power. Restarting a stage resets its timer.
 Floating bricks and question blocks are solid. A small-player head hit bounces
 a brick without breaking it. A giant-player or Mario head hit breaks an ordinary
 brick and removes its collision. Breaking a brick under an NPC does not kill it.
+A bounce or break from a head hit collects each coin sitting on that block.
 
 Visible question blocks that are not hidden 1-up or hidden coin blocks release
 one random star, mushroom, or flower and become a used block. Original hidden
