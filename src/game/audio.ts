@@ -17,6 +17,8 @@ import brick from "../assets/audio/breakblock.wav?inline";
 import powerup from "../assets/audio/powerup.wav?inline";
 import oneUp from "../assets/audio/1-up.wav?inline";
 import gameover from "../assets/audio/gameover.wav?inline";
+import pause from "../assets/audio/pause.wav?inline";
+import appear from "../assets/audio/powerup_appears.wav?inline";
 
 export const RECORDINGS = {
   overworld,
@@ -36,6 +38,8 @@ export const RECORDINGS = {
   powerup,
   oneUp,
   gameover,
+  pause,
+  appear,
 };
 const MUSIC_LOOPS: Record<
   string,
@@ -73,6 +77,7 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   splat: "stomp",
   oneUp: "oneUp",
   gameover: "gameover",
+  appear: "appear",
 };
 
 export class GameAudio {
@@ -133,6 +138,7 @@ export class GameAudio {
       this.musicHoldUntil += this.context.currentTime - this.pausedAt;
       this.pausedAt = null;
       this.manager.resumeAll();
+      this.play("pause");
     }
   }
   pause() {
@@ -141,6 +147,8 @@ export class GameAudio {
     this.manager.pauseAll();
     for (const voice of this.voices) voice.stop();
     this.voices.clear();
+    // Start the cue after pauseAll so the manager cannot stop it.
+    this.play("pause");
   }
   private stopMusic(saveResume = false) {
     if (

@@ -99,7 +99,8 @@ export type GameEvent =
   | "splat"
   | "win"
   | "oneUp"
-  | "gameover";
+  | "gameover"
+  | "appear";
 export type Particle = {
   x: number;
   y: number;
@@ -843,6 +844,7 @@ export class Simulation {
     if (c.question) {
       this.reveal(c);
       this.spawnItem(c, this.rollItem(), hitter.facing);
+      this.events.push("appear");
     }
   }
 

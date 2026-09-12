@@ -14,7 +14,7 @@ test("Starman music follows only player and Mario stars and respects death cues"
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 17,
+    () => (window as any).__game.audio.buffers.size === 19,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -96,7 +96,7 @@ test("area music resumes after Mario death from the saved seek", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 17,
+    () => (window as any).__game.audio.buffers.size === 19,
   );
   await page.evaluate(() => {
     const g = (window as any).__game;
@@ -284,7 +284,7 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
   await skipIntro(page);
   await expect(page.getByRole("button", { name: "B", exact: true })).toBeVisible();
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 17,
+    () => (window as any).__game.audio.buffers.size === 19,
   );
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -834,7 +834,7 @@ test("death restart, impossible quota, finish window, and final score screens", 
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 17,
+    () => (window as any).__game.audio.buffers.size === 19,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -1063,14 +1063,47 @@ test("background music produces audio, pauses, and mutes", async ({ page }) => {
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect
     .poll(() =>
-      page.evaluate(() => (window as any).__game.audio.music.isPaused),
+      page.evaluate(() => {
+        const a = (window as any).__game.audio;
+        return (
+          a.music.isPaused &&
+          [...a.effects].some(
+            (source: any) =>
+              source.audioBuffer === a.buffers.get("pause") &&
+              source.isPlaying &&
+              !source.isPaused,
+          )
+        );
+      }),
+    )
+    .toBe(true);
+  await expect.poll(level).toBeGreaterThan(0.001);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const a = (window as any).__game.audio;
+        return ![...a.effects].some(
+          (source: any) => source.audioBuffer === a.buffers.get("pause"),
+        );
+      }),
     )
     .toBe(true);
   await expect.poll(level).toBe(0);
   await page.getByRole("button", { name: "RESUME", exact: true }).click();
   await expect
     .poll(() =>
-      page.evaluate(() => (window as any).__game.audio.music.isPlaying),
+      page.evaluate(() => {
+        const a = (window as any).__game.audio;
+        return (
+          a.music.isPlaying &&
+          [...a.effects].some(
+            (source: any) =>
+              source.audioBuffer === a.buffers.get("pause") &&
+              source.isPlaying &&
+              !source.isPaused,
+          )
+        );
+      }),
     )
     .toBe(true);
   await expect.poll(level).toBeGreaterThan(0.001);
@@ -1083,7 +1116,7 @@ test("original recordings decode and play as effects, with level clear replacing
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 17,
+    () => (window as any).__game.audio.buffers.size === 19,
   );
   const playback = await page.evaluate(() => {
     const a = (window as any).__game.audio;
@@ -1095,6 +1128,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "break",
       "power",
       "splat",
+      "appear",
     ];
     const names = [
       "jump",
@@ -1104,6 +1138,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "brick",
       "powerup",
       "stomp",
+      "appear",
     ];
     const valid = effects.every((event, i) => {
       a.event(event);
@@ -1112,14 +1147,39 @@ test("original recordings decode and play as effects, with level clear replacing
       );
     });
     a.event("warn");
+    const s = (window as any).__game.sim;
+    const box = s.obstacles.find((c: any) => c.question && !c.used);
+    s.hitBlock(box, s.player);
+    const released = s.events.slice();
+    for (const event of s.events.splice(0)) a.event(event);
+    const bumpAndAppear =
+      released.includes("bump") &&
+      released.includes("appear") &&
+      [...a.effects].some(
+        (source: any) => source.audioBuffer === a.buffers.get("bump"),
+      ) &&
+      [...a.effects].some(
+        (source: any) => source.audioBuffer === a.buffers.get("appear"),
+      );
+    s.collect(s.player, s.items[0]);
+    for (const event of s.events.splice(0)) a.event(event);
+    const powerPlaying = [...a.effects].some(
+      (source: any) => source.audioBuffer === a.buffers.get("powerup"),
+    );
     const duration = a.buffers.get("overworld").duration;
     const loop = a.music.markers.loop.duration;
+    const pauseDuration = a.buffers.get("pause").duration;
+    const appearDuration = a.buffers.get("appear").duration;
     (window as any).__game.sim.finish();
     a.event("win");
     return {
       valid,
       duration,
       loop,
+      pauseDuration,
+      appearDuration,
+      bumpAndAppear,
+      powerPlaying,
       musicStopped: a.music === null,
       clearPlaying: [...a.effects].some(
         (source: any) => source.audioBuffer === a.buffers.get("clear"),
@@ -1129,6 +1189,12 @@ test("original recordings decode and play as effects, with level clear replacing
   expect(playback.valid).toBe(true);
   expect(playback.duration).toBeGreaterThan(180);
   expect(playback.loop).toBeCloseTo(86.4);
+  expect(playback.pauseDuration).toBeGreaterThan(0.5);
+  expect(playback.pauseDuration).toBeLessThan(1);
+  expect(playback.appearDuration).toBeGreaterThan(0.4);
+  expect(playback.appearDuration).toBeLessThan(1);
+  expect(playback.bumpAndAppear).toBe(true);
+  expect(playback.powerPlaying).toBe(true);
   expect(playback.musicStopped).toBe(true);
   expect(playback.clearPlaying).toBe(true);
 });

@@ -501,6 +501,30 @@ test("player head contact bumps a brick without removing its collision", () => {
   assert.equal(brick.bounce, 0);
 });
 
+test("question-block items emit appear with bump, then power on collect", () => {
+  const s = game();
+  const box = s.obstacles.find((c) => c.question)!;
+  s.hitBlock(box, s.player);
+  assert.deepEqual(
+    s.events.filter(
+      (event) => event === "bump" || event === "appear" || event === "power",
+    ),
+    ["bump", "appear"],
+  );
+  const item = s.items[0];
+  item.kind = "star";
+  item.emerge = 0;
+  s.collect(s.player, item);
+  assert.ok(s.events.includes("power"));
+  const brick = s.obstacles.find(
+    (c) => c.kind === "brick" && !c.question && !c.hidden,
+  )!;
+  s.events.length = 0;
+  s.hitBlock(brick, s.player);
+  assert.ok(s.events.includes("bump"));
+  assert.equal(s.events.includes("appear"), false);
+});
+
 test("question blocks release each random item once, including on Mario hits", () => {
   for (const [roll, kind] of [
     [0, "star"],

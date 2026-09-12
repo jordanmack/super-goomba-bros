@@ -252,10 +252,12 @@ deaths skip the hop. Mario uses his original upward hop and fall pose, then
 returns quickly. His return must not cut off the cue.
 
 Play the original area music and effects. Start audio after a user gesture.
-Pause stops playback progress; mute silences music and effects. Player or active
-Mario stars use Starman music. NPC stars do not change music. Death, clear, and
-game-over cues take priority and must finish. There is no heartbeat, distance
-meter, or approach-based volume change.
+Pause stops playback progress and plays the original pause cue on pause and
+resume; mute silences music and effects. A question-block item plays the
+original appear effect with the bump; pickup still uses the power-up collect
+sound. Player or active Mario stars use Starman music. NPC stars do not change
+music. Death, clear, and game-over cues take priority and must finish. There is
+no heartbeat, distance meter, or approach-based volume change.
 
 An unavailable audio decoder must not break controls or leave uncaught errors.
 Record the failure and show sound as unavailable. Do not insert fake decoded
