@@ -25,7 +25,7 @@ export const TUNING = {
   bubbleTime: 2.1,
   fasterAt: 30,
   fireballsAt: 60,
-  firstMarioAt: 5,
+  firstMarioAt: 3,
   marioSight: 520,
   marioChaseSeconds: 6,
   marioReaction: 0.25,

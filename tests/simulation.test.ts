@@ -767,6 +767,21 @@ test("one hit plays the complete death sequence before resetting run state", () 
   assert.equal(s.player.pipeWait ?? 0, 0);
 });
 
+test("Mario first appears at three seconds, and later returns keep their delay", () => {
+  const s = new Simulation(() => 0.5);
+  s.reset();
+  assert.equal(s.marioActive, false);
+  tick(s, 3 - dt);
+  assert.equal(s.marioActive, false);
+  tick(s, 2 * dt);
+  assert.equal(s.marioActive, true);
+  Body.setPosition(s.mario.body, { x: GOAL_X + 200, y: 400 });
+  tick(s, dt);
+  assert.equal(s.marioActive, false);
+  tick(s, 3 + dt);
+  assert.equal(s.marioActive, false);
+});
+
 test("time escalates Mario and returning does not reset it", () => {
   const s = game();
   s.elapsed = T.fireballsAt;
