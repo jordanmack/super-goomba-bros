@@ -107,6 +107,8 @@ outside the camera view, including while the player is in another area.
 
 NPCs collect items by contact without seeking them or intentionally attacking
 Mario. A giant NPC still flees. Only the giant player can stomp Mario.
+A falling player that lands on an NPC bounces upward a little. That bounce does
+not kill or warn the NPC. Side contact is not a bounce.
 Saved NPCs stay safe and cannot return to danger.
 
 ## Counters and finish

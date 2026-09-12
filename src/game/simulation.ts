@@ -252,6 +252,7 @@ export class Simulation {
   private nextId = 1;
   private jumped = false;
   private playerJumping = false;
+  private bouncedNpcs = new Set<Actor>();
   random: () => number;
 
   constructor(random = Math.random, physics = new PhysicsWorld()) {
@@ -323,6 +324,7 @@ export class Simulation {
     this.events = [];
     this.jumped = false;
     this.playerJumping = false;
+    this.bouncedNpcs.clear();
   }
 
   private actor(x: number, kind: Actor["kind"]): Actor {
@@ -598,7 +600,18 @@ export class Simulation {
     this.events.push("warn");
     const p = this.player.body.position;
     for (const n of this.npcs) {
-      if (!n.alive || n.saved || n.warned || !this.withinWarningRange(n))
+      if (
+        !n.alive ||
+        n.saved ||
+        n.warned ||
+        this.bouncedNpcs.has(n) ||
+        (this.player.body.velocity.y > 0.2 &&
+          this.fallingOntoNpc(
+            n,
+            this.player.body.position.y + 14 * this.player.scale,
+          )) ||
+        !this.withinWarningRange(n)
+      )
         continue;
       n.warned = true;
       n.exclaimLeft = T.exclaimTime;
@@ -791,15 +804,83 @@ export class Simulation {
     return Math.hypot(q.x - p.x, q.y - p.y) <= T.warningRange;
   }
 
+  private npcTop(n: Actor) {
+    return n.body.position.y - 14 * n.scale;
+  }
+
+  private overlapNpcX(n: Actor) {
+    return (
+      Math.abs(this.player.body.position.x - n.body.position.x) <
+      12 * this.player.scale + 12 * n.scale
+    );
+  }
+
+  private fallingOntoNpc(n: Actor, playerBottom: number, top = this.npcTop(n)) {
+    return (
+      n.alive &&
+      !n.saved &&
+      this.overlapNpcX(n) &&
+      playerBottom <= top
+    );
+  }
+
+  private pruneBouncedNpcs() {
+    for (const n of this.bouncedNpcs) {
+      if (
+        !n.alive ||
+        n.saved ||
+        (this.player.grounded && !this.withinWarningRange(n))
+      )
+        this.bouncedNpcs.delete(n);
+    }
+  }
+
   private autoWarn() {
     if (this.cooldown > 0 || this.mode !== "playing") return;
+    const playerBottom =
+      this.player.body.position.y + 14 * this.player.scale;
+    const falling = this.player.body.velocity.y > 0.2;
     const nearby = this.npcs.some(
-      (n) => n.alive && !n.saved && !n.warned && this.withinWarningRange(n),
+      (n) =>
+        n.alive &&
+        !n.saved &&
+        !n.warned &&
+        !this.bouncedNpcs.has(n) &&
+        !(falling && this.fallingOntoNpc(n, playerBottom)) &&
+        this.withinWarningRange(n),
     );
     if (nearby) {
       this.warn();
       // The automatic voice cue should not delay the player's next action.
       this.audible = 0;
+    }
+  }
+
+  private bouncePlayerOffNpcs(
+    playerBottom: number,
+    playerFalling: boolean,
+    prevNpcTops: Map<Actor, number>,
+  ) {
+    if (
+      !playerFalling ||
+      !this.player.alive ||
+      this.player.saved ||
+      this.mode !== "playing"
+    )
+      return;
+    for (const n of this.npcs) {
+      const prevTop = prevNpcTops.get(n);
+      if (
+        prevTop !== undefined &&
+        this.fallingOntoNpc(n, playerBottom, prevTop) &&
+        this.player.body.bounds.max.y >= this.npcTop(n)
+      ) {
+        this.bouncedNpcs.add(n);
+        Body.setVelocity(this.player.body, {
+          x: this.player.body.velocity.x,
+          y: -T.stompBounce,
+        });
+      }
     }
   }
 
@@ -986,6 +1067,8 @@ export class Simulation {
       }));
     const playerBottom = this.player.body.position.y + 14 * this.player.scale;
     const playerFalling = this.player.body.velocity.y > 0.2;
+    const prevNpcTops = new Map<Actor, number>();
+    for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
     this.physics.step(dt);
     for (const room of this.rooms.values())
       for (const coin of room.coins) {
@@ -1009,6 +1092,8 @@ export class Simulation {
           }
         }
       }
+    this.bouncePlayerOffNpcs(playerBottom, playerFalling, prevNpcTops);
+    this.pruneBouncedNpcs();
     this.autoWarn();
     for (const { actor, top } of hitters)
       for (const c of this.obstacles) {
@@ -1048,7 +1133,10 @@ export class Simulation {
           a.body.bounds.max.y >= this.mario.body.position.y - 19
         ) {
           this.defeatMario();
-          Body.setVelocity(a.body, { x: a.body.velocity.x, y: -8 });
+          Body.setVelocity(a.body, {
+            x: a.body.velocity.x,
+            y: -T.stompBounce,
+          });
           break;
         }
       }

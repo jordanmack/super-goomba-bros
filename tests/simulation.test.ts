@@ -353,6 +353,134 @@ test("NPC star contact also kills Mario, but giant NPC contact does not", () => 
   }
 });
 
+function parkNpcs(s: Simulation, keep: Actor[], x = 4000) {
+  for (const n of s.npcs) {
+    if (keep.includes(n)) continue;
+    Body.setPosition(n.body, { x, y: 415 });
+    Body.setVelocity(n.body, { x: 0, y: 0 });
+  }
+}
+
+test("a falling player bounces on an NPC without killing or warning it", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 200, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  tick(s, 0.8);
+  assert.ok(s.player.grounded);
+  assert.ok(
+    Math.hypot(
+      n.body.position.x - s.player.body.position.x,
+      n.body.position.y - s.player.body.position.y,
+    ) <= T.warningRange,
+  );
+  assert.ok(n.alive);
+  assert.equal(n.warned, false);
+  assert.equal(s.warned, 0);
+  assert.equal(s.events.includes("warn"), false);
+  assert.equal(s.events.includes("splat"), false);
+});
+
+test("a bounced NPC can be warned after the player leaves range", () => {
+  const s = game();
+  const n = s.npcs[0];
+  const other = s.npcs[1];
+  parkNpcs(s, [n, other]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setPosition(other.body, { x: 260, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  Body.setVelocity(other.body, { x: 0, y: 0 });
+  n.idleWalking = false;
+  n.wait = 99;
+  other.idleWalking = false;
+  other.wait = 99;
+  at(s, 200, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  tick(s, 0.8);
+  assert.equal(n.warned, false);
+  assert.ok(s.cooldown > 0);
+  tick(s, 1, { left: true });
+  assert.ok(s.player.grounded);
+  assert.ok(
+    Math.hypot(
+      n.body.position.x - s.player.body.position.x,
+      n.body.position.y - s.player.body.position.y,
+    ) > T.warningRange,
+  );
+  tick(s, T.warningCooldown + dt);
+  tick(s, 1.2, { right: true });
+  assert.equal(n.warned, true);
+});
+
+test("falling onto an NPC from above warning range bounces without warning it", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 200, 300);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  assert.ok(
+    Math.hypot(0, n.body.position.y - s.player.body.position.y) >
+      T.warningRange,
+  );
+  let bounced = false;
+  for (let i = 0; i < 50; i++) {
+    tick(s, dt);
+    assert.equal(n.warned, false);
+    if (s.player.body.velocity.y === -T.stompBounce) bounced = true;
+  }
+  assert.ok(bounced);
+  assert.ok(n.alive);
+  assert.equal(s.warned, 0);
+});
+
+test("side overlap with an NPC does not bounce the player", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 136, y: 300 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 120, 300);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.ok(s.player.body.velocity.y >= 0);
+  assert.ok(n.alive);
+});
+
+test("a falling NPC does not bounce a player already below its top", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 140, y: 300 });
+  Body.setVelocity(n.body, { x: 0, y: 4 });
+  at(s, 120, 274);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.ok(s.player.body.velocity.y >= 0);
+  assert.ok(n.alive);
+});
+
+test("shallow side overlap below an NPC top does not bounce the player", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 140, y: 300 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 120, 280);
+  Body.setVelocity(s.player.body, { x: T.walkSpeed, y: 4 });
+  tick(s, dt);
+  assert.ok(s.player.body.velocity.y >= 0);
+  assert.ok(n.alive);
+});
+
 test("giant player stomps kill Mario, play his death cue, and bounce the player upward", () => {
   const s = game();
   give(s, s.player, "mushroom");
@@ -984,6 +1112,13 @@ test("fear traits produce different running urgency", () => {
 test("a recorded World 1-1 run can win with Mario active and without teleporting", () => {
   const s = new Simulation(() => 0.5);
   s.reset();
+  s.marioReturn = 1e6;
+  for (const n of s.npcs) n.warned = true;
+  s.warned = s.npcs.length;
+  tick(s, 3);
+  s.elapsed = 0;
+  s.marioReturn = T.firstMarioAt;
+  s.marioActive = false;
   let marioAppeared = false;
   for (const [bits, frames] of routes["1-1"]) {
     for (let frame = 0; frame < frames; frame++) {

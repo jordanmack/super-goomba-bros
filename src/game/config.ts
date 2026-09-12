@@ -7,6 +7,7 @@ export const TUNING = {
   walkSpeed: 2.6,
   airSpeed: 2.6,
   jumpSpeed: 11,
+  stompBounce: 8,
   gravity: 1500,
   platformSpeed: 64,
   platformTravel: 96,
