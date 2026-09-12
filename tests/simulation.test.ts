@@ -539,6 +539,7 @@ test("player coins increment a counter without changing rescue scores", () => {
   assert.ok(s.events.includes("coin"));
   assert.equal(s.warned, 0);
   assert.equal(s.saved, 0);
+  assert.equal(s.died(), 0);
   const second = room.coins.find((c) => !c.collected);
   assert.ok(second);
   second.x = p.x;
@@ -555,9 +556,72 @@ test("player coins increment a counter without changing rescue scores", () => {
   assert.equal(s.coins, 2);
   s.reset();
   assert.equal(s.coins, 0);
+  assert.equal(s.died(), 0);
   s.coins = 5;
   s.nextLevel();
   assert.equal(s.coins, 0);
+  assert.equal(s.died(), 0);
+});
+
+test("Died counts NPC deaths only and partitions population with saved and living", () => {
+  const s = game();
+  assert.equal(s.died(), 0);
+  assert.equal(s.died() + s.saved + s.living(), T.population);
+
+  s.kill(s.npcs[0]);
+  assert.equal(s.died(), 1);
+  s.kill(s.npcs[0]);
+  assert.equal(s.died(), 1);
+
+  s.npcs[1].warned = true;
+  s.warned = 1;
+  s.kill(s.npcs[1]);
+  assert.equal(s.warned, 1);
+  assert.equal(s.died(), 2);
+
+  s.save(s.npcs[2]);
+  assert.equal(s.saved, 1);
+  assert.equal(s.died(), 2);
+  s.kill(s.npcs[2]);
+  assert.equal(s.saved, 1);
+  assert.equal(s.died(), 2);
+
+  s.kill(s.player);
+  assert.equal(s.mode, "dead");
+  assert.equal(s.died(), 2);
+  s.marioActive = true;
+  s.kill(s.mario);
+  assert.equal(s.died(), 2);
+  assert.equal(s.died() + s.saved + s.living(), T.population);
+
+  const pit = game();
+  Body.setPosition(pit.npcs[0].body, {
+    x: pit.npcs[0].body.position.x,
+    y: 700,
+  });
+  tick(pit, dt);
+  assert.equal(pit.died(), 1);
+  assert.equal(pit.player.alive, true);
+  assert.equal(pit.mode, "playing");
+
+  const playerPit = game();
+  Body.setPosition(playerPit.player.body, {
+    x: playerPit.player.body.position.x,
+    y: 700,
+  });
+  tick(playerPit, dt);
+  assert.equal(playerPit.mode, "dead");
+  assert.equal(playerPit.died(), 0);
+  tick(playerPit, T.deathSequenceSeconds + 0.1);
+  assert.equal(playerPit.mode, "playing");
+  assert.equal(playerPit.died(), 0);
+
+  s.reset();
+  assert.equal(s.died(), 0);
+  s.kill(s.npcs[0]);
+  s.nextLevel();
+  assert.equal(s.died(), 0);
+  assert.equal(s.died() + s.saved + s.living(), T.population);
 });
 
 test("NPCs pick up falling items by contact without being warned or seeking them", () => {
@@ -1517,6 +1581,9 @@ test("impossibility includes all living and saved NPCs", () => {
   tick(s, dt);
   assert.equal(s.mode, "playing");
   assert.equal(s.doomed, true);
+  assert.equal(s.died(), T.population - T.required + 1);
+  assert.equal(s.saved + s.living(), T.required - 1);
+  assert.equal(rescueImpossible(s.saved, s.living(), T.required), true);
   s.finish();
   assert.equal(s.mode, "playing");
   s.marioReturn = 0;
@@ -1528,6 +1595,7 @@ test("one hit plays the complete death sequence before resetting run state", () 
   const s = game();
   s.warned = 8;
   s.saved = 3;
+  s.kill(s.npcs[0]);
   s.coins = 4;
   s.elapsed = 100;
   s.obstacles[2].broken = true;
@@ -1539,6 +1607,7 @@ test("one hit plays the complete death sequence before resetting run state", () 
   assert.equal(s.mode, "intro");
   assert.equal(s.warned, 0);
   assert.equal(s.saved, 0);
+  assert.equal(s.died(), 0);
   assert.equal(s.coins, 0);
   assert.equal(s.phase, 0);
   assert.equal(s.fireballs.length, 0);

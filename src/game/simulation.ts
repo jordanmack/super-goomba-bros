@@ -397,6 +397,9 @@ export class Simulation {
   living() {
     return this.npcs.filter((n) => n.alive && !n.saved).length;
   }
+  died() {
+    return T.population - this.saved - this.living();
+  }
   private ground(a: Actor) {
     const bottom = a.body.position.y + (a.kind === "mario" ? 19 : 14) * a.scale;
     a.grounded =

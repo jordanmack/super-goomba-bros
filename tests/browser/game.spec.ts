@@ -832,10 +832,12 @@ test("HUD coin counter increases on collection and resets on restart and next le
   const coins = page.getByTestId("coins");
   const warned = page.getByTestId("warned");
   const saved = page.getByTestId("saved");
+  const died = page.getByTestId("died");
   await expect(coins).toHaveText("00");
   await expect(page.getByTestId("lives")).toHaveText("03");
   await expect(warned).toContainText("00");
   await expect(saved).toContainText("00");
+  await expect(died).toHaveText("00");
   await expect(warned).toContainText(`/ ${T.population}`);
   await expect(saved).toContainText(`/ ${T.required}`);
   const box = (await coins.boundingBox())!;
@@ -855,20 +857,27 @@ test("HUD coin counter increases on collection and resets on restart and next le
   await expect.poll(() => coins.textContent()).toBe("01");
   await expect(warned).toContainText("00");
   await expect(saved).toContainText("00");
+  await expect(died).toHaveText("00");
   await expect(warned).toContainText(`/ ${T.population}`);
   await expect(saved).toContainText(`/ ${T.required}`);
   expect(
     await page.evaluate(() => {
       const s = (window as any).__game.sim;
-      return { coins: s.coins, warned: s.warned, saved: s.saved };
+      return {
+        coins: s.coins,
+        warned: s.warned,
+        saved: s.saved,
+        died: s.died(),
+      };
     }),
-  ).toEqual({ coins: 1, warned: 0, saved: 0 });
+  ).toEqual({ coins: 1, warned: 0, saved: 0, died: 0 });
   await collect();
   await expect.poll(() => coins.textContent()).toBe("02");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.getByRole("button", { name: "RESTART LEVEL" }).click();
   await skipIntro(page);
   await expect(coins).toHaveText("00");
+  await expect(died).toHaveText("00");
   await collect();
   await expect.poll(() => coins.textContent()).toBe("01");
   await page.evaluate((required) => {
@@ -880,8 +889,64 @@ test("HUD coin counter increases on collection and resets on restart and next le
   await page.getByRole("button", { name: "NEXT LEVEL" }).click();
   await expect(page.getByTestId("coins")).toHaveText("00");
   await expect(page.getByTestId("saved")).toContainText("00");
+  await expect(page.getByTestId("died")).toHaveText("00");
   await expect(page.getByTestId("warned")).toContainText(`/ ${T.population}`);
   await expect(page.getByTestId("saved")).toContainText(`/ ${T.required}`);
+});
+
+test("HUD and result Died counter tracks NPC deaths only and resets with other counters", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  const died = page.getByTestId("died");
+  const warned = page.getByTestId("warned");
+  const saved = page.getByTestId("saved");
+  await expect(died).toHaveText("00");
+  await expect(warned).toContainText("00");
+  await expect(saved).toContainText("00");
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.npcs[0].warned = true;
+    s.warned = 1;
+    s.kill(s.npcs[0]);
+    s.kill(s.npcs[1]);
+    s.kill(s.npcs[2]);
+    s.save(s.npcs[3]);
+  });
+  await expect.poll(() => died.textContent()).toBe("03");
+  await expect(warned).toContainText("01");
+  await expect(saved).toContainText("01");
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.kill(s.player);
+  });
+  await expect(page.getByRole("heading", { name: "STOMPED!" })).toBeVisible();
+  await expect.poll(() => died.textContent()).toBe("03");
+  await page.waitForFunction(
+    () => (window as any).__game.sim.mode === "playing",
+  );
+  await expect(died).toHaveText("00");
+  await expect(warned).toContainText("00");
+  await expect(saved).toContainText("00");
+  await page.evaluate((required) => {
+    const s = (window as any).__game.sim;
+    s.kill(s.npcs[0]);
+    s.kill(s.npcs[1]);
+    s.npcs.slice(2, 2 + required).forEach((n: any) => s.save(n));
+    s.finish();
+    s.finishLeft = 0.15;
+  }, T.required);
+  await expect.poll(() => died.textContent()).toBe("02");
+  await expect(page.getByRole("button", { name: "NEXT LEVEL" })).toBeVisible({
+    timeout: 8000,
+  });
+  await expect(page.getByTestId("result-died")).toHaveText("2");
+  await expect(page.locator(".final-counts")).toContainText("DIED");
+  await page.getByRole("button", { name: "NEXT LEVEL" }).click();
+  await expect(died).toHaveText("00");
+  await expect(saved).toContainText("00");
+  await expect(warned).toContainText("00");
 });
 
 test("standalone production HTML runs without a server or external assets", async ({

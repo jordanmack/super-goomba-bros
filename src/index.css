@@ -263,7 +263,7 @@ p {
 }
 .counters {
   display: flex;
-  gap: 38px;
+  gap: 28px;
   padding: 0 20px;
   text-shadow: 2px 2px #254d43;
 }
@@ -285,6 +285,9 @@ p {
 }
 .saved-counter strong {
   color: #fff09a;
+}
+.died-counter strong {
+  color: #ff8a7a;
 }
 .coin-counter strong {
   color: #ffd76a;
@@ -690,7 +693,7 @@ p {
 }
 .final-counts {
   display: flex;
-  gap: 65px;
+  gap: 48px;
   margin: 4px 0 12px;
 }
 .final-counts > div {
