@@ -77,13 +77,15 @@ iOS system gestures are suppressed on a physical phone.
 
 ## Warnings
 
-Contact with an unwarned NPC automatically makes the player speak. A bubble
-appears near the player and a short squeaky voice cue plays. Nearby NPCs can
-hear the same warning. Each character counts as warned only once.
+An unwarned NPC inside the warning radius automatically makes the player speak.
+No contact is required. An 8-bit bubble appears near the player and a short
+squeaky voice cue plays. The same radius warns those NPCs. Each character
+counts as warned only once. A warned NPC shows a brief 8-bit exclamation mark
+above its head, then the mark goes away.
 
 Every phrase must urge escape from incoming Mario. Use the phrase pool in
 [tuning](../src/game/config.ts), with lines such as “Run! Mario is coming!”
-and “Run your shells off! Mario is coming!” Avoid unrelated jokes.
+and “Run my brothers or perish!” Avoid unrelated jokes.
 
 Warnings have a limited range and a short cooldown. Mario can hear them too.
 A closer warning is more likely to draw him. Speaking does not grant safety.

@@ -53,6 +53,7 @@ export type Actor = {
   idleDrop?: { airborne: boolean };
   scale: number;
   starLeft: number;
+  exclaimLeft: number;
   flower: boolean;
   blockedFor: number;
   lastX: number;
@@ -352,6 +353,7 @@ export class Simulation {
       idleWalking: true,
       scale: 1,
       starLeft: 0,
+      exclaimLeft: 0,
       flower: false,
       blockedFor: 0,
       lastX: x,
@@ -596,15 +598,10 @@ export class Simulation {
     this.events.push("warn");
     const p = this.player.body.position;
     for (const n of this.npcs) {
-      if (
-        !n.alive ||
-        n.saved ||
-        n.warned ||
-        Math.hypot(n.body.position.x - p.x, n.body.position.y - p.y) >
-          T.warningRange
-      )
+      if (!n.alive || n.saved || n.warned || !this.withinWarningRange(n))
         continue;
       n.warned = true;
+      n.exclaimLeft = T.exclaimTime;
       n.idleDrop = undefined;
       n.wait = n.reaction;
       this.warned++;
@@ -788,24 +785,18 @@ export class Simulation {
     } else this.defeatMario();
   }
 
-  private contactWarning() {
-    if (
-      this.cooldown > 0 ||
-      this.mode !== "playing" ||
-      this.player.state !== "idle"
-    )
-      return;
-    const p = this.player.body.position;
-    const touching = this.npcs.some(
-      (n) =>
-        n.alive &&
-        !n.saved &&
-        !n.warned &&
-        Math.abs(n.body.position.x - p.x) <
-          12 * n.scale + 13 * this.player.scale &&
-        Math.abs(n.body.position.y - p.y) < 14 * n.scale + 16,
+  private withinWarningRange(n: Actor) {
+    const p = this.player.body.position,
+      q = n.body.position;
+    return Math.hypot(q.x - p.x, q.y - p.y) <= T.warningRange;
+  }
+
+  private autoWarn() {
+    if (this.cooldown > 0 || this.mode !== "playing") return;
+    const nearby = this.npcs.some(
+      (n) => n.alive && !n.saved && !n.warned && this.withinWarningRange(n),
     );
-    if (touching) {
+    if (nearby) {
       this.warn();
       // The automatic voice cue should not delay the player's next action.
       this.audible = 0;
@@ -911,6 +902,7 @@ export class Simulation {
     this.playerFireCooldown = Math.max(0, this.playerFireCooldown - dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
       a.starLeft = Math.max(0, a.starLeft - dt);
+      a.exclaimLeft = Math.max(0, a.exclaimLeft - dt);
       a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
       a.swimRepath = Math.max(0, (a.swimRepath ?? 0) - dt);
@@ -1017,7 +1009,7 @@ export class Simulation {
           }
         }
       }
-    this.contactWarning();
+    this.autoWarn();
     for (const { actor, top } of hitters)
       for (const c of this.obstacles) {
         if (

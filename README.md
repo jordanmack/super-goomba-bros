@@ -35,7 +35,7 @@ starts at World 1-1 and progresses in order.
 Normal jumps have a fixed height. Jump horizontal speed matches walk speed.
 Releasing direction stops horizontal movement.
 Springs provide their own stronger bounce. There is no Run or Hide action.
-Touching an unwarned NPC automatically speaks an urgent warning.
+An unwarned NPC inside warning range automatically hears an urgent shout.
 
 Each touch, mouse pointer, and key has an independent hold. Sliding changes
 actions; sliding out releases them. Pause, restart, and interruptions clear input.

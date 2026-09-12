@@ -7,7 +7,7 @@ import {
   emptyInput,
   rescueImpossible,
 } from "../src/game/simulation.ts";
-import { TUNING as T } from "../src/game/config.ts";
+import { PHRASES, TUNING as T } from "../src/game/config.ts";
 import { areaData, areaGaps } from "../src/game/levels.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
@@ -438,19 +438,82 @@ test("player fireballs step Mario from fire to big to small, then defeat him", (
   assert.ok(s.marioDeath);
 });
 
-test("touching an unwarned NPC automatically speaks and counts it once", () => {
+function overlapX(s: Simulation, n: Actor) {
+  return 12 * n.scale + 13 * s.player.scale;
+}
+
+test("an unwarned NPC inside 96px is warned without overlap", () => {
   const s = game();
   const n = s.npcs[0];
-  at(s, n.body.position.x);
+  const gap = overlapX(s, n) + 20;
+  at(s, n.body.position.x - gap);
+  assert.ok(gap > overlapX(s, n));
+  assert.ok(
+    Math.hypot(gap, n.body.position.y - s.player.body.position.y) <=
+      T.warningRange,
+  );
   tick(s, dt);
+  assert.equal(n.warned, true);
   assert.equal(s.warned, 1);
   assert.ok(s.bubble.length > 0);
   assert.ok(s.events.includes("warn"));
+  assert.ok(n.exclaimLeft > 0);
   s.events.length = 0;
   s.cooldown = 0;
   tick(s, dt);
   assert.equal(s.warned, 1);
   assert.equal(s.events.includes("warn"), false);
+  tick(s, T.exclaimTime + dt);
+  assert.equal(n.exclaimLeft, 0);
+  assert.equal(n.warned, true);
+});
+
+test("an unwarned NPC outside 96px is not warned", () => {
+  const s = game();
+  const n = s.npcs[0];
+  at(s, n.body.position.x - T.warningRange - 12);
+  tick(s, dt);
+  assert.equal(n.warned, false);
+  assert.equal(s.warned, 0);
+  assert.equal(s.bubble, "");
+});
+
+test("warning cooldown and one-count still hold", () => {
+  const s = game();
+  const n = s.npcs[0];
+  at(s, n.body.position.x - 40);
+  tick(s, dt);
+  assert.equal(s.warned, 1);
+  assert.ok(s.events.includes("warn"));
+  s.events.length = 0;
+  tick(s, dt);
+  assert.equal(s.warned, 1);
+  assert.equal(s.events.includes("warn"), false);
+  s.cooldown = 0;
+  tick(s, dt);
+  assert.equal(s.warned, 1);
+  assert.equal(s.events.includes("warn"), false);
+});
+
+test("Mario still hears shouts beyond the warning radius", () => {
+  const s = game();
+  s.marioActive = true;
+  Body.setFrozen(s.mario.body, false);
+  at(s, 200);
+  Body.setPosition(s.mario.body, { x: 380, y: 411 });
+  s.warn();
+  assert.equal(s.marioTarget, s.player.id);
+  assert.ok(s.marioChase > 0);
+  assert.equal(s.warned, 0);
+});
+
+test("warning phrases stay urgent and include brotherhood lines", () => {
+  assert.ok(PHRASES.includes("Run my brothers or perish!"));
+  assert.ok(PHRASES.filter((line) => /brothers/i.test(line)).length >= 3);
+  for (const line of PHRASES) {
+    assert.match(line, /!/);
+    assert.equal(/joke|banana|pizza/i.test(line), false);
+  }
 });
 
 test("stars block Mario fireballs, while giant characters are still vulnerable", () => {
@@ -686,6 +749,7 @@ test("warnings count nearby groups once, never rescue them", () => {
 
 test("warning cooldown and distance limit", () => {
   const s = game();
+  assert.equal(T.warningRange, 96);
   s.warn();
   assert.equal(s.warned, 0);
   at(s, s.npcs[0].body.position.x);

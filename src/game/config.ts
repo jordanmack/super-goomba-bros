@@ -18,11 +18,12 @@ export const TUNING = {
   swimGravity: 0.25,
   swimFallSpeed: 3,
   deathSequenceSeconds: 2.8,
-  warningRange: 185,
+  warningRange: 96,
   hearingRange: 440,
   warningCooldown: 1.3,
   warningSound: 0.35,
   bubbleTime: 2.1,
+  exclaimTime: 0.7,
   fasterAt: 30,
   fireballsAt: 60,
   firstMarioAt: 3,
@@ -60,6 +61,10 @@ export const PHRASES = [
   "Run your shells off! Mario is coming!",
   "Run! Trouble has a mustache, and it's coming!",
   "Get to safety! Mario is coming!",
+  "Run my brothers or perish!",
+  "Flee my brothers! Mario is coming!",
+  "Run, brothers! The plumber is coming!",
+  "Brothers, scramble or perish!",
 ];
 
 export const MAP_TOP = TUNING.groundY - 13 * 32;

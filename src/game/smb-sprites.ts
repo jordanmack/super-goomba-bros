@@ -95,6 +95,21 @@ function firePalette(source: HTMLCanvasElement) {
   return canvas;
 }
 
+function pixelExclaim() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 16;
+  const context = canvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#ffffff";
+  context.fillRect(3, 0, 2, 9);
+  context.fillRect(2, 0, 4, 2);
+  context.fillRect(2, 7, 4, 2);
+  context.fillRect(3, 12, 2, 4);
+  context.fillRect(2, 13, 4, 2);
+  return canvas;
+}
+
 export function scenerySprites({ enemies, items }: SpriteSources) {
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
@@ -103,5 +118,6 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     mushroom: crop(items, 0, 0, 16, 16),
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
+    exclaim: pixelExclaim(),
   };
 }

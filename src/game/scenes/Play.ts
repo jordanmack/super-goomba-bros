@@ -178,15 +178,14 @@ export class Play extends Phaser.Scene {
         Phaser.Display.Color.HexStringToColor(p.color).color,
       ).setRotation(0);
     for (const n of sim.npcs)
-      if (n.warned && n.alive && !n.saved)
+      if (n.exclaimLeft > 0 && n.alive && !n.saved)
         image(
           n.body.position.x,
-          n.body.position.y - 29 * n.scale,
-          5,
-          5,
-          "__WHITE",
+          n.body.position.y - 34 * n.scale,
+          16 * n.scale,
+          32 * n.scale,
+          "exclaim",
           12,
-          0xffe077,
         ).setRotation(0);
     for (; index < this.effects.length; index++)
       this.effects[index].setVisible(false);

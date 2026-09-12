@@ -677,6 +677,73 @@ test("touch movement supports simultaneous jump and clears on release", async ({
   await context.close();
 });
 
+test("player bubble is 8-bit and warned NPCs flash a brief exclamation", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.waitForFunction(() => !!(window as any).__game?.sim);
+  await page.evaluate((range) => {
+    const s = (window as any).__game.sim;
+    const n = s.npcs[0];
+    s.player.body.position.x = n.body.position.x - range + 8;
+    s.player.body.position.y = n.body.position.y;
+  }, T.warningRange);
+  const speech = page.locator(".speech");
+  await expect(speech).toBeVisible();
+  const style = await speech.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return {
+      radius: c.borderRadius,
+      bg: c.backgroundColor,
+      family: c.fontFamily.toLowerCase(),
+    };
+  });
+  expect(parseFloat(style.radius) || 0).toBe(0);
+  expect(style.bg).not.toBe("rgb(255, 246, 212)");
+  expect(style.family).toContain("press start");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const play = (window as any).__game.renderer.play;
+        const standingYellow = play.effects.some(
+          (e: {
+            visible: boolean;
+            texture: { key: string };
+            displayWidth: number;
+            displayHeight: number;
+          }) =>
+            e.visible &&
+            e.texture.key === "__WHITE" &&
+            e.displayWidth === 5 &&
+            e.displayHeight === 5,
+        );
+        return {
+          exclaim: play.effects.some(
+            (e: { visible: boolean; texture: { key: string } }) =>
+              e.visible && e.texture.key === "exclaim",
+          ),
+          standingYellow,
+        };
+      }),
+    )
+    .toEqual({ exclaim: true, standingYellow: false });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const g = (window as any).__game;
+        return (
+          g.sim.npcs[0].exclaimLeft === 0 &&
+          !g.renderer.play.effects.some(
+            (e: { visible: boolean; texture: { key: string } }) =>
+              e.visible && e.texture.key === "exclaim",
+          )
+        );
+      }),
+    )
+    .toBe(true);
+});
+
 test("death restart, impossible quota, finish window, and final score screens", async ({
   page,
 }) => {
