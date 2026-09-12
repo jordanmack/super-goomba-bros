@@ -335,6 +335,84 @@ test("blocks bounce and disappear independently; item powers render with touch f
   await page.mouse.up();
 });
 
+test("question-block items stay upright after fireball sprite reuse", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
+  const drawn = await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    const s = g.sim;
+    const play = g.renderer.play;
+    s.marioReturn = 1e6;
+    for (const coin of s.activeRoom.coins) coin.collected = true;
+    s.activeRoom.platforms.length = 0;
+    s.items = [];
+    s.particles = [];
+    const fireball = {
+      id: 9001,
+      x: s.player.body.position.x + 40,
+      y: s.player.body.position.y,
+      vx: 6,
+      vy: 0,
+      age: 0.1,
+      owner: "player",
+      scale: 1,
+    };
+    s.fireballs = [fireball];
+    g.renderer.render(s, 0);
+    const spinning = play.effects.find(
+      (sprite: any) => sprite.visible && sprite.texture.key === "fireball",
+    );
+    const fireballRotation = spinning?.rotation ?? null;
+    s.fireballs = [];
+    const kinds = ["mushroom", "flower", "star"] as const;
+    const itemRotations: Record<string, number | null> = {};
+    for (const kind of kinds) {
+      const box = s.obstacles.find((c: any) => c.question && !c.used);
+      s.hitBlock(box, s.player);
+      const item = s.items.at(-1);
+      item.kind = kind;
+      g.renderer.render(s, 0);
+      const sprite = play.effects.find(
+        (entry: any) => entry.visible && entry.texture.key === kind,
+      );
+      itemRotations[kind] = sprite?.rotation ?? null;
+      s.physics.remove(item.body);
+      s.items = [];
+    }
+    const box = s.obstacles.find((c: any) => c.question && !c.used);
+    s.hitBlock(box, s.player);
+    const live = s.items.at(-1);
+    s.fireballs = [{ ...fireball, id: 9002 }];
+    g.renderer.render(s, 0);
+    const itemWithFireball = play.effects.find(
+      (sprite: any) => sprite.visible && sprite.texture.key === live.kind,
+    );
+    const fireballWithItem = play.effects.find(
+      (sprite: any) => sprite.visible && sprite.texture.key === "fireball",
+    );
+    return {
+      fireballRotation,
+      itemRotations,
+      itemRotationWithFireball: itemWithFireball?.rotation ?? null,
+      fireballRotationWithItem: fireballWithItem?.rotation ?? null,
+    };
+  });
+  expect(drawn.fireballRotation).not.toBe(0);
+  expect(drawn.fireballRotation).not.toBeNull();
+  expect(drawn.itemRotations).toEqual({
+    mushroom: 0,
+    flower: 0,
+    star: 0,
+  });
+  expect(drawn.itemRotationWithFireball).toBe(0);
+  expect(drawn.fireballRotationWithItem).not.toBe(0);
+  expect(drawn.fireballRotationWithItem).not.toBeNull();
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
