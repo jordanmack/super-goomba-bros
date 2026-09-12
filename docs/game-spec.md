@@ -210,14 +210,15 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
 - Powers can coexist. Mushroom and flower powers last for the stage; stars
   expire. Restart and a new stage clear them.
 
-The player fires at the same limited rate in both sizes. A small player shoots
-small fireballs; a giant player shoots fireballs three times larger. Existing
-shots keep their launch size. Fireballs bounce on surfaces and stop at walls.
-Only a giant player's fireball breaks an ordinary breakable brick on side or
-bottom contact. Top contact bounces and does not break. Question blocks, used
-blocks, and unbreakable tiles are not broken this way. Player fireballs do not
-harm NPCs. Mario's fireballs kill unprotected characters, including giants.
-Stars protect against those fireballs.
+Mario and a fire-powered player each keep at most two of their own fireballs
+in play. Either may throw again when a slot is free. Size does not change that
+rate. A small player shoots small fireballs; a giant player shoots fireballs
+three times larger. Existing shots keep their launch size. Fireballs bounce on
+surfaces and stop at walls. Only a giant player's fireball breaks an ordinary
+breakable brick on side or bottom contact. Top contact bounces and does not
+break. Question blocks, used blocks, and unbreakable tiles are not broken this
+way. Player fireballs do not harm NPCs. Mario's fireballs kill unprotected
+characters, including giants. Stars protect against those fireballs.
 
 ## Death and audio
 

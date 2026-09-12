@@ -899,6 +899,7 @@ test("HUD and result Died counter tracks NPC deaths only and resets with other c
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   const died = page.getByTestId("died");
   const warned = page.getByTestId("warned");
   const saved = page.getByTestId("saved");
@@ -921,11 +922,13 @@ test("HUD and result Died counter tracks NPC deaths only and resets with other c
     const s = (window as any).__game.sim;
     s.kill(s.player);
   });
-  await expect(page.getByRole("heading", { name: "STOMPED!" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "STOMPED!" })).toHaveCount(0);
   await expect.poll(() => died.textContent()).toBe("03");
-  await page.waitForFunction(
-    () => (window as any).__game.sim.mode === "playing",
-  );
+  await page.waitForFunction(() => {
+    const mode = (window as any).__game.sim.mode;
+    return mode === "intro" || mode === "playing";
+  });
+  await skipIntro(page);
   await expect(died).toHaveText("00");
   await expect(warned).toContainText("00");
   await expect(saved).toContainText("00");

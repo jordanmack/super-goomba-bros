@@ -50,7 +50,7 @@ export const TUNING = {
   transformBlinkHz: 12,
   marioStunSeconds: 2,
   marioDefeatSeconds: 3,
-  playerFireCooldown: 1,
+  fireballSlots: 2,
   playerFireballScale: 3,
   blockBounceSeconds: 0.22,
   pipeWidth: 64,

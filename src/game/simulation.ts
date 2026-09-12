@@ -260,9 +260,7 @@ export class Simulation {
   playerDeath: { x: number; y: number; vy: number; age: number } | null = null;
   marioStage: 0 | 1 | 2 = 0;
   doomed = false;
-  playerFireCooldown = 0;
   brickTarget: number | null = null;
-  fireCooldown = 2;
   cameraX = 0;
   viewWidth = 960;
   private flagPrevPlayerX = 0;
@@ -328,7 +326,7 @@ export class Simulation {
     this.brickTarget = null;
     this.marioCrowd = this.marioPressure = 0;
     this.marioRunning = false;
-    this.marioStun = this.playerFireCooldown = 0;
+    this.marioStun = 0;
     this.marioDeath = this.playerDeath = null;
     this.marioStage = 1;
     this.doomed = false;
@@ -340,7 +338,6 @@ export class Simulation {
       this.marioJumpWait =
       this.marioPause =
         0;
-    this.fireCooldown = 2;
     this.cameraX = 0;
     this.fireballs = [];
     this.items = [];
@@ -1175,7 +1172,6 @@ export class Simulation {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.audible = Math.max(0, this.audible - dt);
     this.bubbleLeft = Math.max(0, this.bubbleLeft - dt);
-    this.playerFireCooldown = Math.max(0, this.playerFireCooldown - dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
       a.starLeft = Math.max(0, a.starLeft - dt);
       a.transformLeft = Math.max(0, a.transformLeft - dt);
@@ -1223,8 +1219,7 @@ export class Simulation {
       if (input.jump && !this.jumped) this.jump(this.player);
       this.player.jumpHeld = input.jump;
       this.jumped = input.jump;
-      if (input.fire && this.player.flower && this.playerFireCooldown === 0) {
-        this.playerFireCooldown = T.playerFireCooldown;
+      if (input.fire && this.player.flower && this.canThrowFireball("player")) {
         this.fireballs.push({
           id: this.nextId++,
           x: p.x + this.player.facing * (12 * this.player.scale + 10),
@@ -1708,7 +1703,6 @@ export class Simulation {
       this.marioIgnore = 0.3;
       this.mario.facing = 1;
     }
-    this.fireCooldown -= dt * aggression;
     const m = this.mario.body.position;
     const water = this.roomFor(this.mario).data.type === "water";
     if (
@@ -1814,12 +1808,8 @@ export class Simulation {
         this.marioStage === 2 &&
         this.marioSeenAgo < 0.8 &&
         (this.mario.grounded || water) &&
-        this.fireCooldown <= 0
+        this.canThrowFireball("mario")
       ) {
-        this.fireCooldown = Math.max(
-          0.55,
-          1.1 + this.random() * 0.8 - this.marioPressure * 0.35,
-        );
         this.fireballs.push({
           id: this.nextId++,
           x: m.x,
@@ -1904,6 +1894,12 @@ export class Simulation {
         this.marioReaction = 0.15;
       }
     }
+  }
+
+  private canThrowFireball(owner: "player" | "mario") {
+    return (
+      this.fireballs.filter((f) => f.owner === owner).length < T.fireballSlots
+    );
   }
 
   private updateFireballs(dt: number) {

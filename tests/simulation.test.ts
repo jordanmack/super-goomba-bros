@@ -613,6 +613,9 @@ test("Died counts NPC deaths only and partitions population with saved and livin
   assert.equal(playerPit.mode, "dead");
   assert.equal(playerPit.died(), 0);
   tick(playerPit, T.deathSequenceSeconds + 0.1);
+  assert.equal(playerPit.mode, "intro");
+  assert.equal(playerPit.died(), 0);
+  tick(playerPit, T.introSeconds);
   assert.equal(playerPit.mode, "playing");
   assert.equal(playerPit.died(), 0);
 
@@ -895,8 +898,8 @@ test("first damaging stomp shrinks a mushroom player and keeps the flower", () =
   assert.ok(s.events.includes("shrink"));
   s.marioActive = false;
   tick(s, T.transformSeconds + dt, { fire: true });
-  assert.equal(s.fireballs.length, 1);
-  assert.equal(s.fireballs[0].scale, 1);
+  assert.equal(s.fireballs.length, T.fireballSlots);
+  assert.ok(s.fireballs.every((f) => (f.scale ?? 1) === 1));
   assert.equal(s.player.alive, true);
 });
 
@@ -994,19 +997,52 @@ test("giant player stomps shrink powered Mario first, then a later stomp can def
   assert.ok(!s.marioDeath && s.marioActive && s.mario.alive);
 });
 
-test("player fireballs match Goomba size and keep the same one-second cooldown", () => {
+function owned(s: Simulation, owner: "player" | "mario") {
+  return s.fireballs.filter((f) => f.owner === owner);
+}
+
+test("player fireballs match Goomba size and share a two-shot cap", () => {
   const s = game();
   give(s, s.player, "flower");
   tick(s, dt, { fire: true });
   assert.equal(s.fireballs.length, 1);
   assert.equal(s.fireballs[0].scale, 1);
   give(s, s.player, "mushroom");
-  tick(s, 0.5, { fire: true });
-  assert.equal(s.events.filter((event) => event === "fire").length, 1);
-  tick(s, 0.6, { fire: true });
+  tick(s, dt, { fire: true });
+  assert.equal(s.fireballs.length, 2);
   assert.equal(s.events.filter((event) => event === "fire").length, 2);
-  assert.equal(s.fireballs.at(-1)!.scale, T.playerFireballScale);
   assert.equal(s.fireballs[0].scale, 1);
+  assert.equal(s.fireballs[1].scale, T.playerFireballScale);
+  tick(s, dt, { fire: true });
+  assert.equal(owned(s, "player").length, T.fireballSlots);
+  assert.equal(s.events.filter((event) => event === "fire").length, 2);
+});
+
+test("Mario and the player each throw again when a fireball slot is free", () => {
+  const s = game();
+  give(s, s.player, "flower");
+  s.elapsed = T.fireballsAt;
+  s.marioActive = true;
+  s.marioStage = 2;
+  s.marioTarget = s.player.id;
+  s.marioAim = 100;
+  s.marioChase = 2;
+  s.marioJumpWait = 10;
+  s.marioLook = 1;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 0, y: 411 });
+  tick(s, dt, { fire: true });
+  tick(s, dt, { fire: true });
+  tick(s, dt, { fire: true });
+  assert.equal(owned(s, "player").length, T.fireballSlots);
+  assert.equal(owned(s, "mario").length, T.fireballSlots);
+  owned(s, "player")[0].age = 5;
+  owned(s, "mario")[0].age = 5;
+  tick(s, 2 * dt, { fire: true });
+  assert.equal(owned(s, "player").length, T.fireballSlots);
+  assert.equal(owned(s, "mario").length, T.fireballSlots);
+  assert.ok(owned(s, "player").some((f) => f.age < 2 * dt));
+  assert.ok(owned(s, "mario").some((f) => f.age < 2 * dt));
 });
 
 test("flowers enable player fireballs; hits stun Mario and never hurt NPCs", () => {
@@ -1017,7 +1053,8 @@ test("flowers enable player fireballs; hits stun Mario and never hurt NPCs", () 
   Body.setFrozen(s.mario.body, false);
   Body.setPosition(s.mario.body, { x: 150, y: 411 });
   Body.setPosition(s.npcs[0].body, { x: 130, y: 415 });
-  tick(s, 0.12, { fire: true });
+  tick(s, dt, { fire: true });
+  tick(s, 0.12);
   assert.ok(s.marioStun > 1);
   assert.ok(s.mario.alive && s.npcs[0].alive);
   assert.equal(s.events.filter((e) => e === "fire").length, 1);
@@ -1265,12 +1302,10 @@ test("running crowds attract Mario sooner and accelerate attack cooldowns", () =
     s.marioPause = 10;
     s.marioLook = 10;
     Body.setPosition(s.mario.body, { x: 200, y: 411 });
-    s.fireCooldown = 2;
     s.marioJumpWait = 2;
   }
   tick(quiet, 0.2);
   tick(loud, 0.2);
-  assert.ok(loud.fireCooldown < quiet.fireCooldown);
   assert.ok(loud.marioJumpWait < quiet.marioJumpWait);
   for (const s of [quiet, loud]) {
     s.marioActive = false;
@@ -1719,7 +1754,6 @@ test("late Mario fires visible projectiles when pursuing", () => {
   s.elapsed = T.fireballsAt;
   s.marioActive = true;
   s.marioStage = 2;
-  s.fireCooldown = 0;
   s.marioTarget = s.player.id;
   s.marioAim = 100;
   s.marioChase = 2;
