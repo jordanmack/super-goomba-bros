@@ -11,7 +11,6 @@ import {
   Volume2,
   VolumeX,
   Flame,
-  X,
 } from "lucide-react";
 import { Simulation, emptyInput } from "./game/simulation";
 import type { Input, Mode } from "./game/simulation";
@@ -305,7 +304,7 @@ export default function App() {
     </button>
   );
   const active = state.mode !== "title";
-  const overlay = paused || ["dead", "won"].includes(state.mode);
+  const overlay = paused || state.mode === "won";
   const minutes = Math.floor(state.elapsed / 60)
     .toString()
     .padStart(2, "0");
@@ -493,7 +492,7 @@ export default function App() {
       )}
       {overlay && (
         <section
-          className={`overlay ${state.mode === "dead" && !paused ? "death-overlay" : ""}`}
+          className="overlay"
           aria-label={paused ? "Paused" : "Result"}
         >
           {paused ? (
@@ -506,12 +505,6 @@ export default function App() {
               <button className="secondary" onClick={start}>
                 <RotateCcw size={16} /> RESTART LEVEL
               </button>
-            </>
-          ) : state.mode === "dead" ? (
-            <>
-              <X className="death-icon" />
-              <h2>STOMPED!</h2>
-              <p>Back to the beginning...</p>
             </>
           ) : (
             <>

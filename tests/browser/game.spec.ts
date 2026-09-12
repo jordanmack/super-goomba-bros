@@ -749,12 +749,30 @@ test("death restart, impossible quota, finish window, and final score screens", 
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await page.waitForFunction(
+    () => (window as any).__game.audio.buffers.size === 15,
+  );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
     s.kill(s.player);
   });
-  await expect(page.getByRole("heading", { name: "STOMPED!" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "STOMPED!" })).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const g = (window as any).__game;
+        return {
+          mode: g.sim.mode,
+          deathCue: [...g.audio.effects].some(
+            (source: any) => source.audioBuffer === g.audio.buffers.get("death"),
+          ),
+        };
+      }),
+    )
+    .toEqual({ mode: "dead", deathCue: true });
+  await expect(page.getByRole("heading", { name: "STOMPED!" })).toHaveCount(0);
+  await page.waitForFunction(
+    () => (window as any).__game.sim.mode === "playing",
+  );
   await expect(page.getByTestId("warned")).toContainText("00");
   await page.evaluate(() => {
     const s = (window as any).__game.sim;

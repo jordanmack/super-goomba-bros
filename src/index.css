@@ -28,12 +28,6 @@
 .game .scanlines {
   opacity: 0;
 }
-.game .death-overlay {
-  background: #32000026;
-  justify-content: flex-start;
-  padding-top: 22vh;
-  pointer-events: none;
-}
 
 :root {
   font-family: "Press Start 2P", monospace;
@@ -514,11 +508,6 @@ p {
 }
 .finish-banner span {
   font-size: 8px;
-}
-.death-icon {
-  width: 45px;
-  height: 45px;
-  color: #f58066;
 }
 .error {
   position: absolute;

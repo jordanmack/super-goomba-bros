@@ -220,6 +220,21 @@ export class Play extends Phaser.Scene {
         .clearTint();
       return;
     }
+    if (actor === sim.player && sim.playerDeath) {
+      sprite
+        .stop()
+        .setTexture(actor.flower ? "fireGoomba" : "goomba")
+        .setVisible(true)
+        .setPosition(
+          sim.playerDeath.x,
+          sim.playerDeath.y + 16 * actor.scale,
+        )
+        .setDisplaySize(32 * actor.scale, 32 * actor.scale)
+        .setFlipX(actor.facing < 0)
+        .setAlpha(1)
+        .clearTint();
+      return;
+    }
     sprite.setVisible(
       actor.alive && !actor.saved && !(actor === sim.mario && !sim.marioActive),
     );

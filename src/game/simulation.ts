@@ -244,6 +244,7 @@ export class Simulation {
   marioPressure = 0;
   marioStun = 0;
   marioDeath: { x: number; y: number; vy: number; age: number } | null = null;
+  playerDeath: { x: number; y: number; vy: number; age: number } | null = null;
   marioStage: 0 | 1 | 2 = 0;
   doomed = false;
   playerFireCooldown = 0;
@@ -309,7 +310,7 @@ export class Simulation {
     this.marioCrowd = this.marioPressure = 0;
     this.marioRunning = false;
     this.marioStun = this.playerFireCooldown = 0;
-    this.marioDeath = null;
+    this.marioDeath = this.playerDeath = null;
     this.marioStage = 1;
     this.doomed = false;
     this.marioTarget = null;
@@ -652,7 +653,15 @@ export class Simulation {
     if (a === this.player) {
       this.mode = "dead";
       this.deadLeft = T.deathSequenceSeconds;
+      this.bubbleLeft = 0;
       this.events.push("death");
+      const pit = a.body.position.y > 640;
+      this.playerDeath = {
+        x: a.body.position.x,
+        y: a.body.position.y,
+        vy: pit ? 0 : -T.deathHopSpeed,
+        age: pit ? T.deathHopDelay : 0,
+      };
     }
   }
 
@@ -813,6 +822,17 @@ export class Simulation {
     }
   }
 
+  private stepDeathHop(
+    death: { x: number; y: number; vy: number; age: number },
+    dt: number,
+  ) {
+    death.age += dt;
+    if (death.age > T.deathHopDelay) {
+      death.vy += T.deathFallGravity * dt;
+      death.y += death.vy * dt;
+    }
+  }
+
   private defeatMario() {
     if (!this.marioActive) return;
     this.burst(this.mario.body.position.x, this.mario.body.position.y, true);
@@ -820,7 +840,7 @@ export class Simulation {
     this.marioDeath = {
       x: this.mario.body.position.x,
       y: this.mario.body.position.y,
-      vy: -420,
+      vy: -T.deathHopSpeed,
       age: 0,
     };
     this.marioActive = this.mario.alive = false;
@@ -1018,6 +1038,7 @@ export class Simulation {
   step(dt: number, input: Input) {
     if (this.mode === "dead") {
       this.updateParticles(dt);
+      if (this.playerDeath) this.stepDeathHop(this.playerDeath, dt);
       this.deadLeft -= dt;
       if (this.deadLeft <= 0) this.reset();
       return;
@@ -1529,11 +1550,7 @@ export class Simulation {
       this.marioReturn -=
         dt * (this.mario.alive ? 1 + this.marioPressure * 1.8 : 1);
       if (this.marioDeath) {
-        this.marioDeath.age += dt;
-        if (this.marioDeath.age > 0.15) {
-          this.marioDeath.vy += 900 * dt;
-          this.marioDeath.y += this.marioDeath.vy * dt;
-        }
+        this.stepDeathHop(this.marioDeath, dt);
         if (this.marioDeath.y > 700) this.marioDeath = null;
       }
       if (this.marioReturn > 0 || this.marioDeath) return;

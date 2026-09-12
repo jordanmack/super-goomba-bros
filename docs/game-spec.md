@@ -216,7 +216,8 @@ used blocks, and pursuit state.
 
 Mario's kills produce bounded pixel-blood bursts and temporary stains. NPC
 deaths have no death-song sequence. Player and Mario deaths play the complete
-original death tune. Mario uses his original upward hop and fall pose, then
+original death tune. The player Goomba hops up, then falls off the screen. Pit
+deaths skip the hop. Mario uses his original upward hop and fall pose, then
 returns quickly. His return must not cut off the cue.
 
 Play the original area music and effects. Start audio after a user gesture.

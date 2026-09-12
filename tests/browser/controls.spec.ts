@@ -271,8 +271,22 @@ test("pause, restart, and automatic death reset require fresh presses", async ({
     const s = (window as any).__game.sim;
     s.kill(s.player, false);
   });
-  await expect(page.getByRole("heading", { name: "STOMPED!" })).toBeVisible();
-  await input(page, {});
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const g = (window as any).__game;
+        const { left, right, jump, fire } = g.input;
+        return { mode: g.sim.mode, left, right, jump, fire };
+      }),
+    )
+    .toEqual({
+      mode: "dead",
+      left: false,
+      right: false,
+      jump: false,
+      fire: false,
+    });
+  await expect(page.getByRole("heading", { name: "STOMPED!" })).toHaveCount(0);
   await touch(page, "touchend", [], [right]);
   await touch(page, "touchstart", [right]);
   await input(page, {});

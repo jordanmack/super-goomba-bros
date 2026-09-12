@@ -1497,6 +1497,34 @@ test("one hit plays the complete death sequence before resetting run state", () 
   assert.equal(s.npcs.filter((n) => n.alive).length, T.population);
   assert.equal(s.bubbleLeft, 0);
   assert.equal(s.player.pipeWait ?? 0, 0);
+  assert.equal(s.playerDeath, null);
+});
+
+test("player death hops then falls, and pit deaths skip the hop", () => {
+  const s = game();
+  const startY = s.player.body.position.y;
+  s.kill(s.player);
+  assert.ok(s.events.includes("death"));
+  assert.ok(s.playerDeath);
+  tick(s, T.deathHopDelay);
+  assert.equal(s.playerDeath?.y, startY);
+  tick(s, 0.2);
+  assert.ok(s.playerDeath && s.playerDeath.y < startY);
+  const peak = s.playerDeath.y;
+  tick(s, 0.8);
+  assert.ok(s.playerDeath && s.playerDeath.y > peak);
+  const pit = game();
+  Body.setPosition(pit.player.body, {
+    x: pit.player.body.position.x,
+    y: 641,
+  });
+  pit.kill(pit.player, false);
+  assert.equal(pit.mode, "dead");
+  assert.ok(pit.playerDeath);
+  const pitY = pit.playerDeath.y;
+  assert.ok(pitY > 640);
+  tick(pit, 0.3);
+  assert.ok(pit.playerDeath && pit.playerDeath.y >= pitY);
 });
 
 test("Mario first appears at three seconds, and later returns keep their delay", () => {
