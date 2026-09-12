@@ -216,6 +216,7 @@ export class Simulation {
   elapsed = 0;
   warned = 0;
   saved = 0;
+  coins = 0;
   phase = 0;
   cooldown = 0;
   audible = 0;
@@ -288,6 +289,7 @@ export class Simulation {
     this.elapsed =
       this.warned =
       this.saved =
+      this.coins =
       this.phase =
       this.cooldown =
       this.audible =
@@ -1009,7 +1011,10 @@ export class Simulation {
         );
         if (collector) {
           coin.collected = true;
-          if (collector === this.player) this.events.push("coin");
+          if (collector === this.player) {
+            this.coins++;
+            this.events.push("coin");
+          }
         }
       }
     this.contactWarning();

@@ -263,6 +263,9 @@ p {
 .saved-counter strong {
   color: #fff09a;
 }
+.coin-counter strong {
+  color: #ffd76a;
+}
 .in-game .topbar {
   background: #173e3cdd;
   box-shadow: 0 3px #b8d28a66;
@@ -576,7 +579,7 @@ p {
     padding: 14px;
   }
   .counters {
-    gap: 21px;
+    gap: 12px;
     padding: 0;
   }
   .counters span {

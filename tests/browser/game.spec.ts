@@ -604,6 +604,64 @@ test("death restart, impossible quota, finish window, and final score screens", 
   ).toBeVisible();
 });
 
+test("HUD coin counter increases on collection and resets on restart and next level", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  const coins = page.getByTestId("coins");
+  const warned = page.getByTestId("warned");
+  const saved = page.getByTestId("saved");
+  await expect(coins).toHaveText("00");
+  await expect(warned).toContainText("00");
+  await expect(saved).toContainText("00");
+  await expect(warned).toContainText(`/ ${T.population}`);
+  await expect(saved).toContainText(`/ ${T.required}`);
+  const box = (await coins.boundingBox())!;
+  expect(box.y).toBeLessThan(80);
+  const collect = () =>
+    page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      s.marioReturn = 1e6;
+      const room = s.loadRoom("42");
+      const coin = room.coins.find((c: any) => !c.collected);
+      if (!coin) throw new Error("no uncollected coin");
+      const p = s.player.body.position;
+      coin.x = p.x;
+      coin.y = p.y;
+    });
+  await collect();
+  await expect.poll(() => coins.textContent()).toBe("01");
+  await expect(warned).toContainText("00");
+  await expect(saved).toContainText("00");
+  await expect(warned).toContainText(`/ ${T.population}`);
+  await expect(saved).toContainText(`/ ${T.required}`);
+  expect(
+    await page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      return { coins: s.coins, warned: s.warned, saved: s.saved };
+    }),
+  ).toEqual({ coins: 1, warned: 0, saved: 0 });
+  await collect();
+  await expect.poll(() => coins.textContent()).toBe("02");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("button", { name: "RESTART LEVEL" }).click();
+  await expect(coins).toHaveText("00");
+  await collect();
+  await expect.poll(() => coins.textContent()).toBe("01");
+  await page.evaluate((required) => {
+    const g = (window as any).__game;
+    g.sim.npcs.slice(0, required).forEach((npc: any) => g.sim.save(npc));
+    g.sim.finish();
+    g.sim.finishLeft = 0.15;
+  }, T.required);
+  await page.getByRole("button", { name: "NEXT LEVEL" }).click();
+  await expect(page.getByTestId("coins")).toHaveText("00");
+  await expect(page.getByTestId("saved")).toContainText("00");
+  await expect(page.getByTestId("warned")).toContainText(`/ ${T.population}`);
+  await expect(page.getByTestId("saved")).toContainText(`/ ${T.required}`);
+});
+
 test("standalone production HTML runs without a server or external assets", async ({
   page,
 }) => {

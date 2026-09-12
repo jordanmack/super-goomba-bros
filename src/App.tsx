@@ -34,6 +34,7 @@ type Snapshot = {
   mode: Mode;
   warned: number;
   saved: number;
+  coins: number;
   living: number;
   elapsed: number;
   doomed: boolean;
@@ -53,6 +54,7 @@ const initial: Snapshot = {
   mode: "title",
   warned: 0,
   saved: 0,
+  coins: 0,
   living: T.population,
   elapsed: 0,
   doomed: false,
@@ -192,6 +194,7 @@ export default function App() {
             mode: sim.mode,
             warned: sim.warned,
             saved: sim.saved,
+            coins: sim.coins,
             living: sim.living(),
             elapsed: sim.elapsed,
             doomed: sim.doomed,
@@ -330,7 +333,7 @@ export default function App() {
           </span>
         </div>
         {active && (
-          <div className="counters" aria-label="Rescue counters">
+          <div className="counters" aria-label="Game counters">
             <div>
               <span>WARNED</span>
               <strong data-testid="warned">
@@ -343,6 +346,12 @@ export default function App() {
               <strong data-testid="saved">
                 {String(state.saved).padStart(2, "0")}
                 <small> / {T.required}</small>
+              </strong>
+            </div>
+            <div className="coin-counter">
+              <span>COINS</span>
+              <strong data-testid="coins">
+                {String(state.coins).padStart(2, "0")}
               </strong>
             </div>
           </div>

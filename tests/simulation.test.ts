@@ -245,6 +245,41 @@ test("question blocks release each random item once, including on Mario hits", (
   }
 });
 
+test("player coins increment a counter without changing rescue scores", () => {
+  const s = game();
+  const room = s.loadRoom("42");
+  const coin = room.coins.find((c) => !c.collected);
+  assert.ok(coin);
+  const p = s.player.body.position;
+  coin.x = p.x;
+  coin.y = p.y;
+  tick(s, dt);
+  assert.equal(coin.collected, true);
+  assert.equal(s.coins, 1);
+  assert.ok(s.events.includes("coin"));
+  assert.equal(s.warned, 0);
+  assert.equal(s.saved, 0);
+  const second = room.coins.find((c) => !c.collected);
+  assert.ok(second);
+  second.x = p.x;
+  second.y = p.y;
+  tick(s, dt);
+  assert.equal(s.coins, 2);
+  const npcCoin = room.coins.find((c) => !c.collected);
+  assert.ok(npcCoin);
+  const n = s.npcs[0];
+  npcCoin.x = n.body.position.x;
+  npcCoin.y = n.body.position.y;
+  tick(s, dt);
+  assert.equal(npcCoin.collected, true);
+  assert.equal(s.coins, 2);
+  s.reset();
+  assert.equal(s.coins, 0);
+  s.coins = 5;
+  s.nextLevel();
+  assert.equal(s.coins, 0);
+});
+
 test("NPCs pick up falling items by contact without being warned or seeking them", () => {
   for (const kind of ["star", "mushroom", "flower"] as const) {
     const s = game();
@@ -751,6 +786,7 @@ test("one hit plays the complete death sequence before resetting run state", () 
   const s = game();
   s.warned = 8;
   s.saved = 3;
+  s.coins = 4;
   s.elapsed = 100;
   s.obstacles[2].broken = true;
   s.fireballs.push({ id: 88, x: 0, y: 0, vx: 1, age: 0 });
@@ -760,6 +796,7 @@ test("one hit plays the complete death sequence before resetting run state", () 
   assert.equal(s.mode, "playing");
   assert.equal(s.warned, 0);
   assert.equal(s.saved, 0);
+  assert.equal(s.coins, 0);
   assert.equal(s.phase, 0);
   assert.equal(s.fireballs.length, 0);
   assert.equal(s.obstacles[2].broken, false);
