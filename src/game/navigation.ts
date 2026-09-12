@@ -2,6 +2,26 @@ import { Body } from "./physics.ts";
 import type { Point } from "./physics.ts";
 import { MAP_TOP, TUNING as T } from "./config.ts";
 
+type Box = { min: Point; max: Point };
+
+// One-tile wells such as the World 1-1 last pipe against the first stair:
+// taller solids on both sides, so walking in leaves no room to back up.
+export function enclosedWell(solids: { bounds: Box }[], platform: Box) {
+  if (platform.max.x - platform.min.x > T.brickSize + 8) return false;
+  const taller = (side: "left" | "right") => {
+    const edge = side === "left" ? platform.min.x : platform.max.x;
+    return solids.some((solid) => {
+      const b = solid.bounds;
+      if (b.min.y >= platform.min.y - 8 || b.max.y <= platform.min.y)
+        return false;
+      return side === "left"
+        ? Math.abs(b.max.x - edge) <= 4 && b.min.x < edge - 8
+        : Math.abs(b.min.x - edge) <= 4 && b.max.x > edge + 8;
+    });
+  };
+  return taller("left") && taller("right");
+}
+
 // Try discrete 60 Hz arcs against the same rectangles used by Arcade. NPCs
 // choose a safe landing before leaving a ledge; the player's jump is unchanged.
 export function planJump(
@@ -77,7 +97,8 @@ export function planJump(
             if (
               progress > 16 &&
               b.max.x - b.min.x >= half &&
-              accept({ x, y: b.min.y - tall })
+              accept({ x, y: b.min.y - tall }) &&
+              !enclosedWell(nearby, b)
             ) {
               const margin = Math.min(x + half - b.min.x, b.max.x - x + half);
               options.push({

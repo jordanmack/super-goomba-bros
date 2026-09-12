@@ -2,7 +2,7 @@ import { Body, PhysicsWorld, overlaps, rayBlocked } from "./physics.ts";
 import { MAP_TOP, PHRASES, TUNING as T } from "./config.ts";
 import { CAMPAIGN } from "./levels.ts";
 import { Room } from "./room.ts";
-import { planJump } from "./navigation.ts";
+import { enclosedWell, planJump } from "./navigation.ts";
 
 export type Input = {
   left: boolean;
@@ -440,12 +440,21 @@ export class Simulation {
       (s) =>
         !s.headOnly && s.bounds.max.x > p.x - 400 && s.bounds.min.x < p.x + 400,
     );
+    const support = solids.find(
+      (s) =>
+        p.x + half > s.bounds.min.x &&
+        p.x - half < s.bounds.max.x &&
+        Math.abs(s.bounds.min.y - feet) < 3,
+    );
+    const inWell =
+      !!support && !support.motion && enclosedWell(solids, support.bounds);
     const supported = solids.some(
       (s) =>
         ahead > s.bounds.min.x &&
         ahead < s.bounds.max.x &&
         s.bounds.min.y >= feet - 5 &&
-        s.bounds.min.y <= feet + 32,
+        s.bounds.min.y <= feet + 32 &&
+        (a === this.mario || !enclosedWell(solids, s.bounds)),
     );
     const wall = solids.some(
       (s) =>
@@ -454,7 +463,7 @@ export class Simulation {
         feet > s.bounds.min.y + 5 &&
         a.body.bounds.min.y < s.bounds.max.y,
     );
-    if (supported && !wall) return;
+    if (supported && !wall && (a === this.mario || !inWell)) return;
     if (a === this.mario) {
       this.jump(a);
       return;
@@ -464,15 +473,10 @@ export class Simulation {
         ahead > s.bounds.min.x &&
         ahead < s.bounds.max.x &&
         s.bounds.min.y > feet &&
-        s.bounds.min.y <= T.groundY,
+        s.bounds.min.y <= T.groundY &&
+        !enclosedWell(solids, s.bounds),
     );
     if (!supported && !wall && this.roomFor(a).data.type === "castle") {
-      const support = solids.find(
-        (s) =>
-          p.x + half > s.bounds.min.x &&
-          p.x - half < s.bounds.max.x &&
-          Math.abs(s.bounds.min.y - feet) < 3,
-      );
       if (support) {
         const x =
           direction > 0
@@ -495,7 +499,7 @@ export class Simulation {
       }
     }
     if (a.navDetourBelow && !wall && safeDrop && !supported) return;
-    if ((a.navRetry ?? 0) > 0) {
+    if ((a.navRetry ?? 0) > 0 && !inWell) {
       if (!supported) this.move(a, 0);
       return;
     }
@@ -518,6 +522,26 @@ export class Simulation {
       this.jump(a);
       a.navVx = launch.vx;
       a.navDelay = launch.delay;
+    } else if (inWell) {
+      const reverse = planJump(
+        a.body,
+        solids,
+        -direction,
+        a.speed,
+        impulse,
+        (landing) => landing.y < p.y - 24,
+      );
+      if (reverse) {
+        this.move(a, reverse.delay ? 0 : reverse.vx);
+        this.jump(a);
+        a.navVx = reverse.vx;
+        a.navDelay = reverse.delay;
+      } else {
+        this.move(a, 0);
+        this.jump(a);
+        a.navVx = direction * T.npcGapSpeed;
+        a.navDelay = 18;
+      }
     } else {
       if (!wall && (safeDrop || a.navDetourBelow)) {
         const drop = planJump(a.body, solids, direction, a.speed, 0);
@@ -529,14 +553,7 @@ export class Simulation {
         }
       }
       a.navRetry = 0.15;
-      const support = solids.find(
-        (s) =>
-          !s.motion &&
-          p.x + half > s.bounds.min.x &&
-          p.x - half < s.bounds.max.x &&
-          Math.abs(s.bounds.min.y - feet) < 3,
-      );
-      if (support && !this.roomFor(a).onSpring(a))
+      if (support && !support.motion && !this.roomFor(a).onSpring(a))
         for (let distance = 32; distance <= 256; distance += 32) {
           const x = p.x - direction * distance;
           if (

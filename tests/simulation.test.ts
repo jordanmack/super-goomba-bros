@@ -8,7 +8,7 @@ import {
   rescueImpossible,
 } from "../src/game/simulation.ts";
 import { PHRASES, TUNING as T } from "../src/game/config.ts";
-import { areaData, areaGaps } from "../src/game/levels.ts";
+import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
 const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
@@ -166,6 +166,83 @@ test("idle NPCs leave isolated blocks and stairs without rapidly flipping direct
     assert.ok(turns < 20, `NPC at ${x} turned ${turns} times`);
     assert.equal(n.warned, false);
   }
+});
+
+function inPipeStairWell(n: Actor) {
+  return (
+    n.grounded &&
+    n.body.position.x > 5792 &&
+    n.body.position.x < 5824 &&
+    n.body.position.y > 370
+  );
+}
+
+test("a warned NPC leaves the World 1-1 last stair by the pipe and continues", () => {
+  const s = game();
+  const n = s.npcs[0];
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.speed = 2.1;
+  // Last pipe 5728-5792 top 366; first stair is a 32px well at 5792-5824 top 398.
+  Body.setPosition(n.body, { x: 5808, y: 384 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  let leftPocket = false;
+  for (let i = 0; i < 4 * 60; i++) {
+    tick(s, dt);
+    leftPocket ||=
+      n.saved || n.body.position.x > 5856 || n.body.position.x < 5728;
+    if (n.saved || n.body.position.x > 5900) break;
+  }
+  assert.ok(n.alive);
+  assert.ok(leftPocket, "leaves the pipe-stair pocket");
+  assert.ok(
+    n.saved || n.body.position.x > 5900,
+    `continues past the pocket: ${JSON.stringify(n.body.position)}`,
+  );
+});
+
+test("a warned NPC reverses out of a one-tile well when the forward wall is too tall", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
+  s.reset();
+  s.marioReturn = 1e6;
+  const n = s.npcs[0];
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.speed = 2.1;
+  Body.setPosition(n.body, { x: 6064, y: 416 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  tick(s, 8);
+  assert.ok(n.alive);
+  assert.ok(
+    n.saved || n.body.position.x < 6040 || n.body.position.x > 6144,
+    `leaves the 2-1 well: ${JSON.stringify(n.body.position)}`,
+  );
+});
+
+test("a warned NPC on the World 1-1 last pipe does not stay in the stair well", () => {
+  const s = game();
+  const n = s.npcs[0];
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.speed = 2.1;
+  Body.setPosition(n.body, { x: 5760, y: 352 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  let groundedInWell = 0;
+  for (let i = 0; i < 3 * 60; i++) {
+    tick(s, dt);
+    if (inPipeStairWell(n)) groundedInWell++;
+    if (n.saved || n.body.position.x > 5900) break;
+  }
+  assert.ok(n.alive);
+  assert.equal(groundedInWell, 0, "does not drop into the last-stair well");
+  assert.ok(
+    n.saved || n.body.position.x > 5856,
+    `clears the last pipe and stair: ${JSON.stringify(n.body.position)}`,
+  );
 });
 
 test("giant head hits break bricks and let NPCs on top fall safely", () => {
