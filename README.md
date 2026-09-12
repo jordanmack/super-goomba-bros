@@ -55,7 +55,7 @@ then pursues, jumps, and fires when powered.
 
 Question blocks release random stars, mushrooms, or flowers. Mushrooms grow
 Goombas and NPCs; flowers turn them white. Player fireballs match the Goomba's
-size and share one firing cooldown. Stars and giant-player stomps defeat Mario;
+size and share one firing cooldown. Stars defeat Mario. Giant-player stomps and
 fireballs reduce him through fire, big, and small stages. His power can increase
 on return or through items, with no spontaneous upgrade while active.
 

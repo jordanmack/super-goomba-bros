@@ -36,6 +36,8 @@ export const TUNING = {
   marioCrowdSpeedBonus: 2,
   starSeconds: 10,
   giantScale: 3,
+  transformSeconds: 0.8,
+  transformBlinkHz: 12,
   marioStunSeconds: 2,
   marioDefeatSeconds: 3,
   playerFireCooldown: 1,

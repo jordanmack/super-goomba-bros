@@ -228,8 +228,10 @@ export class Play extends Phaser.Scene {
       return;
     }
     const mario = actor === sim.mario;
+    const shown = sim.displayScale(actor);
+    const smallMario = mario && shown < 1;
     const base = mario
-      ? sim.marioStage === 0
+      ? smallMario
         ? "smallMario"
         : sim.marioStage === 2
           ? "whiteMario"
@@ -254,15 +256,14 @@ export class Play extends Phaser.Scene {
         .setTexture(
           base + (mario && !actor.grounded ? "Jump" : skid ? "Skid" : ""),
         );
-    const smallMario = mario && sim.marioStage === 0;
     const height =
-      (actor.kind === "koopa" ? 48 : mario ? 64 : 32) * actor.scale;
+      (actor.kind === "koopa" ? 48 : mario ? 64 : 32) * shown;
     sprite.setPosition(
       Math.round(actor.body.position.x),
       Math.round(actor.body.bounds.max.y),
     );
     sprite
-      .setDisplaySize(smallMario ? 32 : 32 * actor.scale, height)
+      .setDisplaySize(smallMario ? 32 : 32 * shown, height)
       .setFlipX(actor.facing < 0);
     sprite.setAlpha(
       mario && sim.marioStun > 0 && Math.floor(sim.elapsed * 18) % 2 ? 0.25 : 1,

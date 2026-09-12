@@ -66,6 +66,10 @@ test("next stage resets counters and preserves the complete clear cue", async ({
     g.sim.finishLeft = 0.15;
   }, T.required);
   await page.getByRole("button", { name: "NEXT LEVEL" }).click();
+  // 1-2 spawn-stomp races the remaining clear cue at full sim speed.
+  await page.evaluate(() => {
+    (window as any).__game.sim.marioReturn = 1e6;
+  });
   await expect(page.getByTestId("saved")).toContainText("00");
   await expect
     .poll(() => page.evaluate(() => (window as any).__game.sim.level.id))

@@ -713,14 +713,160 @@ test("shallow side overlap below an NPC top does not bounce the player", () => {
   assert.ok(n.alive);
 });
 
-test("giant player stomps kill Mario, play his death cue, and bounce the player upward", () => {
+function stillMario(s: Simulation) {
+  s.marioActive = true;
+  s.marioStun = 0;
+  s.marioLook = 10;
+  s.marioPause = 10;
+  s.marioChase = 0;
+  s.marioReaction = 1;
+  Body.setFrozen(s.mario.body, false);
+}
+
+function marioStomp(s: Simulation, target: Actor) {
+  stillMario(s);
+  const p = target.body.position;
+  Body.setPosition(s.mario.body, {
+    x: p.x,
+    y: p.y - 14 * target.scale - 5,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 4 });
+}
+
+function giantStompMario(s: Simulation) {
+  stillMario(s);
+  const marioTop = 411 - 19 * s.mario.scale;
+  at(s, 100, marioTop - 14 * s.player.scale - 2);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  Body.setPosition(s.mario.body, { x: 100, y: 411 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+}
+
+test("mushroom grow and shrink blink between the two sizes", () => {
   const s = game();
   give(s, s.player, "mushroom");
-  at(s, 100, 388 - 14 * T.giantScale);
-  Body.setVelocity(s.player.body, { x: 0, y: 4 });
-  s.marioActive = true;
-  Body.setFrozen(s.mario.body, false);
-  Body.setPosition(s.mario.body, { x: 100, y: 411 });
+  assert.equal(s.player.scale, T.giantScale);
+  assert.ok(s.player.transformLeft > 0);
+  assert.equal(s.player.transformFrom, 1);
+  const grown = new Set<number>();
+  while (s.player.transformLeft > 0) {
+    grown.add(s.displayScale(s.player));
+    tick(s, dt);
+  }
+  assert.deepEqual([...grown].sort((a, b) => a - b), [1, T.giantScale]);
+  assert.equal(s.displayScale(s.player), T.giantScale);
+  parkNpcs(s, []);
+  marioStomp(s, s.player);
+  tick(s, dt);
+  assert.equal(s.player.scale, 1);
+  assert.ok(s.player.alive);
+  const shrunk = new Set<number>();
+  s.marioActive = false;
+  while (s.player.transformLeft > 0) {
+    shrunk.add(s.displayScale(s.player));
+    tick(s, dt);
+  }
+  assert.deepEqual([...shrunk].sort((a, b) => a - b), [1, T.giantScale]);
+  assert.equal(s.displayScale(s.player), 1);
+});
+
+test("first damaging stomp shrinks a mushroom player and keeps the flower", () => {
+  const s = game();
+  give(s, s.player, "flower");
+  give(s, s.player, "mushroom");
+  parkNpcs(s, []);
+  marioStomp(s, s.player);
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.scale, 1);
+  assert.equal(s.player.flower, true);
+  assert.ok(s.events.includes("shrink"));
+  s.marioActive = false;
+  tick(s, T.transformSeconds + dt, { fire: true });
+  assert.equal(s.fireballs.length, 1);
+  assert.equal(s.fireballs[0].scale, 1);
+  assert.equal(s.player.alive, true);
+});
+
+test("first damaging stomp shrinks a mushroom NPC instead of killing it", () => {
+  const s = game();
+  const n = s.npcs[0];
+  give(s, n, "mushroom");
+  parkNpcs(s, [n]);
+  at(s, 4000);
+  marioStomp(s, n);
+  tick(s, dt);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, 1);
+  assert.ok(s.events.includes("shrink"));
+  n.transformLeft = 0;
+  marioStomp(s, n);
+  tick(s, dt);
+  assert.equal(n.alive, false);
+});
+
+test("star holders stay immune, including giants", () => {
+  const s = game();
+  give(s, s.player, "mushroom");
+  give(s, s.player, "star");
+  parkNpcs(s, []);
+  marioStomp(s, s.player);
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.scale, T.giantScale);
+  s.fireballs.push({
+    id: 42,
+    x: s.player.body.position.x,
+    y: s.player.body.position.y,
+    vx: 0,
+    age: 0,
+  });
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.scale, T.giantScale);
+});
+
+test("Mario still selects a giant player and giant NPCs", () => {
+  const giantPlayer = game();
+  give(giantPlayer, giantPlayer.player, "mushroom");
+  assert.equal(giantPlayer.invincible(giantPlayer.player), false);
+  giantPlayer.random = () => 0;
+  stillMario(giantPlayer);
+  giantPlayer.marioLook = 0;
+  giantPlayer.marioPause = 0;
+  giantPlayer.marioReaction = 0;
+  Body.setPosition(giantPlayer.mario.body, { x: 0, y: 411 });
+  tick(giantPlayer, dt);
+  assert.equal(giantPlayer.marioTarget, giantPlayer.player.id);
+
+  const s = game();
+  const n = s.npcs[0];
+  give(s, n, "mushroom");
+  assert.equal(s.invincible(n), false);
+  at(s, 900);
+  s.random = () => 0.99;
+  stillMario(s);
+  s.marioLook = 0;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  Body.setPosition(s.mario.body, { x: 300, y: 411 });
+  tick(s, dt);
+  assert.equal(s.marioTarget, n.id);
+});
+
+test("giant player stomps shrink powered Mario first, then a later stomp can defeat him", () => {
+  const s = game();
+  give(s, s.player, "mushroom");
+  parkNpcs(s, []);
+  assert.equal(s.marioStage, 1);
+  giantStompMario(s);
+  tick(s, dt);
+  assert.equal(s.marioStage, 0);
+  assert.ok(s.mario.alive && s.player.alive);
+  assert.ok(s.events.includes("shrink"));
+  assert.equal(s.events.includes("marioDeath"), false);
+  assert.ok(s.player.body.velocity.y < 0);
+  giantStompMario(s);
   tick(s, dt);
   assert.ok(s.marioDeath);
   assert.ok(!s.mario.alive && s.player.alive);

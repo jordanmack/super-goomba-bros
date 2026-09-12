@@ -52,6 +52,8 @@ export type Actor = {
   idleWalking: boolean;
   idleDrop?: { airborne: boolean };
   scale: number;
+  transformLeft: number;
+  transformFrom: number;
   starLeft: number;
   exclaimLeft: number;
   flower: boolean;
@@ -358,6 +360,8 @@ export class Simulation {
       idleWait: 1 + (this.nextId % 4) * 0.3,
       idleWalking: true,
       scale: 1,
+      transformLeft: 0,
+      transformFrom: 1,
       starLeft: 0,
       exclaimLeft: 0,
       flower: false,
@@ -395,25 +399,14 @@ export class Simulation {
     Body.setVelocity(a.body, { x: vx, y: a.body.velocity.y });
     if (vx) a.facing = Math.sign(vx);
   }
-  setMarioStage(stage: 0 | 1 | 2) {
+  setMarioStage(stage: 0 | 1 | 2, blink = false) {
     if (!this.mario) {
       this.marioStage = stage;
       return;
     }
-    const previousScale = this.mario.scale;
-    const nextScale = stage === 0 ? 0.5 : 1;
-    const feet = this.mario.body.position.y + 19 * previousScale;
-    if (previousScale !== nextScale) {
-      const ratio = nextScale / previousScale;
-      Body.scale(this.mario.body, ratio, ratio);
-    }
-    this.mario.scale = nextScale;
+    this.resize(this.mario, stage === 0 ? 0.5 : 1, blink);
     this.mario.flower = stage === 2;
     this.marioStage = stage;
-    Body.setPosition(this.mario.body, {
-      x: this.mario.body.position.x,
-      y: feet - 19 * nextScale,
-    });
   }
   private jump(a: Actor) {
     const water = this.roomFor(a).data.type === "water";
@@ -664,7 +657,47 @@ export class Simulation {
   }
 
   invincible(a: Actor) {
-    return a.starLeft > 0 || a.scale > 1;
+    return a.starLeft > 0;
+  }
+
+  displayScale(a: Actor) {
+    if (a.transformLeft <= 0) return a.scale;
+    const shown = T.transformSeconds - a.transformLeft;
+    return Math.floor(shown * T.transformBlinkHz) % 2
+      ? a.transformFrom
+      : a.scale;
+  }
+
+  private resize(a: Actor, nextScale: number, blink: boolean) {
+    const previous = a.scale;
+    if (previous === nextScale) return;
+    const radius = a.kind === "mario" ? 19 : 14;
+    const feet = a.body.position.y + radius * previous;
+    Body.scale(a.body, nextScale / previous, nextScale / previous);
+    a.scale = nextScale;
+    Body.setPosition(a.body, {
+      x: a.body.position.x,
+      y: feet - radius * nextScale,
+    });
+    if (blink) {
+      a.transformFrom = previous;
+      a.transformLeft = T.transformSeconds;
+    } else a.transformLeft = 0;
+  }
+
+  private shrinking(a: Actor) {
+    return a.transformLeft > 0 && a.transformFrom > a.scale;
+  }
+
+  private hurt(a: Actor) {
+    if (!a.alive || a.saved || a.starLeft > 0 || this.shrinking(a)) return false;
+    if (a.scale > 1) {
+      this.resize(a, 1, true);
+      this.events.push("shrink");
+      return true;
+    }
+    this.kill(a);
+    return true;
   }
 
   hitBlock(c: Obstacle, hitter: Actor) {
@@ -702,18 +735,12 @@ export class Simulation {
     if (!a.alive || a.saved || (a === this.mario && !this.marioActive)) return;
     if (item.kind === "star") a.starLeft = T.starSeconds;
     if (a === this.mario) {
-      if (item.kind === "flower") this.setMarioStage(2);
+      if (item.kind === "flower") this.setMarioStage(2, this.marioStage === 0);
       if (item.kind === "mushroom" && this.marioStage === 0)
-        this.setMarioStage(1);
+        this.setMarioStage(1, true);
     } else if (item.kind === "flower") a.flower = true;
     if (a !== this.mario && item.kind === "mushroom" && a.scale === 1) {
-      const feet = a.body.position.y + 14;
-      a.scale = T.giantScale;
-      Body.scale(a.body, a.scale, a.scale);
-      Body.setPosition(a.body, {
-        x: a.body.position.x,
-        y: feet - 14 * a.scale,
-      });
+      this.resize(a, T.giantScale, true);
       // Growing below a ceiling must never leave the larger body embedded.
       for (let i = 0; i < 16; i++) {
         const hits = overlaps(a.body, this.solids, 0.1);
@@ -809,11 +836,11 @@ export class Simulation {
   private hitMarioByFireball() {
     if (!this.marioActive || this.mario.starLeft > 0) return;
     if (this.marioStage === 2) {
-      this.setMarioStage(1);
+      this.setMarioStage(1, true);
       this.marioStun = T.marioStunSeconds;
       this.events.push("shrink");
     } else if (this.marioStage === 1) {
-      this.setMarioStage(0);
+      this.setMarioStage(0, true);
       this.marioStun = T.marioStunSeconds;
       this.events.push("shrink");
     } else this.defeatMario();
@@ -1004,6 +1031,7 @@ export class Simulation {
     this.playerFireCooldown = Math.max(0, this.playerFireCooldown - dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
       a.starLeft = Math.max(0, a.starLeft - dt);
+      a.transformLeft = Math.max(0, a.transformLeft - dt);
       a.exclaimLeft = Math.max(0, a.exclaimLeft - dt);
       a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
@@ -1150,14 +1178,18 @@ export class Simulation {
           a.scale > 1 &&
           playerFalling &&
           overlapX &&
-          playerBottom <= this.mario.body.position.y - 19 + 12 &&
-          a.body.bounds.max.y >= this.mario.body.position.y - 19
+          playerBottom <=
+            this.mario.body.position.y - 19 * this.mario.scale + 12 &&
+          a.body.bounds.max.y >=
+            this.mario.body.position.y - 19 * this.mario.scale
         ) {
-          this.defeatMario();
-          Body.setVelocity(a.body, {
-            x: a.body.velocity.x,
-            y: -T.stompBounce,
-          });
+          if (this.marioStun === 0) {
+            this.hitMarioByFireball();
+            Body.setVelocity(a.body, {
+              x: a.body.velocity.x,
+              y: -T.stompBounce,
+            });
+          }
           break;
         }
       }
@@ -1721,10 +1753,12 @@ export class Simulation {
       if (
         this.mario.body.velocity.y > 0.2 &&
         m.y < p.y - 8 &&
-        Math.abs(p.x - m.x) < 22 &&
-        Math.abs(p.y - m.y) < 34
+        Math.abs(p.x - m.x) <
+          Math.max(22, 12 * a.scale + 12 * this.mario.scale) &&
+        Math.abs(p.y - m.y) <
+          Math.max(34, 14 * a.scale + 19 * this.mario.scale)
       ) {
-        this.kill(a);
+        if (!this.hurt(a)) continue;
         this.marioTarget = null;
         this.marioChase = 0;
         this.marioLook = 0;

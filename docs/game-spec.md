@@ -152,7 +152,8 @@ game dynamic. They do not replace NPCs or reset the attempt.
 Mario observes at intervals, reacts with a delay, and aims ahead of targets.
 Scenery blocks sight. Warnings and running crowds also draw attention.
 His jumps keep their launch direction so targets can dodge.
-Side contact alone is not a stomp.
+Side contact alone is not a stomp. He still hunts a giant player and giant
+NPCs. Giant size is not star immunity.
 
 Running NPCs in view increase capped crowd pressure. More pressure makes Mario
 return sooner, react faster, run faster, and attack more often. Idle, dead,
@@ -162,9 +163,10 @@ Mario can walk and run. He uses running to pursue crowds and evade star holders.
 Fire Mario fires aggressively while still trying to stomp targets. In water,
 he can swim and attack.
 
-His power stages are small, big, and fire. A player fireball reduces one stage:
-fire to big, big to small, then small to defeated. Damage causes blinking, with
-no frozen hit pose. An active Mario can upgrade only by collecting an item.
+His power stages are small, big, and fire. A player fireball or a giant-player
+stomp reduces one stage: fire to big, big to small, then small to defeated.
+Shrink and grow blink between the two sizes. Damage causes blinking, with no
+frozen hit pose. An active Mario can upgrade only by collecting an item.
 Elapsed stage time can affect the form in which he returns; it cannot
 spontaneously change his active power. Restarting a stage resets its timer.
 
@@ -185,8 +187,10 @@ contact. Items expire after their lifetime or when they leave the level.
 - A star grants temporary immunity. Player and NPC star contact defeats Mario
   unless he also has a star. Mario avoids visible star holders.
 - A mushroom makes Goombas and NPCs three times larger, with larger collision
-  bodies. It grows small Mario to big Mario. Growth resolves overlap with
-  scenery. Giant NPCs can back up to leave low ceilings.
+  bodies. It grows small Mario to big Mario. Shrink and grow blink between the
+  two sizes. Growth resolves overlap with scenery. Giant NPCs can back up to
+  leave low ceilings. The first damaging stomp or hit on mushroom form shrinks
+  to small instead of killing. A flower can remain on the small form.
 - A flower gives the player fireballs and a white palette. NPCs can show the
   flower palette but do not shoot. Mario becomes Fire Mario.
 - Powers can coexist. Mushroom and flower powers last for the stage; stars
@@ -203,8 +207,10 @@ Stars protect against those fireballs.
 
 ## Death and audio
 
-One successful attack kills an unprotected player. A mushroom protects against
-Mario's stomp, but not his fireballs. Falling out of the level also kills.
+One successful attack kills an unprotected player. Mushroom form shrinks on the
+first damaging stomp or hit; it is not full immunity. Mario's fireballs still
+kill characters who are not star-protected, including giants. Stars grant full
+immunity. Falling out of the level also kills.
 Death restarts the current stage with cleared counters, powers, items, speech,
 used blocks, and pursuit state.
 
