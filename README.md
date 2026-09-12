@@ -83,7 +83,9 @@ Separate tests check NPC routes, rescue quotas, powers, Mario, and controls.
 See [the test fixtures](tests/fixtures/README.md) for the scope of these checks.
 
 Gameplay rules are in [the spec](docs/game-spec.md). Tuning values are in
-[src/game/config.ts](src/game/config.ts).
+[src/game/config.ts](src/game/config.ts). Issue tracking is in
+[the GitHub issues contract](docs/github-issues.md). Other docs are listed in
+[docs/README.md](docs/README.md).
 
 This is an unofficial fan prototype, not affiliated with Nintendo. Character
 names and original game assets belong to their respective owners.
