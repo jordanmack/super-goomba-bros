@@ -1,5 +1,5 @@
-// NES World 1-1 surface map, in original 16-pixel tile coordinates.
-// Source: NESMaps background-only map; see assets/smb/README.md.
+// Frozen pre-migration collision reference for regression tests only.
+// Original 16-pixel coordinates, from NESMaps; see src/assets/smb/README.md.
 export const WORLD_1_1 = {
   columns: 224,
   groundRow: 13,

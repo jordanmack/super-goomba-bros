@@ -1,7 +1,5 @@
-import { TILE_COUNT, WORLD_TILES } from "./world-tiles";
-
 export type SpriteSources = Record<
-  "mario" | "enemies" | "scenery" | "tiles" | "items",
+  "mario" | "enemies" | "items",
   HTMLImageElement
 >;
 
@@ -97,25 +95,8 @@ function firePalette(source: HTMLCanvasElement) {
   return canvas;
 }
 
-export function scenerySprites({
-  scenery,
-  tiles,
-  enemies,
-  items,
-}: SpriteSources) {
-  const tile = (id: number) =>
-    crop(tiles, (id % 16) * 16, Math.floor(id / 16) * 16, 16, 16);
+export function scenerySprites({ enemies, items }: SpriteSources) {
   return {
-    ...Object.fromEntries(
-      Array.from({ length: TILE_COUNT }, (_, id) => [
-        `tile${id}`,
-        crop(tiles, (id % 16) * 16, Math.floor(id / 16) * 16, 16, 16),
-      ]),
-    ),
-    question: tile(WORLD_TILES[9][16]),
-    ground: tile(WORLD_TILES[13][0]),
-    brick: tile(WORLD_TILES[9][20]),
-    used: crop(scenery, 48, 0, 16, 16),
     fireball: crop(enemies, 364, 188, 8, 8),
     platform: crop(items, 80, 24, 48, 8),
     coin: crop(items, 0, 80, 16, 16),
@@ -123,22 +104,4 @@ export function scenerySprites({
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
   };
-}
-
-export function movementPose(
-  isMario: boolean,
-  grounded: boolean,
-  distance: number,
-  moving: boolean,
-  skidding = false,
-) {
-  if (isMario && !grounded) return "Jump";
-  if (isMario && skidding) return "Skid";
-  if (!grounded || !moving) return "";
-  const frame = Math.floor(distance / 9);
-  return isMario
-    ? ["Walk", "Walk2", "Walk3"][frame % 3]
-    : frame % 2
-      ? "Walk"
-      : "";
 }

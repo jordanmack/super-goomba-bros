@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
 import { TUNING as T } from "../../src/game/config";
-import { WORLD_TILES } from "../../src/game/world-tiles";
-import { WORLD_1_1 as LEVEL } from "../../src/game/world-1-1";
+import { WORLD_TILES } from "../fixtures/world-tiles";
+import { WORLD_1_1 as LEVEL } from "../fixtures/world-1-1";
 
 test("Starman music follows only player and Mario stars and respects death cues", async ({
   page,
@@ -27,7 +28,7 @@ test("Starman music follows only player and Mario stars and respects death cues"
   const giveStar = (who: "player" | "mario" | "npc") =>
     page.evaluate((who) => {
       const s = (window as any).__game.sim;
-      const box = s.covers.find((c: any) => c.question && !c.used);
+      const box = s.obstacles.find((c: any) => c.question && !c.used);
       s.hitBlock(box, s.player);
       const item = s.items.at(-1);
       item.kind = "star";
@@ -99,7 +100,7 @@ test("pipe segments and background bushes retain their map pixels", async ({
   // The removed cover overlays also obscured several bushes near ground level.
   cells.push([13, 12], [24, 12], [43, 12]);
   const mismatches = await page.evaluate(
-    async (samples) => {
+    async ({ samples, reference }) => {
       const g = (window as any).__game;
       const s = g.sim;
       g.paused = true;
@@ -111,6 +112,14 @@ test("pipe segments and background bushes retain their map pixels", async ({
       canvas.width = source.width;
       canvas.height = source.height;
       const ctx = canvas.getContext("2d")!;
+      const referenceImage = new Image();
+      referenceImage.src = `data:image/png;base64,${reference}`;
+      await referenceImage.decode();
+      const referenceCanvas = document.createElement("canvas");
+      referenceCanvas.width = referenceImage.width;
+      referenceCanvas.height = referenceImage.height;
+      const referenceContext = referenceCanvas.getContext("2d")!;
+      referenceContext.drawImage(referenceImage, 0, 0);
       const errors: string[] = [];
       for (const [x, y, id] of samples) {
         // Sample the center of source pixel (8, 8), not its left/top edge.
@@ -127,11 +136,12 @@ test("pipe segments and background bushes retain their map pixels", async ({
           1,
           1,
         ).data;
-        const expected = g.renderer.game.textures
-          .get(`tile${id}`)
-          .getSourceImage()
-          .getContext("2d")
-          .getImageData(8, 8, 1, 1).data;
+        const expected = referenceContext.getImageData(
+          (id % 16) * 16 + 8,
+          Math.floor(id / 16) * 16 + 8,
+          1,
+          1,
+        ).data;
         if ([0, 1, 2].some((i) => Math.abs(pixel[i] - expected[i]) > 2))
           errors.push(
             `tile ${x},${y}: ${Array.from(pixel)} vs ${Array.from(expected)}`,
@@ -139,7 +149,12 @@ test("pipe segments and background bushes retain their map pixels", async ({
       }
       return errors;
     },
-    cells.map(([x, y]) => [x, y, WORLD_TILES[y][x]]),
+    {
+      samples: cells.map(([x, y]) => [x, y, WORLD_TILES[y][x]]),
+      reference: readFileSync(
+        new URL("../fixtures/world-1-1-tiles.png", import.meta.url),
+      ).toString("base64"),
+    },
   );
   expect(mismatches).toEqual([]);
 });
@@ -172,7 +187,7 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
     g.paused = true;
     const s = g.sim;
     s.marioReturn = 1e6;
-    const box = s.covers.find((c: any) => c.question);
+    const box = s.obstacles.find((c: any) => c.question);
     s.hitBlock(box, s.player);
     s.items[0].kind = "flower";
     s.collect(s.player, s.items[0]);
@@ -260,25 +275,26 @@ test("blocks bounce and disappear independently; item powers render with touch f
     g.paused = true;
     const s = g.sim;
     s.marioReturn = 1e6;
-    const brick = s.covers.find((c: any) => c.kind === "brick" && !c.question);
+    const brick = s.obstacles.find(
+      (c: any) => c.kind === "brick" && !c.question,
+    );
     s.hitBlock(brick, s.player);
     for (let i = 0; i < 3; i++)
       s.step(1 / 60, {
         left: false,
         right: false,
         jump: false,
-        hide: false,
-        warn: false,
+        down: false,
         fire: false,
       });
     g.renderer.render(s, 0);
-    const mesh = g.renderer.play.covers.get(brick.id);
+    const mesh = g.renderer.play.obstacles.get(brick.id);
     const bounced = mesh.visible && mesh.y < brick.y;
     s.breakBrick(brick);
     g.renderer.render(s, 0);
     const disappeared = !mesh.visible;
     for (const kind of ["mushroom", "flower", "star"]) {
-      const box = s.covers.find((c: any) => c.question && !c.used);
+      const box = s.obstacles.find((c: any) => c.question && !c.used);
       s.hitBlock(box, s.player);
       const item = s.items.at(-1);
       item.kind = kind;
@@ -579,7 +595,7 @@ test("original recordings decode and play as effects, with level clear replacing
     const effects = [
       "jump",
       "saved",
-      "hide",
+      "pipe",
       "fire",
       "break",
       "power",
@@ -706,8 +722,7 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
       left: false,
       right: true,
       jump: false,
-      hide: false,
-      warn: false,
+      down: false,
     };
     for (let i = 0; i < 400 && s.player.body.position.x < 1080; i++)
       s.step(1 / 60, input);
@@ -719,13 +734,15 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
           Math.abs(b.body.position.x - s.player.body.position.x),
       )[0];
     s.kill(n);
-    const brick = s.covers.find((c: any) => c.kind === "brick" && c.x === 784);
+    const brick = s.obstacles.find(
+      (c: any) => c.kind === "brick" && c.x === 784,
+    );
     s.breakBrick(brick);
     input.right = false;
     for (let i = 0; i < 10; i++) s.step(1 / 60, input);
     return {
       particles: s.particles.length,
-      bricks: s.covers.filter((c: any) => c.broken).length,
+      bricks: s.obstacles.filter((c: any) => c.broken).length,
     };
   });
   expect(effect.particles).toBeGreaterThan(32);
@@ -753,9 +770,9 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
   expect(red).toBeGreaterThan(100);
   const sceneryHasNoBrickOverlays = await page.evaluate(() => {
     const g = (window as any).__game;
-    return g.sim.covers
+    return g.sim.obstacles
       .filter((c: any) => c.kind !== "brick")
-      .every((c: any) => !g.renderer.play.covers.has(c.id));
+      .every((c: any) => !g.renderer.play.obstacles.has(c.id));
   });
   expect(sceneryHasNoBrickOverlays).toBe(true);
 });
@@ -766,21 +783,21 @@ test("original 1-1 map art and collision anchors agree", async ({ page }) => {
   const map = await page.evaluate(() => {
     const game = (window as any).__game;
     const textures = game.renderer.game.textures.list;
-    const tiles = Object.keys(textures).filter((k) => /^tile\d+$/.test(k));
+    const atlas = textures.metatiles;
+    const tiles = atlas.getFrameNames();
     return {
       noBackdrop: !textures.world,
       tiles: tiles.length,
       native: tiles.every(
         (k) =>
-          textures[k].getSourceImage().width === 16 &&
-          textures[k].getSourceImage().height === 16,
+          atlas.frames[k].cutWidth === 16 && atlas.frames[k].cutHeight === 16,
       ),
       instances: game.renderer.play.tiles.layer.data
         .flat()
         .filter((tile: any) => tile.index >= 0).length,
-      pipe: game.sim.covers.find((c: any) => c.kind === "pipe").body.bounds,
-      question: game.sim.covers.find((c: any) => c.question && c.x === 528).body
-        .bounds,
+      pipe: game.sim.obstacles.find((c: any) => c.kind === "pipe").body.bounds,
+      question: game.sim.obstacles.find((c: any) => c.question && c.x === 528)
+        .body.bounds,
     };
   });
   expect(map.noBackdrop).toBe(true);

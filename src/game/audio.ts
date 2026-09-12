@@ -40,8 +40,16 @@ const MUSIC_LOOPS: Record<
   overworld: { intro: 1.02, start: 5, duration: 86.4 },
   starman: { intro: 0.53, start: 0.53, duration: 12.8 },
   // Stream copying these trimmed MP3s removes 529 samples of decoder padding.
-  underground: { intro: 0.52 - 529 / 44100, start: 13.12 - 529 / 44100, duration: 12.6 },
-  water: { intro: 0.82 - 529 / 44100, start: 26.42 - 529 / 44100, duration: 25.6 },
+  underground: {
+    intro: 0.52 - 529 / 44100,
+    start: 13.12 - 529 / 44100,
+    duration: 12.6,
+  },
+  water: {
+    intro: 0.82 - 529 / 44100,
+    start: 26.42 - 529 / 44100,
+    duration: 25.6,
+  },
   castle: { intro: 0.52 - 529 / 44100, start: 8.52 - 529 / 44100, duration: 8 },
 };
 const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
@@ -51,12 +59,12 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   saved: "coin",
   death: "death",
   marioDeath: "death",
-  hide: "pipe",
   pipe: "pipe",
   coin: "coin",
   fire: "fireball",
   break: "brick",
   power: "powerup",
+  shrink: "pipe",
   win: "clear",
   splat: "stomp",
 };
@@ -68,6 +76,9 @@ export class GameAudio {
   musicHoldUntil = 0;
   private pausedAt: number | null = null;
   private voices = new Set<OscillatorNode>();
+  private disabled = false;
+  private cue: Phaser.Sound.WebAudioSound | null = null;
+  private cueQueue: ("death" | "clear")[] = [];
 
   constructor(game: Phaser.Game) {
     this.game = game;
@@ -93,10 +104,23 @@ export class GameAudio {
   get muted() {
     return this.manager.mute;
   }
+  get available() {
+    return (
+      !this.disabled &&
+      !!this.context &&
+      !this.game.registry.get("audioFailures")?.length
+    );
+  }
+  disable() {
+    this.disabled = true;
+    this.muted = true;
+    this.resetMusic();
+  }
   set muted(value: boolean) {
     this.manager.mute = value;
   }
   async start() {
+    if (!this.available) return;
     await this.context?.resume();
     if (this.pausedAt !== null) {
       this.musicHoldUntil += this.context.currentTime - this.pausedAt;
@@ -117,28 +141,48 @@ export class GameAudio {
   }
   resetMusic(preserveCue = false) {
     this.stopMusic();
+    for (const voice of this.voices) voice.stop();
+    this.voices.clear();
     for (const effect of this.effects) {
-      if (
-        preserveCue &&
-        (effect.key === "clear" || effect.key === "death") &&
-        effect.isPlaying
-      )
-        continue;
+      if (preserveCue && effect === this.cue) continue;
       effect.destroy();
       this.effects.delete(effect);
     }
-    if (!preserveCue) this.musicHoldUntil = 0;
-    this.pausedAt = null;
+    if (!preserveCue) {
+      this.cue = null;
+      this.cueQueue = [];
+      this.musicHoldUntil = 0;
+      this.pausedAt = null;
+    }
   }
-  private play(name: keyof typeof RECORDINGS) {
+  private play(name: keyof typeof RECORDINGS, complete?: () => void) {
     if (!this.game.cache.audio.exists(name)) return;
     const effect = this.manager.add(name) as Phaser.Sound.WebAudioSound;
     this.effects.add(effect);
     effect.once("complete", () => {
       this.effects.delete(effect);
+      complete?.();
       effect.destroy();
     });
     effect.play();
+    return effect;
+  }
+  private playCue(name: "death" | "clear") {
+    this.stopMusic();
+    if (this.cue) {
+      if (this.cue.key !== name && !this.cueQueue.includes(name))
+        this.cueQueue.push(name);
+      return;
+    }
+    const effect = this.play(name, () => {
+      if (this.cue !== effect) return;
+      this.cue = null;
+      const next = this.cueQueue.shift();
+      if (next) this.playCue(next);
+    });
+    this.cue = effect ?? null;
+    this.musicHoldUntil =
+      this.context.currentTime + (this.buffers.get(name)?.duration ?? 0);
   }
   private playWarning() {
     if (!this.context || !this.masterGain || this.muted) return;
@@ -165,24 +209,17 @@ export class GameAudio {
   }
 
   event(event: GameEvent) {
+    if (!this.available) return;
     if (event === "death" || event === "win" || event === "marioDeath") {
-      this.stopMusic();
-      const name = event === "win" ? "clear" : "death";
-      // Concurrent deaths share a complete cue instead of cutting it off.
-      if (
-        [...this.effects].some(
-          (effect) => effect.key === name && effect.isPlaying,
-        )
-      )
-        return;
-      this.musicHoldUntil =
-        this.context.currentTime + (this.buffers.get(name)?.duration ?? 2.8);
+      this.playCue(event === "win" ? "clear" : "death");
+      return;
     }
     if (event === "warn") this.playWarning();
     else this.play(EFFECTS[event]);
   }
 
   update(music = true, star = false, areaType = "overworld") {
+    if (!this.available) return;
     const key = star
       ? "starman"
       : areaType in MUSIC_LOOPS
@@ -192,6 +229,8 @@ export class GameAudio {
     if (
       !music ||
       this.music ||
+      this.cue ||
+      this.cueQueue.length > 0 ||
       !this.game.cache.audio.exists(key) ||
       this.context?.state !== "running" ||
       this.context.currentTime < this.musicHoldUntil

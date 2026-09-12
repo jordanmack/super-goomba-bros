@@ -7,7 +7,7 @@ import type { Actor, Simulation } from "../simulation";
 
 export class Play extends Phaser.Scene {
   actors = new Map<number, Phaser.GameObjects.Sprite>();
-  covers = new Map<number, Phaser.GameObjects.Image>();
+  obstacles = new Map<number, Phaser.GameObjects.Image>();
   effects: Phaser.GameObjects.Image[] = [];
   tiles!: Phaser.Tilemaps.TilemapLayer;
   tick?: (time: number, delta: number) => void;
@@ -24,7 +24,7 @@ export class Play extends Phaser.Scene {
       this.tick = undefined;
       this.draw = undefined;
       this.actors.clear();
-      this.covers.clear();
+      this.obstacles.clear();
       this.effects = [];
       this.room = undefined;
     });
@@ -61,7 +61,9 @@ export class Play extends Phaser.Scene {
         .map((id) => palette + id),
     );
     this.cameras.main.setBackgroundColor(
-      theme === "day" || theme === "snow-day" || theme === "water" ? "#5c94fc" : "#000000",
+      theme === "day" || theme === "snow-day" || theme === "water"
+        ? "#5c94fc"
+        : "#000000",
     );
   }
 
@@ -82,17 +84,17 @@ export class Play extends Phaser.Scene {
     );
     sim.viewWidth = width;
     this.cameras.main.setScroll(sim.cameraX, 0);
-    for (const sprite of this.covers.values()) sprite.setVisible(false);
+    for (const sprite of this.obstacles.values()) sprite.setVisible(false);
     const palette = atlas.themes.indexOf(themeFor(room.data)) * 256;
-    for (const c of room.covers) {
+    for (const c of room.obstacles) {
       if (c.kind !== "brick") continue;
-      let sprite = this.covers.get(c.id);
+      let sprite = this.obstacles.get(c.id);
       if (!sprite) {
         sprite = this.add
-          .image(c.x, c.y, "brick")
+          .image(c.x, c.y, "metatiles", palette + 81)
           .setDisplaySize(32, 32)
           .setDepth(5);
-        this.covers.set(c.id, sprite);
+        this.obstacles.set(c.id, sprite);
       }
       const column = Math.floor((c.x - room.offset) / 32),
         row = Math.floor((c.y - MAP_TOP) / 32);
@@ -208,9 +210,7 @@ export class Play extends Phaser.Scene {
       return;
     }
     sprite.setVisible(
-      actor.alive &&
-        !actor.saved &&
-        !(actor === sim.mario && (!sim.marioActive || sim.marioPipe > 0)),
+      actor.alive && !actor.saved && !(actor === sim.mario && !sim.marioActive),
     );
     if (!sprite.visible) {
       sprite.stop();

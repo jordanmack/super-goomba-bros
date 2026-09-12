@@ -1,437 +1,228 @@
 # Super Goomba Bros
 
-## Purpose and status
-
-This document specifies the first playable version of an HTML browser game
-rendered with Three.js. It records the design agreed during the planning
-conversation and defines checks for the implementation.
-
-Unmarked rules describe the agreed design and its direct consequences. Values
-marked **Starting value** are initial tuning choices. Items marked **Proposed**
-fill gaps in the discussion and are working assumptions, not confirmed choices.
-
 ## Concept
 
-Play as a Goomba in an 8-bit, 2D side-scrolling platform game with reversed
-Mario roles. Reach the goal while warning other Goombas and Koopa Troopas that
-Mario is coming. Help them escape and survive his attacks yourself.
-These other characters are referred to as non-player characters (NPCs).
+Play a Goomba in an 8-bit side-scrolling game with reversed Mario roles. Warn
+other Goombas and Koopa Troopas, help them reach safety, and evade Mario.
+Mario roams, hunts, backtracks, enters pipes, and returns to the player's area.
+He is the main attacking enemy. The tone combines danger with funny, urgent
+warnings and pixel blood.
 
-Mario is a computer-controlled threat with his own general goal of moving
-right through the level. He explores, backtracks, attacks, and regularly
-returns to the player's area. His arrival should create tension and a choice:
-evade attacks or risk making noise to warn others.
+This spec records the current design. The earlier single-stage design is kept
+in Git history. The [migration plan](phaser-migration-plan.md) records the engine
+and level-data work. [Tuning](../src/game/config.ts) is the source of numeric
+settings unless a rule below explicitly fixes their relationship.
 
-The tone combines danger with funny, urgent warnings. The warning text must
-tell characters to flee because Mario is approaching.
+## Campaign and world
 
-## First-version scope
+- Use Phaser 4 for rendering, sprite animation, cameras, audio, input, and Arcade
+  collisions. React provides screens and the HUD.
+- Progress through all 32 original SMB1 stages in order.
+- Build the world from individual native tiles and bundled JSON. The
+  [level data](../src/assets/levels/README.md) comes from public disassembly text.
+  Never read or require a ROM.
+- Keep the original gaps, pipe dimensions, block rows, stairs, ledges, and castle
+  locations. Keep the custom NPC population and rescue rules.
+- Include underground, water, and castle areas with their corresponding art and
+  music. Moving platforms carry characters. Original springs give a stronger
+  bounce.
+- Enterable pipes use world-specific destinations and entrance pages. Side
+  entrances work when approached at their opening. Decorative pipes stay solid.
+- Pipe travel preserves elapsed time, powers, NPC states, broken blocks, items,
+  and counters within the stage. It does not itself rescue a character.
+- Preserve source warp/vine commands in the data. Campaign progression remains
+  sequential; the custom power-up system does not recreate the original vine
+  and world-skip rules.
+- No logs or hiding spots are added. Bushes are scenery.
+- The goal is the castle doorway. Castle interiors use a rescue doorway after
+  the original bridge. The flag is scenery.
 
-Latest layout revision: use the original NES World 1-1 surface map. Tile
-coordinates are in `../src/game/world-1-1.ts`; artwork provenance is in
-`../src/assets/smb/README.md`. Match all three gaps, the six pipes and their
-different heights, floating block rows, permanent stairs, and the castle door.
-Keep the custom NPC population, rescue quota, hunting, and blood effects.
-Use original bushes, pipes, and floating blocks as scenery and obstacles; extra
-logs and random scenery from the prototype are not placed on this map. Pipes
-remain solid obstacles and are not hiding entrances.
-The map is built from individual 16-pixel sprites and tile coordinates. Static
-tiles are batched for rendering; interactive blocks have their own sprites.
-No full-map background image or sky patches are used at runtime. Jump height
-must allow passage over the original tall pipes. Stair collision columns must
-not trap NPCs at tile seams; test varied speeds and giant NPCs on the full route.
+Original asset sources and frame details are in the
+[sprite credits](../src/assets/smb/README.md) and
+[audio credits](../src/assets/audio/README.md).
 
-- One complete level with a reachable goal and routes for backtracking.
-- Desktop keyboard and mobile touch support.
-- Flat pixel-art sprites and tile scenery rendered with Three.js.
-- A side view and 2D movement. No 3D character models are needed.
-- Goomba movement, warnings, NPC rescues, and Mario encounters.
-- A title screen named exactly **Super Goomba Bros**.
-- Original background music, game effects, and a short victory tune.
+## Player and controls
 
-Multiple levels and endless NPC spawning remain outside this version's scope.
+The Goomba walks at one fixed pace. There is no sprint or Shift boost. Normal
+and giant forms use the same standard jump height. Holding Jump adds no height
+and does not cause repeated jumps. A jump gains forward speed while a direction
+is held so the original wide gaps are reachable. Walking off a ledge keeps the
+walking pace. Releasing direction stops horizontal motion.
 
-## Main play loop
+In water, each Jump press is an upward swim stroke. Gravity is reduced and the
+player stays below the top of the playfield. Pipes have a short re-entry delay.
 
-1. Move through the level and find NPCs.
-2. Get close enough to warn them with a spoken warning.
-3. Watch them run toward the castle door according to their traits.
-4. Hit question blocks for power-ups and watch for Mario.
-5. Evade his attacks, then continue warning and moving right.
-6. Backtrack for more NPCs if too few have reached safety.
-7. Enter the castle door once the rescue requirement is met.
-8. Wait through the short final rescue window, then receive the result.
-
-## Player movement and controls
-
-The Goomba walks at one fixed pace and can jump. There is no player sprint,
-Run button, or Shift speed boost. Mario and fleeing NPCs can still run.
-Small and giant player forms use the same standard jump height. Holding Jump
-does not add lift or trigger repeated jumps.
-
-Normal jumps cross gaps, dodge, and reach blocks. A giant player's stomp can
-kill Mario; normal jumps do not damage him.
-
-**Proposed default controls:**
-
-| Action | Desktop | Mobile |
+| Action | Keyboard | Touch |
 | --- | --- | --- |
-| Walk left or right | Left or Right arrow | Left and Right buttons |
-| Jump | Space | Jump button |
-| Fire (with flower) | Z | Fire button |
-
-Both input methods must provide the same actions. Touch controls must support
-simultaneous movement and an action such as jumping or firing.
-Track each finger, pointer, and keyboard key separately. Sliding between buttons
-changes the held action; sliding outside releases it. One finger lifting must
-not release another finger or key holding the same action. Native non-passive
-touch handlers block default gestures only in the gameplay control area.
-Clear all holds on pause, restart, death, focus loss, page hiding, or rotation.
-Verify tap-then-hold and long-press behavior on a real iPhone; desktop touch
-emulation does not verify iOS system gestures.
-
-**Proposed default:** landscape is the preferred phone layout. Portrait should
-still provide access to the game and controls without overlap or clipped text.
-
-## Spoken warnings
-
-Touching an unwarned NPC makes the Goomba speak and shows a speech bubble near
-its mouth. Select a random phrase from a pool. Every phrase must urge escape
-from incoming Mario, rather than offer unrelated commentary about him. Play a
-short squeaky voice cue with each automatic warning.
-
-Example phrase pool:
-
-- "Run! Mario is coming!"
-- "Move! The plumber is coming!"
-- "Run! The demon is coming!"
-- "Run! The mustache is coming!"
-- "Get out! The red hat is coming!"
-- "Run for the goal! Mario is close!"
-- "Keep moving! Mario is on his way!"
-- "Flee! Those boots are coming!"
-- "Scramble! The plumber is almost here!"
-- "Run your shells off! Mario is coming!"
-- "Run! Trouble has a mustache, and it's coming!"
-- "Get to safety! Mario is coming!"
-
-A warning affects only nearby NPCs. One contact may warn several NPCs within
-range. An NPC counts as warned only once. Repeated warnings do not increase
-the counter for that character.
-
-Mario can hear warnings too. The closer he is, the more likely a warning is
-to attract him. Contact warnings happen while the player is exposed.
-
-**Proposed default:** use a short warning cooldown to prevent continuous
-shouting. Warning range, hearing range, and cooldown require playtesting.
-No numerical values for them have been agreed.
-
-## NPC population and behavior
-
-Use the population and rescue requirement in `../src/game/config.ts`.
-The population was increased after playtesting to create crowded encounters.
-These are a fixed population for a run. NPCs do not spawn as replacements.
-
-The NPCs include other Goombas and Koopa Troopas. Randomize their starting
-positions and behavior traits when preparing a run. Positions must
-allow them to reach the goal.
-
-**Proposed default:** select starting positions from tested locations in a
-fixed level layout. Random placement must not put an NPC inside scenery, in a
-hazard, at the goal, or beyond a route it can travel.
-
-Each character receives traits that remain fixed for that run:
-
-| Trait | Effect |
-| --- | --- |
-| Fear | Changes urgency and risk tolerance while running |
-| Reaction time | Changes how soon the character responds to danger or a warning |
-| Run speed | Changes how quickly the character moves toward safety |
-
-These values are hidden from players. The game does not expose personality
-dials in its player interface.
-
-Warned NPCs run toward the castle door. They behave differently based on their
-traits, with random choices weighted by those traits.
-
-**Proposed default:** make behavior choices when a warning or change in danger
-calls for a response. Let the NPC carry out its choice before deciding again,
-so random behavior does not cause constant switching between movement choices.
-
-An NPC is not saved merely because it was warned. It is saved
-only when it reaches the goal alive. Mario can kill NPCs before they arrive.
-
-NPCs that reach the goal stay safe and cannot return to danger. NPCs outside
-the camera view must continue to move and encounter Mario; scrolling
-away must not stop their rescue progress or remove them from the population.
-
-Unwarned NPCs slowly patrol their local area, pausing and changing direction.
-They step off blocks, pipes, and stairs when there is safe ground below, keep
-moving horizontally while falling, then set a new patrol center after landing.
-They turn away from lethal gaps and walls. If both directions are blocked,
-they pause instead of turning every frame. Warning interrupts the patrol
-and starts their normal reaction and escape behavior. Patrol tuning lives in
-`../src/game/config.ts`.
-They can still be attacked by Mario. A dead or saved NPC cannot hear a new
-warning or contribute to Warned again.
-
-## Counters, goal, and scoring
-
-Show separate **Warned** and **Saved** counters during play.
-
-- Warned increases when a previously unwarned NPC hears a warning.
-- Saved increases when an NPC reaches the goal alive.
-- An NPC can contribute at most once to each counter.
-- Death after a warning does not undo the fact that the NPC was warned.
-
-Display rescue progress against the requirement in `../src/game/config.ts`.
-Allow the saved total to exceed the requirement, up to the level population.
-Saving additional NPCs contributes to the player's result.
-
-The player cannot finish until enough NPCs have reached safety. If the player
-reaches the goal too early, they must be able to go back and warn more NPCs.
-The requirement blocks only the player's finish. NPCs can enter safety before
-the requirement is met, so they can unlock the player's goal.
-
-**Proposed default:** the area before the locked goal gives the player no
-special protection. Show the remaining rescue requirement there.
-
-When the requirement is met and the player enters the goal:
-
-1. Make the player safe from Mario.
-2. Play a short victory tune.
-3. Allow a final rescue window for NPCs still on their way.
-4. End the level and lock the final saved count when the window ends.
-
-**Starting value:** the final rescue window lasts 5 seconds.
-
-The window begins only once, on successful player entry. NPCs still outside
-safety continue their escape during it. Mario remains a threat to those NPCs.
-At the cutoff, NPCs still outside safety do not count as saved. The level does
-not restart or extend the window when another NPC arrives.
-
-**Proposed default:** use the saved total as the score and show both final
-counters. A separate points formula has not been specified.
-
-## Mario behavior
-
-Latest playtest revision: Mario actively hunts visible Goombas and Koopas,
-selects another victim after a kill, and returns more frequently. He observes
-at intervals, reacts with a delay, and aims jumps ahead of moving targets.
-Solid scenery blocks sight. Jumps commit to their
-takeoff velocity, allowing dodges. Side contact alone does not kill; landing
-a stomp or hitting with a fireball does.
-Current population, obstacle sizes, and escalation settings live in `../src/game/config.ts`.
-
-Running NPC crowds on screen attract Mario. Nearby exposed runners increase
-his hearing range and draw his target choice toward the crowd. As the crowd
-grows, he returns sooner, reacts faster, runs faster, and attacks more often.
-The boost is capped and fades after runners stop, die, reach safety, or
-leave the screen. Idle patrols do not count. Fireballs still unlock by elapsed
-time, not crowd size. Crowd settings live in
-the same tuning file.
-
-Mario is computer-controlled. He roams the same general area as the player and
-usually moves right toward the goal, with stops and changes of direction.
-
-He can:
-
-- Run past without noticing the player.
-- Stop to break bricks or enter pipes.
-- Move left while backtracking.
-- Pursue and attempt to stomp a detected player.
-- Break a brick containing the hidden player.
-- Later gain fireballs as his strength increases.
-- Leave toward the right and later reappear off-screen to the left.
-
-His returns are a random game dynamic. They may suggest that he died elsewhere
-and restarted, but the game does not explain why. Mario should remain a
-recurring threat throughout a run.
-His return does not reset the run, replace NPCs, or reset his escalation.
-
-Sight and sound influence detection. Hearing a warning is more likely at
-shorter distance. Running NPC crowds also attract him. If he sees the player,
-he can try to attack immediately.
-
-**Proposed default:** use one active Mario at a time. Spawn him outside the
-visible play area so he must enter the scene before reaching the player. Give
-pursuit a limit so he eventually resumes roaming or moving toward the goal.
-Detection distances, return intervals, and pursuit duration are tuning work.
-If Mario reaches the goal, let him leave and become able to return. His
-arrival does not itself end the player's attempt.
-
-## Escalation
-
-Mario grows stronger based on elapsed level time, not the rescue count.
-Restarting the level resets his strength and the timer.
-
-**Proposed progression:**
-
-| Phase | Behavior |
-| --- | --- |
-| Early | Chase, jump, stomp, and break bricks |
-| Middle | Move faster, making escape harder |
-| Late | Retain earlier abilities and gain fireballs |
-
-Exact transition times and speeds require playtesting. Give each power-up a
-clear visual and sound cue. Fireballs must be visible and allow a chance to
-evade.
-
-## Obstacles and vulnerability
-
-Pipes and floating blocks are solid World 1-1 obstacles. The player, NPCs, and
-Mario must jump over pipes. Ordinary bricks break when Mario or a giant player
-strikes their underside; small-player head hits only bounce them. Breaking a
-brick removes its collision body and emits debris. No character can hide, and
-all characters remain vulnerable in the open. NPCs must keep moving when idle
-and navigate stairs, pipes, blocks, and gaps without getting stuck.
-
-## Blocks and power-ups
-
-Question-block contents are randomized from a star, mushroom, and fire flower.
-Each block releases one item, which emerges upward before becoming collectible.
-Stars bounce, mushrooms walk and fall, and flowers stay where they land.
-The player, active Mario, or any living NPC can collect an item by touching it.
-NPCs never seek items or deliberately attack Mario. Saved and dead NPCs cannot
-collect. Items disappear after collection,
-falling out of the level, or their lifetime limit.
-
-- Star: temporary immunity. Player and NPC star contact kills Mario unless he
-  also has a star. Mario's star also protects him from stomps and fireballs.
-  He avoids visible star holders and can return later without resetting the run.
-- Mushroom: three times the sprite width and height, with a matching larger body
-  for Goombas and NPCs. The player's jump stays at standard height. Mario grows
-  from small to big. Giant characters can still be killed by Mario fireballs.
-  Only the player can stomp Mario to kill him; giant NPCs keep fleeing. Giants
-  remain exposed and cannot hide.
-  Growth must resolve overlap with scenery. Giant NPCs can back up and jump
-  vertically to get out from under low ceilings.
-- Flower: unlocks player fireballs with Z and a touch Fire button. The player
-  can launch one fireball per second. Small Goombas shoot normal fireballs;
-  giant Goombas shoot fireballs three times larger. Fireballs bounce on solid surfaces,
-  stop at walls, and step Mario down one power stage without hurting NPCs.
-  Goombas and Koopas use a white power-up palette. NPCs can collect flowers
-  and show their power but do not fire them.
-  Mario becomes Fire Mario when he collects a flower.
-
-Stars and giant-player stomps kill Mario. His original death tune replaces the
-music while his death sprite hops up and falls through the scenery. The tune
-finishes before background music resumes. Mario returns quickly; the delay is
-in the tuning file and is not shortened by crowd pressure during death.
-Fireballs step Mario from fire to big, big to small, then kill small Mario.
-Mushroom and flower powers last for the run; stars expire. Powers can coexist. Durations, cooldowns,
-and growth size use `../src/game/config.ts`. A power label and sprite effects
-show the player's current powers. Restart clears all powers, items, and used blocks.
-
-## Death, failure, and restart
-
-One successful hit from Mario kills an unprotected player. Stars and mushrooms
-provide immunity to his attacks. There is no health bar or
-multi-hit allowance. Death restarts the level and clears both counters, rescue
-progress, NPC states, and Mario's escalation timer.
-
-Mario's kills produce red pixel-blood bursts, impact sounds, and temporary
-stains on surfaces. This applies to the player and NPCs, including stomp,
-fireball, and occupied-brick kills. Effects continue during the brief player
-death pause, remain visible behind its text, and clear on restart. Cosmetic
-randomness does not affect AI decisions. Particle counts and lifetimes are
-bounded. Falling out of the level does not create an off-screen blood burst.
-
-The rescue requirement is higher than the initial prototype; use the current
-tuning file. If too few NPCs remain to meet it, keep the attempt running with
-the goal locked. Show that too many were lost. Mario keeps hunting, gives the
-player higher target priority, and moves faster. Death still restarts the level;
-the pause menu also permits a manual restart.
-
-The target is impossible when `saved + living_unsaved < required_saved`.
-Include both warned and unwarned living NPCs, plus those already saved.
-
-**Proposed default:** falling into a lethal gap also kills the player. Keep
-death feedback brief before the automatic restart. NPC losses use the same
-rescue-impossibility rule whether caused by Mario or level hazards.
-
-Restart must restore the level's bricks and reset Mario's position and pursuit.
-It must remove fireballs and clear warning cooldowns, hiding progress, speech
-bubbles, and any finish countdown. No progress carries into the next attempt.
-
-## Presentation and sound
-
-Use the original NES overworld recording and original game sound effects.
-Audio sources and action mappings are documented in `../src/assets/audio/README.md`.
-There is no approach heartbeat, distance meter, or music ducking based on Mario's
-distance. Background music stays at a steady volume.
-The original Starman music replaces the overworld music while the player or
-active Mario has a star. NPC stars do not change the music. When neither the
-player nor active Mario has a star, the overworld music returns. Death and
-level-clear cues take priority and play in full.
-Pause freezes playback, mute silences music and effects, and level-clear/death
-cues replace the background music. Restart begins the music again.
-
-Use NES scenery sprites, the original blue sky palette, black HUD and readable
-pixel controls. Keep native character pixels and proportions, scaled for giants.
-Keep the camera side-on and speech bubbles readable above the player.
-
-Mario still enters from outside the visible area; no proximity warning is shown.
-
-Provide the victory tune at successful goal entry. Warning phrases appear as
-text; recorded or synthesized speech is not required by this design.
-
-**Proposed default:** use short game sounds for warnings, item pickup, and NPC
-arrivals. Start browser audio after the player starts the game, and offer
-a mute control.
-
-## Acceptance checks
-
-These are checks to run against the playable game, not completed test results.
-Use the starting tuning values below unless playtesting has changed them.
-
-- The title reads `Super Goomba Bros`.
-- The same level is playable with a keyboard and with touch controls.
-- The player can walk, jump, and fire with a flower. Both player sizes use the same standard jump height. Contact automatically warns nearby NPCs. Shift does not change speed.
-- Small-player head hits bounce bricks; giant-player hits break them without killing NPCs on top.
-- Question blocks release one random item and turn into used blocks.
-- NPCs collect items by contact without seeking them or attacking Mario.
-- Stars and giant-player stomps kill Mario with his death tune and hop-and-fall animation; fireballs step him through fire, big, and small stages.
-- Normal and giant NPCs can complete the full route through pipes, stairs, and gaps.
-- Running NPC crowds and warnings can attract nearby Mario.
-- Each warning phrase urges escape from approaching Mario.
-- A warning affects nearby NPCs and does not recount a previously warned NPC.
-- A warning can reach a group; NPCs beyond its range remain unwarned.
-- The configured fixed NPC population starts each run.
-- NPC deaths do not cause replacement spawns.
-- NPC traits differ between characters and remain fixed within a run.
-- Warned NPCs run toward the castle door.
-- NPC rescue progress continues outside the camera view.
-- Saved increases only on arrival at the castle door, never on warning.
-- A warned NPC's death leaves Warned unchanged and does not increase Saved.
-- The player must reach the rescue requirement in the tuning file to finish.
-- NPCs can enter safety while the player's goal remains locked.
-- The player can backtrack when arriving below the rescue requirement.
-- Successful goal entry grants safety and starts the tune and final window.
-- Arrivals within the 5-second window count; later arrivals do not.
-- Mario can pass, pursue, backtrack, interact with scenery, and return.
-- Mario's return preserves NPC states, counters, and his current strength.
-- No heartbeat or distance meter remains; elapsed time still unlocks Mario's fireballs.
-- The player can be killed during the 0.5-second hiding transition.
-- Mario can target the player after seeing entry, before hiding completes.
-- All characters remain vulnerable to Mario in the open.
-- Contact warnings can attract Mario; closer warnings are more likely to do so.
-- One successful hit kills the player and restarts the level with reset state.
-- An impossible rescue target locks the goal while play and Mario's hunting continue.
-- Saved NPCs and all living unsaved NPCs count toward whether rescue is possible.
-
-## Implementation handoff
-
-The playable implementation is now in `src/`. See `../README.md` for run,
-build, and control instructions. `../src/game/config.ts` is the source of truth
-for current tuning; numerical values in this spec record the initial design.
-Automated simulation checks are in `../tests/simulation.test.ts`, and browser
-checks are in `../tests/browser/game.spec.ts`.
-
-Implement the agreed rules first. Treat proposed defaults as explicit working
-assumptions, and validate timing, controls, and difficulty in a playable build.
-Keep gameplay tuning in one implementation source when that source exists;
-update this document to reference it instead of duplicating changing values.
-
-This specification does not claim that gameplay, browser compatibility, or
-balance has been tested. Those checks require the game implementation.
+| Walk | Left/Right or A/D | Left/Right |
+| Jump or swim upward | Space, Up, or W | Jump |
+| Enter pipe | Down or S | Pipe |
+| Fire with a flower | Z | Fire |
+| Pause | Escape | Pause |
+
+A side pipe can also be entered by walking into its opening. There is no Hide
+or manual Warn button.
+
+Track fingers and keys separately. One release must not clear another hold.
+A finger can slide between controls, slide out to release, and slide back in.
+Missed touch ends and capture loss must not leave a control stuck. Clear holds
+and action pulses on pause, restart, death, blur, page hiding, or rotation.
+A cleared hold requires a fresh press; key repeat or finger motion cannot revive it.
+
+Block selection, touch callouts, and browser gestures in the control area.
+Keep menus usable by keyboard and touch. Landscape is preferred, but portrait
+controls and text must remain visible. Desktop emulation does not prove that
+iOS system gestures are suppressed on a physical phone.
+
+## Warnings
+
+Contact with an unwarned NPC automatically makes the player speak. A bubble
+appears near the player and a short squeaky voice cue plays. Nearby NPCs can
+hear the same warning. Each character counts as warned only once.
+
+Every phrase must urge escape from incoming Mario. Use the phrase pool in
+[tuning](../src/game/config.ts), with lines such as “Run! Mario is coming!”
+and “Run your shells off! Mario is coming!” Avoid unrelated jokes.
+
+Warnings have a limited range and a short cooldown. Mario can hear them too.
+A closer warning is more likely to draw him. Speaking does not grant safety.
+
+## NPCs
+
+Use a fixed population per stage. Do not replace dead or saved NPCs. Randomize
+safe starting positions and hidden traits for fear, reaction time, and speed.
+These traits stay fixed during an attempt.
+
+Unwarned NPCs patrol, pause, turn, and step off safe surfaces. They avoid lethal
+gaps and do not rapidly flip direction on a small block. A warning starts their
+reaction delay and then their escape.
+
+Warned NPCs move toward a rescue door. They plan landings, use platforms and
+springs, back up for higher routes, and find lower paths through castle passages.
+Swimmers route around coral and pipes. NPCs keep moving and can collect items
+outside the camera view, including while the player is in another area.
+
+NPCs collect items by contact without seeking them or intentionally attacking
+Mario. A giant NPC still flees. Only the giant player can stomp Mario.
+Saved NPCs stay safe and cannot return to danger.
+
+## Counters and finish
+
+Display separate Warned and Saved counters plus rescue progress against the
+configured requirement.
+
+Warned increases on the first warning heard by an NPC. A later death does not
+reduce it. Saved increases only when an NPC reaches a rescue door alive.
+No character can count twice. Coins can be collected, but do not change rescue
+scores or requirements.
+
+NPCs can enter safety before the player meets the quota. The player may backtrack
+to find more NPCs. The area before a locked door gives no special protection.
+
+Once enough NPCs are saved and the player contacts the doorway:
+
+1. Make the player safe.
+2. Play the original clear tune.
+3. Start one fixed final rescue window.
+4. Let remaining NPCs continue moving and facing Mario.
+5. At the cutoff, lock the counts and show the result.
+
+Later arrivals do not count and cannot extend the window. Next Level starts the
+next stage with fresh counters, actors, blocks, and powers. The final Play Again
+starts a new campaign.
+
+A rescue is impossible when `saved + living_unsaved < required`. Include warned
+and unwarned living NPCs. Keep the goal locked, show that too many were lost,
+and let Mario keep hunting. The player may restart through Pause.
+
+## Mario
+
+Use one active Mario. He normally advances right, but can pause, backtrack,
+break bricks, enter pipes, and return from the left. Returns are an unexplained
+game dynamic. They do not replace NPCs or reset the attempt.
+
+Mario observes at intervals, reacts with a delay, and aims ahead of targets.
+Scenery blocks sight. Warnings and running crowds also draw attention.
+His jumps keep their launch direction so targets can dodge.
+Side contact alone is not a stomp.
+
+Running NPCs in view increase capped crowd pressure. More pressure makes Mario
+return sooner, react faster, run faster, and attack more often. Idle, dead,
+saved, and offscreen NPCs do not contribute. Pressure fades when the crowd stops.
+
+Mario can walk and run. He uses running to pursue crowds and evade star holders.
+Fire Mario fires aggressively while still trying to stomp targets. In water,
+he can swim and attack.
+
+His power stages are small, big, and fire. A player fireball reduces one stage:
+fire to big, big to small, then small to defeated. Damage causes blinking, with
+no frozen hit pose. An active Mario can upgrade only by collecting an item.
+Elapsed stage time can affect the form in which he returns; it cannot
+spontaneously change his active power. Restarting a stage resets its timer.
+
+## Blocks and items
+
+Floating bricks and question blocks are solid. A small-player head hit bounces
+a brick without breaking it. A giant-player or Mario head hit breaks an ordinary
+brick and removes its collision. Breaking a brick under an NPC does not kill it.
+
+Each question block releases one random star, mushroom, or flower and becomes
+a used block. Original hidden blocks are revealed by a head hit. An unrevealed
+hidden block does not support a character landing from above.
+
+An item emerges before it can be collected. Mushrooms move and fall, stars
+bounce, and flowers remain where they land. Living characters can collect by
+contact. Items expire after their lifetime or when they leave the level.
+
+- A star grants temporary immunity. Player and NPC star contact defeats Mario
+  unless he also has a star. Mario avoids visible star holders.
+- A mushroom makes Goombas and NPCs three times larger, with larger collision
+  bodies. It grows small Mario to big Mario. Growth resolves overlap with
+  scenery. Giant NPCs can back up to leave low ceilings.
+- A flower gives the player fireballs and a white palette. NPCs can show the
+  flower palette but do not shoot. Mario becomes Fire Mario.
+- Powers can coexist. Mushroom and flower powers last for the stage; stars
+  expire. Restart and a new stage clear them.
+
+The player fires at the same limited rate in both sizes. A small player shoots
+small fireballs; a giant player shoots fireballs three times larger. Existing
+shots keep their launch size. Fireballs bounce on surfaces and stop at walls.
+Player fireballs do not harm NPCs. Mario's fireballs kill unprotected characters,
+including giants. Stars protect against those fireballs.
+
+## Death and audio
+
+One successful attack kills an unprotected player. A mushroom protects against
+Mario's stomp, but not his fireballs. Falling out of the level also kills.
+Death restarts the current stage with cleared counters, powers, items, speech,
+used blocks, and pursuit state.
+
+Mario's kills produce bounded pixel-blood bursts and temporary stains. NPC
+deaths have no death-song sequence. Player and Mario deaths play the complete
+original death tune. Mario uses his original upward hop and fall pose, then
+returns quickly. His return must not cut off the cue.
+
+Play the original area music and effects. Start audio after a user gesture.
+Pause stops playback progress; mute silences music and effects. Player or active
+Mario stars use Starman music. NPC stars do not change music. Death and clear
+cues take priority and must finish. There is no heartbeat, distance meter, or
+approach-based volume change.
+
+An unavailable audio decoder must not break controls or leave uncaught errors.
+Record the failure and show sound as unavailable. Do not insert fake decoded
+buffers or claim audio playback was verified on that device.
+
+## Verification
+
+The executable checks are under [tests](../tests). They cover decoded World 1-1
+anchors, all stage data, player input replays, NPC routes and quotas, powers,
+warnings, Mario behavior, and browser controls. Test fixtures are never bundled.
+
+Player route replays use ordinary controls, with Mario disabled, the quota
+pre-satisfied, and no random power-up required. Separate tests cover rescues
+and active Mario. These checks do not prove that every random attempt wins,
+or replace physical phone testing.
+
+Run the commands in [README](../README.md). Builds must remain one standalone
+HTML file, with no external runtime assets. Report failed or skipped checks and
+the limits of mobile testing plainly.

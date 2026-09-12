@@ -29,9 +29,13 @@ Area tracks preserve their opening and then loop an interior section before the
 recording's fade. Loop periods were checked against waveform energy and pitch
 changes. The loop markers in `../../game/audio.ts` are the source of timing data.
 
-Custom actions use fitting original cues: Warn uses the bump sound, rescue uses
-the coin sound, and bloody impacts use the stomp sound. Block bumps use the
-bump effect and item pickups use the power-up effect. The approach heartbeat
-and distance-based music ducking have been removed.
+Rescue and coin collection use the coin sound; bloody impacts use the stomp
+sound. Block bumps, breaks, pipe travel, shrinking, and power-up pickups use
+the corresponding original effects. Warnings use a custom short square-wave
+voice. There is no approach heartbeat or distance-based music change.
 Mario's defeat uses the original death recording. It interrupts the overworld
 music, which resumes after the cue finishes while the level continues.
+
+Major death and clear cues are serialized so neither is cut off or played over
+the other. A new stage preserves an unfinished cue. Unsupported audio decoding
+is recorded and shown as unavailable; it does not stop the game's controls.

@@ -3,11 +3,10 @@ import { makeArt } from "../art";
 import type { SpriteSources } from "../smb-sprites";
 import mario from "../../assets/smb/mario.png";
 import enemies from "../../assets/smb/enemies.png";
-import scenery from "../../assets/smb/scenery.png";
-import tiles from "../../assets/smb/world-tiles.png";
 import metatiles from "../../assets/smb/metatiles.png";
 import items from "../../assets/smb/items.png";
 import { RECORDINGS } from "../audio";
+import { BundledAudio } from "./BundledAudio";
 
 export class Boot extends Phaser.Scene {
   constructor() {
@@ -22,13 +21,14 @@ export class Boot extends Phaser.Scene {
     for (const [name, url] of Object.entries({
       mario,
       enemies,
-      scenery,
-      tiles,
       items,
     }))
       this.load.image(`source-${name}`, url);
-    for (const [name, url] of Object.entries(RECORDINGS))
-      this.load.audio(name, url);
+    for (const [name, url] of Object.entries(RECORDINGS)) {
+      if ((this.sound as Phaser.Sound.WebAudioSoundManager).context)
+        this.load.addFile(new BundledAudio(this, name, url));
+      else this.load.audio(name, url);
+    }
     this.load.on("loaderror", (file: Phaser.Loader.File) => {
       this.game.events.emit(
         "asset-error",
@@ -39,7 +39,7 @@ export class Boot extends Phaser.Scene {
 
   create() {
     const sources = Object.fromEntries(
-      ["mario", "enemies", "scenery", "tiles", "items"].map((key) => [
+      ["mario", "enemies", "items"].map((key) => [
         key,
         this.textures.get(`source-${key}`).getSourceImage(),
       ]),

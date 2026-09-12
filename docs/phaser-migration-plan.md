@@ -8,7 +8,10 @@ physics, React screens, and custom touch input. The one hand-typed level is
 `src/game/world-1-1.ts`. Assets are pre-extracted NES sprites and recordings in
 `src/assets/`, with credits in the README files there.
 
-The playable baseline is committed as `7bd6efe`. This plan was approved for
+The playable baseline is committed as `7bd6efe`; the paths in this context
+describe that baseline. Current code and validation are documented in README
+and the game spec. The original World 1-1 references are now test fixtures.
+This plan was approved for
 implementation; the user requested a handoff and local commits before migration.
 Use sequential progression through the levels unless the user directs otherwise.
 
@@ -67,7 +70,9 @@ Use sequential progression through the levels unless the user directs otherwise.
 ### Phase 3: port gameplay onto Arcade physics
 
 - Player: fixed walk speed, fixed jump height, no run. Small and giant
-  forms. Fireballs with flower.
+  forms. Fireballs with flower. Imported stages need more horizontal jump
+  reach, so the working implementation adds air speed while preserving the
+  existing walking pace and normal jump-height cap.
 - NPCs: traits, warning by contact, fleeing to the castle door, item
   pickup by contact, off-camera progress.
 - Mario AI: patrol right, sight and chase, crowd attraction, backtrack

@@ -92,53 +92,83 @@ test("every campaign stage can meet its rescue quota from the full starting popu
 });
 
 test("bonus pipe travel preserves rescues, powers, and NPC progress without finishing early", () => {
-  const sim = new Simulation(() => 0.5, physics()); sim.reset(); sim.marioReturn = 1e6;
-  const runner = sim.npcs[0]; runner.warned = true; runner.state = "run"; runner.wait = 0;
-  sim.warned = 13; sim.saved = T.required;
+  const sim = new Simulation(() => 0.5, physics());
+  sim.reset();
+  sim.marioReturn = 1e6;
+  const runner = sim.npcs[0];
+  runner.warned = true;
+  runner.state = "run";
+  runner.wait = 0;
+  sim.warned = 13;
+  sim.saved = T.required;
   sim.player.flower = true;
-  const entry = sim.activeRoom.data.pipes.find(pipe => pipe.direction === "down")!;
-  Body.setPosition(sim.player.body, { x: (entry.column + entry.width / 2) * 32, y: MAP_TOP + entry.row * 32 - 14 });
+  const entry = sim.activeRoom.data.pipes.find(
+    (pipe) => pipe.direction === "down",
+  )!;
+  Body.setPosition(sim.player.body, {
+    x: (entry.column + entry.width / 2) * 32,
+    y: MAP_TOP + entry.row * 32 - 14,
+  });
   sim.step(1 / 60, { ...emptyInput(), down: true });
   assert.equal(sim.activeRoom.data.id, "42");
   assert.ok(sim.player.body.position.x >= sim.activeRoom.offset);
   assert.equal(sim.mode, "playing");
-  assert.equal(sim.saved, T.required); assert.equal(sim.warned, 13); assert.ok(sim.player.flower);
+  assert.equal(sim.saved, T.required);
+  assert.equal(sim.warned, 13);
+  assert.ok(sim.player.flower);
   const before = runner.body.position.x;
   for (let i = 0; i < 90; i++) sim.step(1 / 60, emptyInput());
-  assert.ok(runner.body.position.x > before + 40, "NPCs keep moving in the old area");
+  assert.ok(
+    runner.body.position.x > before + 40,
+    "NPCs keep moving in the old area",
+  );
   const exit = sim.activeRoom.data.pipes[0];
-  Body.setPosition(sim.player.body, { x: sim.activeRoom.offset + exit.column * 32 - 12, y: MAP_TOP + exit.row * 32 + 32 });
+  Body.setPosition(sim.player.body, {
+    x: sim.activeRoom.offset + exit.column * 32 - 12,
+    y: MAP_TOP + exit.row * 32 + 32,
+  });
   sim.step(1 / 60, { ...emptyInput(), right: true });
   assert.equal(sim.activeRoom.data.id, "25");
-  assert.equal(sim.mode, "playing"); assert.equal(sim.saved, T.required);
-  assert.ok(sim.player.flower); assert.equal(sim.rooms.size, 2);
+  assert.equal(sim.mode, "playing");
+  assert.equal(sim.saved, T.required);
+  assert.ok(sim.player.flower);
+  assert.equal(sim.rooms.size, 2);
 });
 
 test("hidden blocks allow a fall through, then reveal and support the player after a head hit", () => {
-  const sim = new Simulation(() => 0.5, physics()); sim.reset(); sim.marioReturn = 1e6;
-  const block = sim.covers.find(c => c.hidden)!;
+  const sim = new Simulation(() => 0.5, physics());
+  sim.reset();
+  sim.marioReturn = 1e6;
+  const block = sim.obstacles.find((c) => c.hidden)!;
   Body.setPosition(sim.player.body, { x: block.x, y: block.y - 65 });
   for (let i = 0; i < 60; i++) sim.step(1 / 60, emptyInput());
   assert.ok(sim.player.body.bounds.min.y > block.body!.bounds.max.y);
   Body.setPosition(sim.player.body, { x: block.x, y: block.y + 32 });
   Body.setVelocity(sim.player.body, { x: 0, y: -5 });
   sim.step(1 / 60, emptyInput());
-  assert.ok(block.used); assert.equal(block.body!.headOnly, false);
-  for (const item of sim.items) sim.physics.remove(item.body); sim.items = [];
+  assert.ok(block.used);
+  assert.equal(block.body!.headOnly, false);
+  for (const item of sim.items) sim.physics.remove(item.body);
+  sim.items = [];
   Body.setPosition(sim.player.body, { x: block.x, y: block.y - 65 });
   Body.setVelocity(sim.player.body, { x: 0, y: 0 });
   for (let i = 0; i < 60; i++) sim.step(1 / 60, emptyInput());
-  assert.ok(Math.abs(sim.player.body.bounds.max.y - block.body!.bounds.min.y) < 0.1);
+  assert.ok(
+    Math.abs(sim.player.body.bounds.max.y - block.body!.bounds.min.y) < 0.1,
+  );
 });
 
 test("the player can cross World 4-3's eight-tile gap at the normal jump height", () => {
   const sim = new Simulation(() => 0.5, physics());
-  sim.levelIndex = CAMPAIGN.findIndex(level => level.id === "4-3"); sim.reset(); sim.marioReturn = 1e6;
+  sim.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-3");
+  sim.reset();
+  sim.marioReturn = 1e6;
   Body.setPosition(sim.player.body, { x: 768, y: MAP_TOP + 5 * 32 - 14 });
   sim.step(1 / 60, { ...emptyInput(), right: true, jump: true });
   let highest = sim.player.body.position.y;
   for (let frame = 0; frame < 54; frame++) {
-    sim.step(1 / 60, { ...emptyInput(), right: true }); highest = Math.min(highest, sim.player.body.position.y);
+    sim.step(1 / 60, { ...emptyInput(), right: true });
+    highest = Math.min(highest, sim.player.body.position.y);
   }
   assert.ok(sim.player.alive && sim.player.body.position.x >= 1024);
   assert.ok(Math.abs(sim.player.body.bounds.max.y - (MAP_TOP + 4 * 32)) < 0.1);

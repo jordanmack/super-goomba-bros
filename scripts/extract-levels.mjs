@@ -197,8 +197,7 @@ export function decodeArea(tables, pointer) {
       if (o.byte & 64) {
         foreground = (o.byte & 7) < 4 ? o.byte & 7 : 0;
         if ((o.byte & 7) >= 4) color = o.byte & 7;
-      }
-      else {
+      } else {
         terrain = o.byte & 15;
         background = (o.byte >> 4) & 3;
       }
@@ -236,7 +235,9 @@ export function decodeArea(tables, pointer) {
             ? 136
             : type === 2 && r >= 11
               ? 84
-            : type === 0 && id === "02" ? 98 : tables.TerrainMetatiles[type],
+              : type === 0 && id === "02"
+                ? 98
+                : tables.TerrainMetatiles[type],
         );
     }
     const under = (row, length, value) => {
@@ -499,12 +500,18 @@ export function decodeArea(tables, pointer) {
       : exitPipe
         ? { kind: "pipe", column: exitPipe.column, row: exitPipe.row }
         : null;
-  const initialColor = attributes.filter(a => a.column <= 16).at(-1)?.color ?? header.color;
+  const initialColor =
+    attributes.filter((a) => a.column <= 16).at(-1)?.color ?? header.color;
   return {
     id,
     label,
     type: TYPES[type],
-    palette: type !== 1 ? TYPES[type] : ({ 4: "night", 5: "snow-day", 6: "snow-night", 7: "snow" }[initialColor] ?? "day"),
+    palette:
+      type !== 1
+        ? TYPES[type]
+        : ({ 4: "night", 5: "snow-day", 6: "snow-night", 7: "snow" }[
+            initialColor
+          ] ?? "day"),
     width,
     height: 15,
     tileSize: 16,

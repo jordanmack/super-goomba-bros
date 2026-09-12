@@ -169,10 +169,9 @@ export class PhysicsWorld {
           fixed.checkCollision.left =
           fixed.checkCollision.right =
             !body.headOnly;
-        const x = body.position.x - body.width / 2, y = body.position.y - body.height / 2;
-        if (
-          fixed.position.x !== x || fixed.position.y !== y
-        ) {
+        const x = body.position.x - body.width / 2,
+          y = body.position.y - body.height / 2;
+        if (fixed.position.x !== x || fixed.position.y !== y) {
           this.world.remove(fixed);
           fixed.position.set(x, y);
           fixed.updateCenter();
@@ -193,12 +192,14 @@ export class PhysicsWorld {
     this.world.update(0, dt * 1000);
     for (const body of dynamic) {
       if (!body.enable) continue;
-      const nearby = this.world.staticTree.search({
-        minX: Math.min(body.position.x, body.prev.x) - 4,
-        minY: Math.min(body.position.y, body.prev.y) - 4,
-        maxX: Math.max(body.position.x, body.prev.x) + body.width + 4,
-        maxY: Math.max(body.position.y, body.prev.y) + body.height + 4,
-      }).sort((a, b) => this.order.get(a)! - this.order.get(b)!);
+      const nearby = this.world.staticTree
+        .search({
+          minX: Math.min(body.position.x, body.prev.x) - 4,
+          minY: Math.min(body.position.y, body.prev.y) - 4,
+          maxX: Math.max(body.position.x, body.prev.x) + body.width + 4,
+          maxY: Math.max(body.position.y, body.prev.y) + body.height + 4,
+        })
+        .sort((a, b) => this.order.get(a)! - this.order.get(b)!);
       if (nearby.length) this.world.collide(body, nearby);
     }
     this.world.postUpdate();

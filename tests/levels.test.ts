@@ -8,7 +8,7 @@ import {
   decodeEnemies,
   parseTables,
 } from "../scripts/extract-levels.mjs";
-import { WORLD_1_1 } from "../src/game/world-1-1.ts";
+import { WORLD_1_1 } from "./fixtures/world-1-1.ts";
 
 const root = new URL("../src/assets/levels/", import.meta.url);
 const read = (name: string) =>
@@ -147,4 +147,43 @@ test("table decoding handles page commands, overlapping objects, and three-byte 
     [86, 104],
   );
   assert.throws(() => parseTables("NES\0binary"), /never a ROM/);
+});
+
+test("palette controls stay latched and every area has matching tile art", () => {
+  const atlas = JSON.parse(
+    readFileSync(
+      new URL("../src/assets/smb/metatiles.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const [id, palette] of [
+    ["24", "snow-night"],
+    ["2a", "snow-day"],
+    ["2d", "snow"],
+    ["2e", "night"],
+    ["40", "underground"],
+    ["01", "water"],
+    ["60", "castle"],
+  ])
+    assert.equal(areas.find((area) => area.id === id).palette, palette);
+  assert.ok(
+    areas
+      .find((area) => area.id === "2e")
+      .attributes.every((attribute) => attribute.color === 4),
+  );
+  for (const area of areas) {
+    assert.ok(atlas.themes.includes(area.palette));
+    for (const tile of new Set(area.tiles.flat()))
+      if (tile && tile !== 95 && tile !== 96)
+        assert.ok(
+          atlas.coverage[area.palette].includes(tile),
+          `${area.id}: tile ${tile} has art`,
+        );
+  }
+  for (const level of ["1-2", "2-1", "2-2", "3-1", "5-2", "6-2"])
+    assert.equal(
+      atlas.regions.find((region) => region.level === level).offsetY,
+      240,
+      `${level}: main map strip`,
+    );
 });

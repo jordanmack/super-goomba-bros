@@ -1,6 +1,12 @@
 // Offline art extraction. Geometry comes only from the disassembly level JSON.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+} from "node:fs";
 import { join } from "node:path";
 
 const referenceDir = process.argv[2];
@@ -12,17 +18,7 @@ const campaign = JSON.parse(
   readFileSync("src/assets/levels/campaign.json", "utf8"),
 ).levels;
 const sources = {
-  day: [
-    "1-1",
-    "1-3",
-    "2-1",
-    "2-3",
-    "4-1",
-    "4-3",
-    "8-1",
-    "8-2",
-    "8-3",
-  ],
+  day: ["1-1", "1-3", "2-1", "2-3", "4-1", "4-3", "8-1", "8-2", "8-3"],
   night: ["3-3", "6-1", "6-2"],
   snow: ["6-3"],
   underground: ["1-2", "4-2"],
@@ -34,6 +30,18 @@ const sources = {
 const themes = Object.keys(sources);
 const urls = [];
 const frames = new Map();
+const regions = [];
+let groundPattern;
+const signature = (pixels) => {
+  const colors = new Map(),
+    pattern = [];
+  for (let i = 0; i < pixels.length; i += 4) {
+    const color = pixels.subarray(i, i + 3).toString("hex");
+    if (!colors.has(color)) colors.set(color, colors.size);
+    pattern.push(colors.get(color));
+  }
+  return pattern.join(",");
+};
 for (const [theme, levels] of Object.entries(sources)) {
   const samples = new Map();
   for (const id of levels) {
@@ -64,7 +72,43 @@ for (const [theme, levels] of Object.entries(sources)) {
       [filename, "-depth", "8", "rgba:-"],
       { maxBuffer: 32e6 },
     );
-    const offsetY = theme === "underground" || theme === "water" ? 240 : 0;
+    const tileAt = (column, row, offsetY) => {
+      const image = Buffer.alloc(1024);
+      for (let y = 0; y < 16; y++) {
+        const pos =
+          ((offsetY + row * 16 + y) * dimensions[0] + column * 16) * 4;
+        pixels.copy(image, y * 64, pos, pos + 64);
+      }
+      return image;
+    };
+    if (id === "1-1") groundPattern = signature(tileAt(0, 13, 0));
+    // Archive images can place cloud bonus rooms above the main level. Locate
+    // the main strip from known ground glyphs, independent of its palette.
+    const anchors = area.tiles
+      .flatMap((row, y) =>
+        row.flatMap((tile, x) => (tile === 84 ? [[x, y]] : [])),
+      )
+      .slice(0, 64);
+    let offsetY = theme === "water" ? 240 : 0;
+    if (anchors.length) {
+      let best = -1;
+      for (
+        let candidate = 0;
+        candidate + 240 <= dimensions[1];
+        candidate += 240
+      ) {
+        const matches = anchors.filter(
+          ([x, y]) => signature(tileAt(x, y, candidate)) === groundPattern,
+        ).length;
+        if (matches > best) {
+          best = matches;
+          offsetY = candidate;
+        }
+      }
+      if (best < Math.min(8, anchors.length))
+        throw new Error(`Could not align ${id} with its ground anchors`);
+    }
+    regions.push({ level: id, area: main, offsetY });
     for (let y = 2; y < 15; y++)
       for (
         let x = 0;
@@ -96,7 +140,17 @@ for (const [theme, levels] of Object.entries(sources)) {
 
 // Cloud bonus terrain does not occur in a main-stage map. Use its original
 // frame from the already credited sprite sheet rather than a blank substitute.
-frames.set("day:136", execFileSync("convert", ["src/assets/smb/scenery.png", "-crop", "16x16+64+336", "-depth", "8", "rgba:-"]));
+frames.set(
+  "day:136",
+  execFileSync("convert", [
+    "src/assets/smb/scenery.png",
+    "-crop",
+    "16x16+64+336",
+    "-depth",
+    "8",
+    "rgba:-",
+  ]),
+);
 
 // Identical source metatile graphics have distinct IDs for their game behavior.
 const aliases = {
@@ -169,11 +223,13 @@ for (const [themeIndex, theme] of themes.entries()) {
   }
 }
 const used = new Set(
-  readdirSync("src/assets/levels").filter(name => /^area-.*\.json$/.test(name)).flatMap((name) =>
-    JSON.parse(
-      readFileSync(`src/assets/levels/${name}`, "utf8"),
-    ).tiles.flat(),
-  ),
+  readdirSync("src/assets/levels")
+    .filter((name) => /^area-.*\.json$/.test(name))
+    .flatMap((name) =>
+      JSON.parse(
+        readFileSync(`src/assets/levels/${name}`, "utf8"),
+      ).tiles.flat(),
+    ),
 );
 const missing = [...used].filter(
   (id) => id && id !== 95 && id !== 96 && !coverage.day.includes(id),
@@ -191,7 +247,7 @@ writeFileSync(
 );
 writeFileSync(
   "src/assets/smb/metatiles.json",
-  JSON.stringify({ themes, coverage, sources: urls }, null, 2) + "\n",
+  JSON.stringify({ themes, coverage, regions, sources: urls }, null, 2) + "\n",
 );
 console.log(
   `Extracted ${coverage.day.length} metatiles across ${themes.length} palettes. No map image is bundled.`,

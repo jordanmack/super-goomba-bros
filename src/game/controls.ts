@@ -127,9 +127,14 @@ export class GameControls {
       this.clear();
       interrupt();
     };
-    listen(document, "mousedown", e => {
-      if (this.inControls(e.target) && e.cancelable) e.preventDefault();
-    }, { passive: false });
+    listen(
+      document,
+      "mousedown",
+      (e) => {
+        if (this.inControls(e.target) && e.cancelable) e.preventDefault();
+      },
+      { passive: false },
+    );
     for (const name of ["blur", "pagehide", "orientationchange"])
       listen(window, name, clearAndInterrupt);
     if (screen.orientation)

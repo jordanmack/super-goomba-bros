@@ -39,7 +39,7 @@ type Snapshot = {
   doomed: boolean;
   power: string;
   flower: boolean;
-  phase: number;
+  door: boolean;
   bubble: string;
   x: number;
   y: number;
@@ -58,7 +58,7 @@ const initial: Snapshot = {
   doomed: false,
   power: "",
   flower: false,
-  phase: 0,
+  door: true,
   bubble: "",
   x: 0,
   y: 0,
@@ -75,147 +75,170 @@ export default function App() {
   const [state, setState] = useState(initial);
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [audioUnavailable, setAudioUnavailable] = useState(false);
   const [error, setError] = useState("");
   const [portrait, setPortrait] = useState("");
   const [ready, setReady] = useState(false);
   const startAudio = (game: Runtime) => {
     void game.audio.start().catch(() => {
-      game.audio.muted = true;
+      game.audio.disable();
       setMuted(true);
+      setAudioUnavailable(true);
     });
   };
 
   useEffect(() => {
-    let renderer: PhaserGame;
-    try {
-      renderer = new PhaserGame(host.current!);
-    } catch {
-      queueMicrotask(() =>
-        setError(
-          "WebGL could not start. Please enable hardware acceleration and reload.",
-        ),
-      );
-      return;
-    }
-    const sim = new Simulation();
-    if (import.meta.env.DEV) {
-      const requested = new URLSearchParams(location.search).get("level");
-      const index = CAMPAIGN.findIndex((level) => level.id === requested);
-      if (index >= 0) {
-        sim.levelIndex = index;
-        sim.reset("title");
-      }
-    }
-    const audio = new GameAudio(renderer.game);
-    const game: Runtime = {
-      sim,
-      renderer,
-      audio,
-      input: emptyInput(),
-      pulses: {},
-      paused: false,
-      clearInput: () => {},
-    };
-    runtime.current = game;
-    let disposed = false;
-    let controls: GameControls | undefined;
-    void renderer.ready
-      .then(() => {
-        if (disposed) return;
-        renderer.bindPhysics(sim.physics);
-        controls = new GameControls(
-          renderer.play!.input,
-          surface.current!,
-          game,
-          () => {
-            game.paused = !game.paused;
-            setPaused(game.paused);
-            game.clearInput();
-            if (game.paused) audio.pause();
-            else startAudio(game);
-          },
-          () => {
-            if (sim.mode === "playing" || sim.mode === "finishing") {
-              game.paused = true;
-              setPaused(true);
-              audio.pause();
-            }
-          },
-        );
-        game.clearInput = () => controls?.clear();
-        setPortrait(renderer.game.registry.get("portrait"));
-        setReady(true);
-        renderer.play!.tick = update;
-      })
-      .catch((error: Error) => {
-        if (!disposed) setError(error.message);
-      });
-    // Development-only access supports deterministic browser checks, never the built game.
-    if (import.meta.env.DEV)
-      (window as unknown as { __game: Runtime }).__game = game;
-    let accumulator = 0,
-      ticks = 0;
-    const update = (now: number, frameDelta: number) => {
-      const delta = Math.min(0.1, frameDelta / 1000);
-      renderer.game.anims.globalTimeScale = game.paused ? 0 : 1;
-      if (!game.paused) {
-        accumulator += delta;
-        while (accumulator >= 1 / 60) {
-          sim.step(1 / 60, { ...game.input, ...game.pulses });
-          game.pulses = {};
-          if (sim.mode !== "playing") game.clearInput();
-          accumulator -= 1 / 60;
-        }
-        for (const event of sim.events.splice(0)) audio.event(event);
-        audio.update(
-          sim.mode === "playing",
-          (sim.player.alive && sim.player.starLeft > 0) ||
-            (sim.marioActive && sim.mario.alive && sim.mario.starLeft > 0),
-          sim.activeRoom.data.type,
-        );
-      }
-      renderer.render(sim, now / 1000);
-      if (ticks++ % 4 === 0) {
-        const p = sim.player.body.position;
-        const point = renderer.screen(p.x, p.y - 42 * sim.player.scale, sim);
-        setState({
-          mode: sim.mode,
-          warned: sim.warned,
-          saved: sim.saved,
-          living: sim.living(),
-          elapsed: sim.elapsed,
-          doomed: sim.doomed,
-          power: [
-            sim.player.starLeft > 0
-              ? `STAR ${Math.ceil(sim.player.starLeft)}s`
-              : "",
-            sim.player.scale > 1 ? "GIANT" : "",
-            sim.player.flower ? "FIRE: Z" : "",
-          ]
-            .filter(Boolean)
-            .join(" / "),
-          flower: sim.player.flower,
-          phase: sim.phase,
-          bubble: sim.bubbleLeft > 0 ? sim.bubble : "",
-          x: point.x,
-          y: point.y,
-          cooldown: sim.cooldown,
-          finishLeft: sim.finishLeft,
-          progress: Math.min(
-            1,
-            (p.x - sim.activeRoom.offset) / (sim.goalX - sim.activeRoom.offset),
+    let stopped = false;
+    let cleanup: (() => void) | undefined;
+    const initialize = () => {
+      let renderer: PhaserGame;
+      try {
+        renderer = new PhaserGame(host.current!);
+      } catch {
+        queueMicrotask(() =>
+          setError(
+            "WebGL could not start. Please enable hardware acceleration and reload.",
           ),
-          level: sim.level.id,
-          lastLevel: sim.levelIndex === 31,
-        });
+        );
+        return;
       }
+      const sim = new Simulation();
+      if (import.meta.env.DEV) {
+        const requested = new URLSearchParams(location.search).get("level");
+        const index = CAMPAIGN.findIndex((level) => level.id === requested);
+        if (index >= 0) {
+          sim.levelIndex = index;
+          sim.reset("title");
+        }
+      }
+      const audio = new GameAudio(renderer.game);
+      const game: Runtime = {
+        sim,
+        renderer,
+        audio,
+        input: emptyInput(),
+        pulses: {},
+        paused: false,
+        clearInput: () => {},
+      };
+      runtime.current = game;
+      let disposed = false;
+      let controls: GameControls | undefined;
+      void renderer.ready
+        .then(() => {
+          if (disposed) return;
+          renderer.bindPhysics(sim.physics);
+          controls = new GameControls(
+            renderer.play!.input,
+            surface.current!,
+            game,
+            () => {
+              game.paused = !game.paused;
+              setPaused(game.paused);
+              game.clearInput();
+              if (game.paused) audio.pause();
+              else startAudio(game);
+            },
+            () => {
+              if (sim.mode === "playing" || sim.mode === "finishing") {
+                game.paused = true;
+                setPaused(true);
+                audio.pause();
+              }
+            },
+          );
+          game.clearInput = () => controls?.clear();
+          setPortrait(renderer.game.registry.get("portrait"));
+          if (!audio.available) {
+            audio.disable();
+            setMuted(true);
+            setAudioUnavailable(true);
+          }
+          setReady(true);
+          renderer.play!.tick = update;
+        })
+        .catch((error: Error) => {
+          if (!disposed) setError(error.message);
+        });
+      // Development-only access supports deterministic browser checks, never the built game.
+      if (import.meta.env.DEV)
+        (window as unknown as { __game: Runtime }).__game = game;
+      let accumulator = 0,
+        ticks = 0;
+      const update = (now: number, frameDelta: number) => {
+        const delta = Math.min(0.1, frameDelta / 1000);
+        renderer.game.anims.globalTimeScale = game.paused ? 0 : 1;
+        if (!game.paused) {
+          accumulator += delta;
+          while (accumulator >= 1 / 60) {
+            sim.step(1 / 60, { ...game.input, ...game.pulses });
+            game.pulses = {};
+            if (sim.mode !== "playing") game.clearInput();
+            accumulator -= 1 / 60;
+          }
+          for (const event of sim.events.splice(0)) audio.event(event);
+          audio.update(
+            sim.mode === "playing",
+            (sim.player.alive && sim.player.starLeft > 0) ||
+              (sim.marioActive && sim.mario.alive && sim.mario.starLeft > 0),
+            sim.activeRoom.data.type,
+          );
+        }
+        renderer.render(sim, now / 1000);
+        if (ticks++ % 4 === 0) {
+          const p = sim.player.body.position;
+          const point = renderer.screen(p.x, p.y - 42 * sim.player.scale, sim);
+          setState({
+            mode: sim.mode,
+            warned: sim.warned,
+            saved: sim.saved,
+            living: sim.living(),
+            elapsed: sim.elapsed,
+            doomed: sim.doomed,
+            power: [
+              sim.player.starLeft > 0
+                ? `STAR ${Math.ceil(sim.player.starLeft)}s`
+                : "",
+              sim.player.scale > 1 ? "GIANT" : "",
+              sim.player.flower ? "FIRE: Z" : "",
+            ]
+              .filter(Boolean)
+              .join(" / "),
+            flower: sim.player.flower,
+            door:
+              !!sim.activeRoom.data.goal &&
+              sim.activeRoom.data.goal.kind !== "pipe",
+            bubble: sim.bubbleLeft > 0 ? sim.bubble : "",
+            x: point.x,
+            y: point.y,
+            cooldown: sim.cooldown,
+            finishLeft: sim.finishLeft,
+            progress: Math.min(
+              1,
+              (p.x - sim.activeRoom.offset) /
+                (sim.goalX - sim.activeRoom.offset),
+            ),
+            level: sim.level.id,
+            lastLevel: sim.levelIndex === 31,
+          });
+        }
+      };
+      return () => {
+        disposed = true;
+        controls?.dispose();
+        audio.dispose();
+        renderer.dispose();
+        runtime.current = null;
+      };
     };
+    // React's development probe must not create and immediately close an
+    // AudioContext while Phaser is decoding its preload queue.
+    queueMicrotask(() => {
+      if (!stopped) cleanup = initialize();
+    });
     return () => {
-      disposed = true;
-      controls?.dispose();
-      audio.dispose();
-      renderer.dispose();
-      runtime.current = null;
+      stopped = true;
+      cleanup?.();
     };
   }, []);
 
@@ -327,8 +350,17 @@ export default function App() {
         <div className="tools">
           <button
             onClick={mute}
-            title={muted ? "Unmute" : "Mute"}
-            aria-label={muted ? "Unmute" : "Mute"}
+            disabled={audioUnavailable}
+            title={
+              audioUnavailable
+                ? "Audio unavailable. Reload to try sound again."
+                : muted
+                  ? "Unmute"
+                  : "Mute"
+            }
+            aria-label={
+              audioUnavailable ? "Audio unavailable" : muted ? "Unmute" : "Mute"
+            }
           >
             {muted ? <VolumeX /> : <Volume2 />}
           </button>
@@ -354,7 +386,8 @@ export default function App() {
             onClick={start}
             disabled={!!error || !ready}
           >
-            <Play size={20} fill="currentColor" /> START GAME
+            <Play size={20} fill="currentColor" />{" "}
+            {ready ? "START GAME" : "LOADING..."}
           </button>
           <p className="edition">
             WORLD 1 <span>/</span> THE GREAT ESCAPE
@@ -369,13 +402,7 @@ export default function App() {
             </div>
           )}
           <div className="phase">
-            <span>
-              {state.phase === 2
-                ? "FIRE MARIO"
-                : state.phase === 1
-                  ? "MARIO IS FASTER"
-                  : `WORLD ${state.level}`}
-            </span>
+            <span>WORLD {state.level}</span>
             <time>
               {minutes}:{seconds}
             </time>
@@ -397,6 +424,7 @@ export default function App() {
             </div>
           )}
           {!state.doomed &&
+            state.door &&
             state.progress > 0.92 &&
             state.mode === "playing" &&
             state.saved < T.required && (

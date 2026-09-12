@@ -278,6 +278,8 @@ p {
   border-color: #6c8970;
 }
 .phase {
+  background: #000;
+  padding: 6px 8px;
   position: absolute;
   top: 105px;
   right: 32px;

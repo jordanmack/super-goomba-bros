@@ -46,4 +46,5 @@ custom endpoint after the original bridge, not a flag finish.
 `tests/levels.test.ts` compares World 1-1 pipes, gaps, stairs, floating blocks,
 and castle coordinates with the previous map; it also checks all generated
 areas, campaign order, and known pipe routes. These data checks do not certify
-that characters can traverse every level. Gameplay tests cover navigation.
+that characters can traverse every level. Campaign tests and the recorded
+player-input replays cover navigation separately.

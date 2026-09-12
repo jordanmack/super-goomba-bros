@@ -1,5 +1,10 @@
 # Regression reference data
 
+`world-1-1.ts`, `world-tiles.ts`, and `world-1-1-tiles.png` preserve the previous
+World 1-1 collision and pixel references. They verify the new text decoder and
+tile renderer against the playable baseline. Their NESMaps source is credited
+in `src/assets/smb/README.md`.
+
 `player-routes.json` records ordinary input runs that reach each stage's castle
 door. Each pair is `[buttons, frames]`, with bit1 Left, bit2 Right, bit4 Jump,
 and bit8 Pipe. These files are never included in the game build.

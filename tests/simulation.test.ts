@@ -7,7 +7,12 @@ import {
   emptyInput,
   rescueImpossible,
 } from "../src/game/simulation.ts";
-import { GAPS, TUNING as T } from "../src/game/config.ts";
+import { TUNING as T } from "../src/game/config.ts";
+import { areaData, areaGaps } from "../src/game/levels.ts";
+const FIRST_AREA = areaData("25");
+const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
+const WORLD_WIDTH = FIRST_AREA.width * 32;
+const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
 
@@ -34,7 +39,7 @@ function at(s: Simulation, x: number, y = 415) {
 }
 
 function give(s: Simulation, actor: Actor, kind: ItemKind) {
-  const box = s.covers.find((c) => c.question && !c.used)!;
+  const box = s.obstacles.find((c) => c.question && !c.used)!;
   s.hitBlock(box, s.player);
   const item = s.items.at(-1)!;
   item.kind = kind;
@@ -73,7 +78,11 @@ test("forward jump reach increases while walking keeps its fixed pace", () => {
   assert.equal(sim.player.grounded, false);
   assert.equal(sim.player.body.velocity.x, T.airSpeed);
   tick(sim, 0.1);
-  assert.equal(sim.player.body.velocity.x, 0, "releasing direction still stops horizontal motion");
+  assert.equal(
+    sim.player.body.velocity.x,
+    0,
+    "releasing direction still stops horizontal motion",
+  );
 });
 
 test("active Mario collects a star by contact and its immunity expires", () => {
@@ -81,7 +90,7 @@ test("active Mario collects a star by contact and its immunity expires", () => {
   s.marioActive = true;
   Body.setFrozen(s.mario.body, false);
   Body.setPosition(s.mario.body, { x: 250, y: 411 });
-  const box = s.covers.find((c) => c.question)!;
+  const box = s.obstacles.find((c) => c.question)!;
   s.hitBlock(box, s.player);
   const item = s.items[0];
   item.kind = "star";
@@ -159,7 +168,7 @@ test("idle NPCs leave isolated blocks and stairs without rapidly flipping direct
 test("giant head hits break bricks and let NPCs on top fall safely", () => {
   const s = game();
   give(s, s.player, "mushroom");
-  const brick = s.covers.find(
+  const brick = s.obstacles.find(
     (c) => c.kind === "brick" && !c.question && c.y > 300,
   )!;
   at(s, brick.x, brick.y + 16 + 14 * T.giantScale + 5);
@@ -179,23 +188,6 @@ test("giant head hits break bricks and let NPCs on top fall safely", () => {
   );
 });
 
-test("player brick destruction releases an NPC hiding inside without killing it", () => {
-  const s = game();
-  give(s, s.player, "mushroom");
-  const brick = s.covers.find((c) => c.kind === "brick" && !c.question)!;
-  const n = s.npcs[0];
-  n.state = "hidden";
-  n.cover = brick.id;
-  n.entry = { x: brick.x, y: brick.y - 32 };
-  Body.setFrozen(n.body, true);
-  s.hitBlock(brick, s.player);
-  assert.ok(brick.broken && n.alive && !n.body.isStatic);
-  assert.equal(n.cover, null);
-  const box = s.covers.find((c) => c.question && !c.used)!;
-  s.hitBlock(box, s.player);
-  assert.ok(box.used && !box.broken);
-});
-
 test("mixed NPC speeds cross every staircase and gap across different runs", () => {
   for (const start of [1, 3, 4, 9, 15]) {
     let seed = start;
@@ -212,7 +204,7 @@ test("mixed NPC speeds cross every staircase and gap across different runs", () 
 
 test("player head contact bumps a brick without removing its collision", () => {
   const s = game();
-  const brick = s.covers.find(
+  const brick = s.obstacles.find(
     (c) => c.kind === "brick" && !c.question && c.y > 300,
   )!;
   at(s, brick.x);
@@ -234,7 +226,7 @@ test("question blocks release each random item once, including on Mario hits", (
   ] as const) {
     const s = game();
     s.random = () => roll;
-    const box = s.covers.find((c) => c.question)!;
+    const box = s.obstacles.find((c) => c.question)!;
     s.hitBlock(box, s.mario);
     assert.equal(s.items[0].kind, kind);
     assert.equal(box.used, true);
@@ -246,7 +238,7 @@ test("question blocks release each random item once, including on Mario hits", (
     assert.ok(s.solids.includes(box.body!));
     s.reset();
     assert.equal(s.items.length, 0);
-    assert.ok(s.covers.filter((c) => c.question).every((c) => !c.used));
+    assert.ok(s.obstacles.filter((c) => c.question).every((c) => !c.used));
   }
 });
 
@@ -254,7 +246,7 @@ test("NPCs pick up falling items by contact without being warned or seeking them
   for (const kind of ["star", "mushroom", "flower"] as const) {
     const s = game();
     const n = s.npcs[0];
-    const box = s.covers.find((c) => c.question)!;
+    const box = s.obstacles.find((c) => c.question)!;
     s.hitBlock(box, s.player);
     const item = s.items[0];
     item.kind = kind;
@@ -474,7 +466,7 @@ test("World 1-1 has its original gaps, six pipe heights, block rows, and end sta
     [4896, 4960],
   ]);
   assert.deepEqual(
-    s.covers.filter((c) => c.kind === "pipe").map((c) => [c.x, c.height]),
+    s.obstacles.filter((c) => c.kind === "pipe").map((c) => [c.x, c.height]),
     [
       [928, 64],
       [1248, 96],
@@ -485,16 +477,16 @@ test("World 1-1 has its original gaps, six pipe heights, block rows, and end sta
     ],
   );
   assert.equal(
-    s.covers.filter((c) => c.kind === "brick" && !c.question).length,
+    s.obstacles.filter((c) => c.kind === "brick" && !c.question).length,
     30,
   );
-  assert.equal(s.covers.filter((c) => c.question && !c.hidden).length, 13);
-  assert.equal(s.covers.filter((c) => c.hidden).length, 1);
-  assert.ok(s.covers.some((c) => c.question && c.x === 528 && c.y === 318));
+  assert.equal(s.obstacles.filter((c) => c.question && !c.hidden).length, 13);
+  assert.equal(s.obstacles.filter((c) => c.hidden).length, 1);
+  assert.ok(s.obstacles.some((c) => c.question && c.x === 528 && c.y === 318));
   assert.ok(
     s.solids.some((b) => b.bounds.min.x === 6016 && b.bounds.min.y === 174),
   );
-  assert.equal(T.goalX, 6544);
+  assert.equal(GOAL_X, 6544);
 });
 
 function crowdGame(count: number) {
@@ -528,15 +520,14 @@ test("larger running crowds build more capped aggression, which falls when they 
   assert.equal(large.marioPressure, 0);
 });
 
-test("offscreen, hidden, saved, and dead NPCs do not add crowd pressure", () => {
+test("offscreen, idle, saved, and dead NPCs do not add crowd pressure", () => {
   const s = crowdGame(6);
   s.cameraX = 1800;
   tick(s, 0.5);
   assert.equal(s.marioCrowd, 0);
   s.cameraX = 0;
   s.npcs[0].warned = false;
-  s.npcs[1].state = "hidden";
-  s.npcs[1].cover = 0;
+  s.npcs[1].state = "idle";
   s.npcs[1].wait = 5;
   s.save(s.npcs[2]);
   s.kill(s.npcs[3]);
@@ -551,7 +542,8 @@ test("running crowds attract Mario sooner and accelerate attack cooldowns", () =
   tick(loud, 0.7);
   for (const s of [quiet, loud]) {
     s.marioActive = true;
-    s.marioPipe = 10;
+    s.marioPause = 10;
+    s.marioLook = 10;
     Body.setPosition(s.mario.body, { x: 200, y: 411 });
     s.fireCooldown = 2;
     s.marioJumpWait = 2;
@@ -617,7 +609,7 @@ test("unwarned NPCs patrol locally, pause, and never count as warned or saved", 
 test("idle patrol turns at gaps and pipes, and a warning starts escape", () => {
   const s = game();
   const [a, b] = s.npcs;
-  const pipe = s.covers.find((c) => c.kind === "pipe")!;
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
   a.homeX = GAPS[0][0] - 25;
   b.homeX = pipe.x - T.pipeWidth / 2 - 25;
   for (const n of [a, b]) Body.setPosition(n.body, { x: n.homeX, y: 415 });
@@ -665,20 +657,11 @@ test("warning cooldown and distance limit", () => {
   assert.equal(s.warned, 1);
 });
 
-test("cover input is ignored and characters remain exposed", () => {
+test("walking and jumping keep nearby NPCs alive", () => {
   const s = game();
-  at(s, s.covers[0].x);
-  tick(s, 0.4, { hide: true });
-  assert.equal(s.player.state, "idle");
-  assert.equal(s.protected(s.player), false);
-  assert.equal(s.protected(s.player), false);
-});
-
-test("entry cancels on movement and jumps remain non-attacking", () => {
-  const s = game();
-  at(s, s.covers[0].x);
-  tick(s, 0.2, { hide: true });
-  tick(s, dt, { hide: true, right: true });
+  at(s, 100);
+  tick(s, 0.2, {});
+  tick(s, dt, { right: true });
   assert.equal(s.player.state, "idle");
   tick(s, 1);
   tick(s, dt, { jump: true });
@@ -709,11 +692,11 @@ test("NPCs complete the full route offscreen, including both gaps", () => {
 
 test("NPCs can enter safety before quota unlocks the player goal", () => {
   const s = game();
-  at(s, T.goalX + 5);
+  at(s, GOAL_X + 5);
   tick(s, dt);
   assert.equal(s.mode, "playing");
-  assert.ok(s.player.body.position.x < T.goalX);
-  Body.setPosition(s.npcs[0].body, { x: T.goalX + 2, y: 415 });
+  assert.ok(s.player.body.position.x < GOAL_X);
+  Body.setPosition(s.npcs[0].body, { x: GOAL_X + 2, y: 415 });
   tick(s, dt);
   assert.equal(s.saved, 1);
   assert.equal(s.mode, "playing");
@@ -724,12 +707,12 @@ test("NPCs can enter safety before quota unlocks the player goal", () => {
 test("safe player finish counts only arrivals before a fixed cutoff", () => {
   const s = game();
   s.npcs.slice(0, T.required).forEach((n) => s.save(n));
-  at(s, T.goalX + 5);
+  at(s, GOAL_X + 5);
   tick(s, dt);
   assert.equal(s.mode, "finishing");
   s.kill(s.player);
   assert.equal(s.player.alive, true);
-  Body.setPosition(s.npcs[T.required].body, { x: T.goalX + 3, y: 415 });
+  Body.setPosition(s.npcs[T.required].body, { x: GOAL_X + 3, y: 415 });
   tick(s, 1);
   assert.equal(s.saved, T.required + 1);
   const left = s.finishLeft;
@@ -738,7 +721,7 @@ test("safe player finish counts only arrivals before a fixed cutoff", () => {
   tick(s, 5);
   assert.equal(s.mode, "won");
   Body.setPosition(s.npcs[T.required + 1].body, {
-    x: T.goalX + 3,
+    x: GOAL_X + 3,
     y: 415,
   });
   tick(s, 2);
@@ -765,7 +748,7 @@ test("one hit plays the complete death sequence before resetting run state", () 
   s.warned = 8;
   s.saved = 3;
   s.elapsed = 100;
-  s.covers[2].broken = true;
+  s.obstacles[2].broken = true;
   s.fireballs.push({ id: 88, x: 0, y: 0, vx: 1, age: 0 });
   s.kill(s.player);
   assert.equal(s.mode, "dead");
@@ -775,10 +758,10 @@ test("one hit plays the complete death sequence before resetting run state", () 
   assert.equal(s.saved, 0);
   assert.equal(s.phase, 0);
   assert.equal(s.fireballs.length, 0);
-  assert.equal(s.covers[2].broken, false);
+  assert.equal(s.obstacles[2].broken, false);
   assert.equal(s.npcs.filter((n) => n.alive).length, T.population);
   assert.equal(s.bubbleLeft, 0);
-  assert.equal(s.player.hideTime, 0);
+  assert.equal(s.player.pipeWait ?? 0, 0);
 });
 
 test("time escalates Mario and returning does not reset it", () => {
@@ -789,7 +772,7 @@ test("time escalates Mario and returning does not reset it", () => {
   s.marioReturn = 0;
   tick(s, dt);
   assert.equal(s.marioActive, true);
-  Body.setPosition(s.mario.body, { x: T.goalX + 200, y: 400 });
+  Body.setPosition(s.mario.body, { x: GOAL_X + 200, y: 400 });
   tick(s, dt);
   assert.equal(s.marioActive, false);
   assert.equal(s.phase, 2);
@@ -800,35 +783,34 @@ test("time escalates Mario and returning does not reset it", () => {
 
 test("Mario can attack players beside former cover locations", () => {
   const s = game();
-  at(s, s.covers[0].x);
+  at(s, s.obstacles[0].x);
   s.marioActive = true;
   Body.setFrozen(s.mario.body, false);
-  Body.setPosition(s.mario.body, { x: s.covers[0].x + 2, y: 390 });
+  Body.setPosition(s.mario.body, { x: s.obstacles[0].x + 2, y: 390 });
   Body.setVelocity(s.mario.body, { x: 0, y: 2 });
   tick(s, dt);
   assert.equal(s.player.state, "idle");
 });
 
-test("bricks break without creating occupied hiding states", () => {
+test("Mario can break a brick without harming a nearby player", () => {
   const s = game();
-  const brick = s.covers.find((c) => c.kind === "brick" && c.y > 300)!;
-  at(s, brick.x, brick.y);
-  tick(s, 0.6, { hide: true });
-  assert.equal(s.protected(s.player), false);
+  const brick = s.obstacles.find((c) => c.kind === "brick" && c.y > 300)!;
+  at(s, brick.x + 60);
+  tick(s, 0.6);
   s.marioActive = true;
   s.brickTarget = brick.id;
   Body.setFrozen(s.mario.body, false);
   Body.setPosition(s.mario.body, { x: brick.x, y: brick.y + 38 });
   Body.setVelocity(s.mario.body, { x: 0, y: -6 });
-  tick(s, dt, { hide: true });
+  tick(s, dt, {});
   assert.equal(brick.broken, true);
   assert.equal(s.player.alive, true);
 });
 
 test("fireballs kill exposed players beside former cover locations", () => {
   const s = game();
-  at(s, s.covers[0].x);
-  s.fireballs.push({ id: 20, x: s.covers[0].x, y: 412, vx: 0, age: 0 });
+  at(s, s.obstacles[0].x);
+  s.fireballs.push({ id: 20, x: s.obstacles[0].x, y: 412, vx: 0, age: 0 });
   tick(s, dt);
   assert.equal(s.player.alive, false);
 });
@@ -849,7 +831,11 @@ test("late Mario fires visible projectiles when pursuing", () => {
   tick(s, dt);
   assert.equal(s.phase, 2);
   assert.equal(s.fireballs.length, 1);
-  assert.ok(s.events.includes("power"));
+  assert.equal(
+    s.events.includes("power"),
+    false,
+    "elapsed time alone does not play a pickup cue",
+  );
   assert.ok(s.events.includes("fire"));
 });
 
@@ -858,12 +844,13 @@ test("fear traits produce different running urgency", () => {
   const [shy, bold] = s.npcs;
   for (const n of [shy, bold]) {
     n.warned = true;
-    Body.setPosition(n.body, { x: s.covers[0].x + 5, y: 415 });
+    Body.setPosition(n.body, { x: s.obstacles[0].x + 5, y: 415 });
   }
   shy.fear = 1;
   bold.fear = 0;
   s.marioActive = true;
-  s.marioPipe = 10;
+  s.marioPause = 10;
+  s.marioLook = 10;
   Body.setPosition(s.mario.body, { x: 100, y: 410 });
   tick(s, 0.7);
   assert.equal(shy.state, "run");
@@ -900,13 +887,11 @@ test("a full seeded run can win with Mario active and without teleporting", () =
             p.y + 14 > b.bounds.min.y + 5 &&
             p.y < b.bounds.max.y,
         ));
-    s.cameraX = Math.max(0, Math.min(T.worldWidth - 960, p.x - 960 * 0.36));
+    s.cameraX = Math.max(0, Math.min(WORLD_WIDTH - 960, p.x - 960 * 0.36));
     s.step(dt, {
       ...emptyInput(),
       right: !waiting && !landing,
       jump,
-      hide: waiting,
-      warn: !waiting && s.cooldown <= 0,
     });
     marioAppeared ||= s.marioActive;
   }
@@ -967,17 +952,17 @@ test("Mario cannot reverse a jump to follow a dodge", () => {
   assert.ok(s.mario.body.velocity.x > 2);
 });
 
-test("cover input does not break pursuit or create an invisible target", () => {
+test("pursuit continues while the target stays exposed", () => {
   const s = game();
   at(s, 432);
-  tick(s, 0.6, { hide: true });
+  tick(s, 0.6, {});
   s.marioActive = true;
   s.marioChase = 3;
   s.marioTarget = s.player.id;
   s.marioAim = 300;
   Body.setFrozen(s.mario.body, false);
   Body.setPosition(s.mario.body, { x: 0, y: 411 });
-  tick(s, 1.5, { hide: true });
+  tick(s, 1.5, {});
   assert.equal(s.marioTarget, s.player.id);
   assert.ok(s.marioChase > 0);
 });
@@ -988,7 +973,7 @@ test("both player sizes can jump every pipe in both directions at standard heigh
       for (let pipeIndex = 0; pipeIndex < 6; pipeIndex++) {
         const s = game();
         if (giant) give(s, s.player, "mushroom");
-        const pipe = s.covers.filter((c) => c.kind === "pipe")[pipeIndex];
+        const pipe = s.obstacles.filter((c) => c.kind === "pipe")[pipeIndex];
         // Isolate the original pipe dimensions on flat ground. The last pipe
         // touches the end stairs, so a ground-height spawn to its right would
         // be inside solid stone. Separate route tests cover those stairs.
@@ -1002,7 +987,7 @@ test("both player sizes can jump every pipe in both directions at standard heigh
           true,
         );
         s.solids = [floor, pipe.body!];
-        s.covers = [pipe];
+        s.obstacles = [pipe];
         for (const npc of s.npcs) s.kill(npc, false);
         at(s, pipe.x - dir * 100, T.groundY - 14 * s.player.scale);
         tick(s, 1, { right: dir === 1, left: dir === -1 });
@@ -1035,11 +1020,11 @@ test("both player sizes can jump every pipe in both directions at standard heigh
   }
 });
 
-test("pipes remain solid obstacles and are not hiding entrances", () => {
+test("decorative pipes stay solid when the Pipe control is pressed", () => {
   const s = game();
-  const pipe = s.covers.find((c) => c.kind === "pipe")!;
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
   at(s, pipe.x - 100);
-  tick(s, 0.2, { hide: true, right: true });
+  tick(s, 0.2, { right: true });
   assert.equal(s.player.state, "idle");
   tick(s, 1, { right: true });
   assert.equal(overlaps(s.player.body, [pipe.body!]).length, 0);
@@ -1050,7 +1035,7 @@ test("pipes remain solid obstacles and are not hiding entrances", () => {
 
 test("every floating brick has a solid top and can be destroyed and restored", () => {
   const s = game();
-  const bricks = s.covers.filter((c) => c.kind === "brick" && !c.hidden);
+  const bricks = s.obstacles.filter((c) => c.kind === "brick" && !c.hidden);
   assert.ok(bricks.length > 20);
   for (const c of bricks) {
     at(s, c.x, c.y - 65);
@@ -1062,7 +1047,7 @@ test("every floating brick has a solid top and can be destroyed and restored", (
   assert.ok(bricks.every((c) => !s.solids.includes(c.body!)));
   s.reset();
   assert.ok(
-    s.covers
+    s.obstacles
       .filter((c) => c.kind === "brick")
       .every((c) => !c.broken && s.solids.includes(c.body!)),
   );
@@ -1070,7 +1055,7 @@ test("every floating brick has a solid top and can be destroyed and restored", (
 
 test("Mario breaks ordinary bricks by striking from below, not merely standing nearby", () => {
   const s = game();
-  const brick = s.covers.find((c) => c.kind === "brick" && c.y > 300)!;
+  const brick = s.obstacles.find((c) => c.kind === "brick" && c.y > 300)!;
   at(s, 100);
   s.marioActive = true;
   s.marioLook = 10;
@@ -1125,13 +1110,11 @@ test("Mario hunts an NPC, lands a stomp, then acquires another victim", () => {
       mario: s.mario.body.position,
       active: s.marioActive,
       target: s.marioTarget,
-      npcs: s.npcs
-        .slice(0, 2)
-        .map((n) => ({
-          position: n.body.position,
-          alive: n.alive,
-          home: n.homeX,
-        })),
+      npcs: s.npcs.slice(0, 2).map((n) => ({
+        position: n.body.position,
+        alive: n.alive,
+        home: n.homeX,
+      })),
     }),
   );
   assert.ok(!s.npcs[1].alive || s.marioTarget === s.npcs[1].id);

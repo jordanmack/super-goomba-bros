@@ -2,14 +2,14 @@ import { Body, PhysicsWorld, overlaps } from "./physics.ts";
 import { areaData, areaGaps, terrainRects } from "./levels.ts";
 import type { Area } from "./levels.ts";
 import { MAP_TOP, TUNING as T } from "./config.ts";
-import type { Actor, Cover } from "./simulation.ts";
+import type { Actor, Obstacle } from "./simulation.ts";
 import { swimField } from "./navigation.ts";
 import type { Point } from "./physics.ts";
 
 export class Room {
   data: Area;
   offset: number;
-  covers: Cover[] = [];
+  obstacles: Obstacle[] = [];
   solids: Body[] = [];
   gaps: [number, number][];
   goalX: number;
@@ -65,7 +65,7 @@ export class Room {
         true,
       );
       this.solids.push(body);
-      this.covers.push({
+      this.obstacles.push({
         id: firstId++,
         x,
         y: top + height - 18,
@@ -85,7 +85,7 @@ export class Room {
       const body = physics.rectangle(x, y, 32, 32, true);
       body.headOnly = block.hidden;
       this.solids.push(body);
-      this.covers.push({
+      this.obstacles.push({
         id: firstId++,
         x,
         y,
@@ -225,7 +225,12 @@ export class Room {
   }
   atDoor(actor: Actor) {
     const goal = this.data.goal;
-    return !!goal && goal.kind !== "pipe" && actor.body.position.x >= this.goalX &&
-      actor.body.bounds.max.y >= MAP_TOP + (goal.row - 1) * 32 && actor.body.bounds.min.y < T.groundY + 16;
+    return (
+      !!goal &&
+      goal.kind !== "pipe" &&
+      actor.body.position.x >= this.goalX &&
+      actor.body.bounds.max.y >= MAP_TOP + (goal.row - 1) * 32 &&
+      actor.body.bounds.min.y < T.groundY + 16
+    );
   }
 }

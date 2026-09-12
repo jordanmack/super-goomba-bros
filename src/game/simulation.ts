@@ -8,8 +8,6 @@ export type Input = {
   left: boolean;
   right: boolean;
   jump: boolean;
-  hide: boolean;
-  warn: boolean;
   fire: boolean;
   down: boolean;
 };
@@ -17,17 +15,15 @@ export const emptyInput = (): Input => ({
   left: false,
   right: false,
   jump: false,
-  hide: false,
-  warn: false,
   fire: false,
   down: false,
 });
 export type Mode = "title" | "playing" | "dead" | "finishing" | "won";
-export type Cover = {
+export type Obstacle = {
   id: number;
   x: number;
   y: number;
-  kind: "bush" | "pipe" | "brick";
+  kind: "pipe" | "brick";
   broken: boolean;
   body?: Body;
   height?: number;
@@ -47,13 +43,10 @@ export type Actor = {
   fear: number;
   reaction: number;
   speed: number;
-  state: "idle" | "run" | "seek" | "entering" | "hidden";
-  cover: number | null;
-  hideTime: number;
+  state: "idle" | "run";
   wait: number;
   facing: number;
   grounded: boolean;
-  entry?: { x: number; y: number };
   homeX: number;
   idleWait: number;
   idleWalking: boolean;
@@ -83,12 +76,12 @@ export type GameEvent =
   | "saved"
   | "death"
   | "marioDeath"
-  | "hide"
   | "pipe"
   | "coin"
   | "fire"
   | "break"
   | "power"
+  | "shrink"
   | "splat"
   | "win";
 export type Particle = {
@@ -166,7 +159,7 @@ export class Simulation {
         );
       return (
         pipe.direction === "right" &&
-        right &&
+        (right || down) &&
         actor.body.bounds.max.x >= left - 5 &&
         p.x < left + pipe.width * 32 &&
         p.y >= top - actor.body.height / 2 &&
@@ -203,17 +196,17 @@ export class Simulation {
       this.rooms.size * T.areaSpacing,
       this.terrainId,
     );
-    this.terrainId += room.covers.length;
+    this.terrainId += room.obstacles.length;
     this.rooms.set(id, room);
     this.solids.push(...room.solids);
-    this.covers.push(...room.covers);
+    this.obstacles.push(...room.obstacles);
     return room;
   }
   solids: Body[] = [];
   player!: Actor;
   npcs: Actor[] = [];
   mario!: Actor;
-  covers: Cover[] = [];
+  obstacles: Obstacle[] = [];
   fireballs: Fireball[] = [];
   items: Item[] = [];
   particles: Particle[] = [];
@@ -234,7 +227,6 @@ export class Simulation {
   marioDecision = 0;
   marioChase = 0;
   marioIgnore = 0;
-  marioPipe = 0;
   marioTarget: number | null = null;
   marioAim = 0;
   marioReaction = 0;
@@ -269,7 +261,7 @@ export class Simulation {
     this.physics.clear();
     this.nextId = 1;
     this.solids = [];
-    this.covers = [];
+    this.obstacles = [];
     this.rooms.clear();
     this.terrainId = 0;
     const main = this.loadRoom(this.level.main);
@@ -303,11 +295,7 @@ export class Simulation {
     this.bubbleLeft = this.finishLeft = this.deadLeft = 0;
     this.marioActive = false;
     this.marioReturn = T.firstMarioAt;
-    this.marioDecision =
-      this.marioChase =
-      this.marioIgnore =
-      this.marioPipe =
-        0;
+    this.marioDecision = this.marioChase = this.marioIgnore = 0;
     this.brickTarget = null;
     this.marioCrowd = this.marioPressure = 0;
     this.marioRunning = false;
@@ -353,8 +341,6 @@ export class Simulation {
       reaction: 0.15 + this.random() * 0.75,
       speed: 2.1 + this.random() * 0.85,
       state: "idle",
-      cover: null,
-      hideTime: 0,
       wait: 0,
       facing: 1,
       grounded: false,
@@ -371,12 +357,6 @@ export class Simulation {
 
   position(a: Actor) {
     return a.body.position;
-  }
-  coverFor(a: Actor) {
-    return this.covers.find((c) => c.id === a.cover && !c.broken);
-  }
-  protected(_a: Actor) {
-    return false;
   }
   living() {
     return this.npcs.filter((n) => n.alive && !n.saved).length;
@@ -604,20 +584,8 @@ export class Simulation {
       if (!supported) this.move(a, 0);
     }
   }
-  private expose(a: Actor) {
-    if (a.state === "hidden" || a.state === "entering") {
-      if (a.entry) Body.setPosition(a.body, a.entry);
-      Body.setFrozen(a.body, false);
-      Body.setVelocity(a.body, { x: 0, y: 0 });
-    }
-    a.entry = undefined;
-    a.cover = null;
-    a.hideTime = 0;
-    a.state = a === this.player ? "idle" : "run";
-  }
   warn() {
     if (this.cooldown > 0 || this.mode !== "playing") return;
-    this.expose(this.player);
     this.cooldown = T.warningCooldown;
     this.audible = T.warningSound;
     this.bubbleLeft = T.bubbleTime;
@@ -665,13 +633,13 @@ export class Simulation {
     return a.starLeft > 0 || a.scale > 1;
   }
 
-  hitBlock(c: Cover, hitter: Actor) {
+  hitBlock(c: Obstacle, hitter: Actor) {
     if (c.broken || c.kind !== "brick" || c.bounce > 0) return;
     if (
       !c.question &&
       (hitter === this.mario || (hitter === this.player && hitter.scale > 1))
     ) {
-      this.breakBrick(c, hitter);
+      this.breakBrick(c);
       return;
     }
     c.bounce = T.blockBounceSeconds;
@@ -697,13 +665,7 @@ export class Simulation {
   }
 
   collect(a: Actor, item: Item) {
-    if (
-      !a.alive ||
-      a.saved ||
-      this.protected(a) ||
-      (a === this.mario && (!this.marioActive || this.marioPipe > 0))
-    )
-      return;
+    if (!a.alive || a.saved || (a === this.mario && !this.marioActive)) return;
     if (item.kind === "star") a.starLeft = T.starSeconds;
     if (a === this.mario) {
       if (item.kind === "flower") this.setMarioStage(2);
@@ -711,7 +673,6 @@ export class Simulation {
         this.setMarioStage(1);
     } else if (item.kind === "flower") a.flower = true;
     if (a !== this.mario && item.kind === "mushroom" && a.scale === 1) {
-      this.expose(a);
       const feet = a.body.position.y + 14;
       a.scale = T.giantScale;
       Body.scale(a.body, a.scale, a.scale);
@@ -776,9 +737,7 @@ export class Simulation {
         if (
           a.alive &&
           !a.saved &&
-          (a !== this.mario || (this.marioActive && this.marioPipe <= 0)) &&
-          a.state !== "entering" &&
-          !this.protected(a) &&
+          (a !== this.mario || this.marioActive) &&
           Math.abs(a.body.position.x - p.x) < 12 * a.scale + 12 &&
           Math.abs(a.body.position.y - p.y) < 14 * a.scale + 14
         ) {
@@ -808,22 +767,21 @@ export class Simulation {
     this.setMarioStage(0);
     this.marioReturn = T.marioDefeatSeconds;
     this.marioTarget = null;
-    this.marioChase = this.marioStun = this.marioPipe = 0;
+    this.marioChase = this.marioStun = 0;
     Body.setFrozen(this.mario.body, true);
     this.fireballs = this.fireballs.filter((f) => f.owner === "player");
   }
 
   private hitMarioByFireball() {
-    if (!this.marioActive || this.marioPipe > 0 || this.mario.starLeft > 0)
-      return;
+    if (!this.marioActive || this.mario.starLeft > 0) return;
     if (this.marioStage === 2) {
       this.setMarioStage(1);
       this.marioStun = T.marioStunSeconds;
-      this.events.push("power");
+      this.events.push("shrink");
     } else if (this.marioStage === 1) {
       this.setMarioStage(0);
       this.marioStun = T.marioStunSeconds;
-      this.events.push("power");
+      this.events.push("shrink");
     } else this.defeatMario();
   }
 
@@ -878,7 +836,7 @@ export class Simulation {
     if (this.particles.length > 1200)
       this.particles.splice(0, this.particles.length - 1200);
   }
-  breakBrick(c: Cover, breaker = this.mario) {
+  breakBrick(c: Obstacle) {
     if (c.kind !== "brick" || c.broken) return;
     c.broken = true;
     if (c.body) {
@@ -890,11 +848,6 @@ export class Simulation {
       }
     }
     this.burst(c.x, c.y, false);
-    for (const a of [this.player, ...this.npcs])
-      if (a.cover === c.id) {
-        if (breaker === this.player || this.invincible(a)) this.expose(a);
-        else this.kill(a);
-      }
     this.events.push("break");
   }
   private updateParticles(dt: number) {
@@ -969,22 +922,23 @@ export class Simulation {
         ...this.npcs,
         this.mario,
       ]);
-    for (const c of this.covers) c.bounce = Math.max(0, c.bounce - dt);
+    for (const c of this.obstacles) c.bounce = Math.max(0, c.bounce - dt);
     const phase =
       this.elapsed >= T.fireballsAt ? 2 : this.elapsed >= T.fasterAt ? 1 : 0;
     if (phase !== this.phase) {
       this.phase = phase;
       if (!this.marioActive)
         this.setMarioStage((phase === 0 ? 1 : phase) as 0 | 1 | 2);
-      this.events.push("power");
     }
     for (const a of [this.player, ...this.npcs, this.mario]) this.ground(a);
     if (this.mode === "playing") {
       const dx = Number(input.right) - Number(input.left);
       const p = this.player.body.position;
-      this.expose(this.player);
       if (this.player.grounded) this.playerJumping = false;
-      const pace = this.playerJumping && this.activeRoom.data.type !== "water" ? T.airSpeed : T.walkSpeed;
+      const pace =
+        this.playerJumping && this.activeRoom.data.type !== "water"
+          ? T.airSpeed
+          : T.walkSpeed;
       this.move(this.player, dx * pace);
       if (input.jump && !this.jumped) this.jump(this.player);
       this.jumped = input.jump;
@@ -1055,7 +1009,7 @@ export class Simulation {
       }
     this.contactWarning();
     for (const { actor, top } of hitters)
-      for (const c of this.covers) {
+      for (const c of this.obstacles) {
         if (
           c.kind === "brick" &&
           !c.broken &&
@@ -1068,9 +1022,9 @@ export class Simulation {
           this.hitBlock(c, actor);
       }
     this.updateItems(dt);
-    if (this.marioActive && this.marioPipe <= 0 && this.mario.starLeft <= 0) {
+    if (this.marioActive && this.mario.starLeft <= 0) {
       for (const a of [this.player, ...this.npcs]) {
-        if (!a.alive || a.saved || this.protected(a)) continue;
+        if (!a.alive || a.saved) continue;
         const overlapX =
           Math.abs(a.body.position.x - this.mario.body.position.x) <
           12 * a.scale + 12;
@@ -1135,7 +1089,10 @@ export class Simulation {
         p.x >= room.goalX
       ) {
         if (room.atDoor(n)) this.save(n);
-        else { n.navVx = 0; Body.setVelocity(n.body, { x: 0, y: n.body.velocity.y }); }
+        else {
+          n.navVx = 0;
+          Body.setVelocity(n.body, { x: 0, y: n.body.velocity.y });
+        }
         continue;
       }
       if (!n.warned) {
@@ -1340,7 +1297,7 @@ export class Simulation {
         n.alive &&
         !n.saved &&
         n.warned &&
-        (n.state === "run" || n.state === "seek") &&
+        n.state === "run" &&
         Math.abs(n.body.velocity.x) > 1 &&
         n.body.position.x >= this.cameraX &&
         n.body.position.x <= this.cameraX + this.viewWidth &&
@@ -1367,8 +1324,6 @@ export class Simulation {
     this.marioReaction =
       (T.marioReaction + this.random() * 0.15) * (1 - this.marioPressure * 0.4);
     this.marioSeenAgo = 0;
-    if (target.state === "entering" && this.coverFor(target)?.kind === "brick")
-      this.brickTarget = target.cover;
   }
 
   private updateMario(dt: number) {
@@ -1433,11 +1388,6 @@ export class Simulation {
       Body.setFrozen(this.mario.body, true);
       return;
     }
-    if (this.marioPipe > 0) {
-      this.marioPipe -= dt;
-      this.move(this.mario, 0);
-      return;
-    }
     if (this.marioStun > 0) {
       this.marioStun = Math.max(0, this.marioStun - dt);
     }
@@ -1446,7 +1396,6 @@ export class Simulation {
         a.alive &&
         !a.saved &&
         a.starLeft > 0 &&
-        !this.protected(a) &&
         Math.abs(a.body.position.x - m.x) < 220 &&
         !rayBlocked(this.solids, m, a.body.position),
     );
@@ -1464,7 +1413,7 @@ export class Simulation {
       return;
     }
     const candidates = [this.player, ...this.npcs].filter(
-      (a) => a.alive && !a.saved && !this.protected(a) && !this.invincible(a),
+      (a) => a.alive && !a.saved && !this.invincible(a),
     );
     const sees = (a: Actor) =>
       Math.abs(a.body.position.x - m.x) < T.marioSight &&
@@ -1474,7 +1423,7 @@ export class Simulation {
       runners.has(a.id) &&
       Math.abs(a.body.position.x - m.x) < 350 + this.marioPressure * 400;
     // Observe only at human-scale intervals. Aim at the last observed point,
-    // never at a target's continuously updated position or a hidden character.
+    // Jumps keep their launch direction while targets can dodge.
     if (this.marioLook <= 0) {
       this.marioLook = 0.22 + this.random() * 0.15;
       const target = candidates.find((a) => a.id === this.marioTarget);
@@ -1485,12 +1434,6 @@ export class Simulation {
           (this.random() - 0.5) * 24;
         this.marioSeenAgo = 0;
         this.marioChase = T.marioChaseSeconds;
-        if (
-          target.state === "entering" &&
-          sees(target) &&
-          this.coverFor(target)?.kind === "brick"
-        )
-          this.brickTarget = target.cover;
       } else if (this.marioChase === 0 && this.marioIgnore === 0) {
         const noticed = candidates
           .filter((a) => sees(a) || hearsCrowd(a))
@@ -1552,7 +1495,7 @@ export class Simulation {
         this.events.push("fire");
       }
     }
-    const brick = this.covers.find(
+    const brick = this.obstacles.find(
       (c) => c.id === this.brickTarget && !c.broken,
     );
     if (brick && Math.abs(brick.x - m.x) < 160) {
@@ -1571,11 +1514,12 @@ export class Simulation {
       direction = this.random() < 0.15 ? -1 : 1;
       this.marioDecision = 2 + this.random() * 3;
       if (this.random() < 0.15) this.marioPause = 0.2;
-      const pipe = this.covers.find(
+      const pipe = this.obstacles.find(
         (c) => c.kind === "pipe" && Math.abs(c.x - m.x) < 65,
       );
-      if (pipe && this.random() < 0.5) this.marioPipe = 1.2;
-      const nearbyBrick = this.covers.find(
+      if (pipe && this.random() < 0.5 && this.tryPipe(this.mario, true, true))
+        return;
+      const nearbyBrick = this.obstacles.find(
         (c) => c.kind === "brick" && !c.broken && Math.abs(c.x - m.x) < 100,
       );
       if (nearbyBrick && this.random() < 0.3) this.brickTarget = nearbyBrick.id;
@@ -1649,7 +1593,6 @@ export class Simulation {
       if (f.owner === "player") {
         if (
           this.marioActive &&
-          this.marioPipe <= 0 &&
           Math.abs(this.mario.body.position.x - f.x) <
             12 * this.mario.scale + radius &&
           Math.abs(this.mario.body.position.y - f.y) <
@@ -1664,7 +1607,6 @@ export class Simulation {
         if (
           a.alive &&
           !a.saved &&
-          !this.protected(a) &&
           Math.abs(a.body.position.x - f.x) < 12 * a.scale + radius &&
           Math.abs(a.body.position.y - f.y) < 14 * a.scale + radius
         ) {
