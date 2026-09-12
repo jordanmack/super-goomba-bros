@@ -192,8 +192,11 @@ contact. Items expire after their lifetime or when they leave the level.
 The player fires at the same limited rate in both sizes. A small player shoots
 small fireballs; a giant player shoots fireballs three times larger. Existing
 shots keep their launch size. Fireballs bounce on surfaces and stop at walls.
-Player fireballs do not harm NPCs. Mario's fireballs kill unprotected characters,
-including giants. Stars protect against those fireballs.
+Only a giant player's fireball breaks an ordinary breakable brick on side or
+bottom contact. Top contact bounces and does not break. Question blocks, used
+blocks, and unbreakable tiles are not broken this way. Player fireballs do not
+harm NPCs. Mario's fireballs kill unprotected characters, including giants.
+Stars protect against those fireballs.
 
 ## Death and audio
 

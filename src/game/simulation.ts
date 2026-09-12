@@ -1677,7 +1677,20 @@ export class Simulation {
         if (f.vy > 0 && oldY + radius <= s.bounds.min.y + 2) {
           f.y = s.bounds.min.y - radius;
           f.vy = -3.8;
-        } else if (oldX !== f.x) f.age = 6;
+        } else if (oldX !== f.x) {
+          if (f.owner === "player" && (f.scale ?? 1) === T.playerFireballScale) {
+            const brick = this.obstacles.find(
+              (c) =>
+                c.body === s &&
+                c.kind === "brick" &&
+                !c.broken &&
+                !c.question &&
+                !c.used,
+            );
+            if (brick) this.breakBrick(brick);
+          }
+          f.age = 6;
+        }
       }
       if (f.age >= 5) continue;
       if (f.owner === "player") {

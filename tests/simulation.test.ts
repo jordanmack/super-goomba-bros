@@ -191,6 +191,155 @@ test("giant head hits break bricks and let NPCs on top fall safely", () => {
   );
 });
 
+function openBrick(s: Simulation) {
+  return s.obstacles.find(
+    (c) =>
+      c.kind === "brick" &&
+      !c.broken &&
+      !c.question &&
+      !c.hidden &&
+      !c.used &&
+      c.body &&
+      !s.obstacles.some(
+        (other) =>
+          other !== c &&
+          other.body &&
+          !other.broken &&
+          other.x < c.x &&
+          c.x - other.x <= T.brickSize &&
+          Math.abs(other.y - c.y) < T.brickSize,
+      ),
+  )!;
+}
+
+function shoot(
+  s: Simulation,
+  x: number,
+  y: number,
+  vx: number,
+  scale: number,
+  vy = 0,
+  owner: "player" | "mario" = "player",
+) {
+  const fireball = {
+    id: s.fireballs.length + 1,
+    x,
+    y,
+    vx,
+    vy,
+    age: 0,
+    owner,
+    scale,
+  };
+  s.fireballs.push(fireball);
+  return fireball;
+}
+
+test("giant player fireballs break ordinary bricks from the side or bottom", () => {
+  const s = game();
+  at(s, 80);
+  const side = openBrick(s);
+  const n = s.npcs[0];
+  Body.setPosition(n.body, { x: side.x, y: side.y - T.brickSize / 2 - 14 });
+  n.idleWalking = false;
+  n.idleWait = 2;
+  const radius = 6 * T.playerFireballScale;
+  shoot(
+    s,
+    side.body!.bounds.min.x - radius - 8,
+    side.y,
+    6,
+    T.playerFireballScale,
+  );
+  tick(s, 6 * dt);
+  assert.equal(side.broken, true);
+  assert.ok(!s.solids.includes(side.body!));
+  assert.ok(s.events.includes("break"));
+  tick(s, 0.8);
+  assert.ok(n.alive && n.body.position.y > side.y);
+  assert.equal(
+    s.particles.some((p) => p.color === "#bc0018"),
+    false,
+  );
+
+  const bottom = openBrick(s);
+  shoot(
+    s,
+    bottom.x,
+    bottom.body!.bounds.max.y + radius + 8,
+    6,
+    T.playerFireballScale,
+    -6,
+  );
+  tick(s, 6 * dt);
+  assert.equal(bottom.broken, true);
+  assert.ok(!s.solids.includes(bottom.body!));
+});
+
+test("giant player fireballs bounce on brick tops and do not break them", () => {
+  const s = game();
+  at(s, 80);
+  const brick = openBrick(s);
+  const radius = 6 * T.playerFireballScale;
+  const fireball = shoot(
+    s,
+    brick.x,
+    brick.body!.bounds.min.y - radius - 4,
+    1,
+    T.playerFireballScale,
+    2,
+  );
+  tick(s, 6 * dt);
+  assert.equal(brick.broken, false);
+  assert.ok(s.solids.includes(brick.body!));
+  assert.ok(s.fireballs.includes(fireball));
+  assert.ok((fireball.vy ?? 0) < 0);
+  assert.equal(s.events.includes("break"), false);
+});
+
+test("small fireballs, question blocks, used blocks, and unbreakable tiles survive fireball hits", () => {
+  const s = game();
+  at(s, 80);
+  const brick = openBrick(s);
+  const radius = 6 * T.playerFireballScale;
+  shoot(s, brick.body!.bounds.min.x - 6 - 8, brick.y, 6, 1);
+  tick(s, 8 * dt);
+  assert.equal(brick.broken, false);
+  assert.ok(s.solids.includes(brick.body!));
+
+  shoot(
+    s,
+    brick.body!.bounds.min.x - radius - 8,
+    brick.y,
+    6,
+    T.playerFireballScale,
+    0,
+    "mario",
+  );
+  tick(s, 6 * dt);
+  assert.equal(brick.broken, false);
+
+  const question = s.obstacles.find((c) => c.question && !c.used && c.body)!;
+  const used = s.obstacles.find(
+    (c) => c.question && !c.used && c.body && c !== question,
+  )!;
+  s.hitBlock(used, s.player);
+  const pipe = s.obstacles.find((c) => c.kind === "pipe" && c.body)!;
+  for (const tile of [question, used, pipe]) {
+    shoot(
+      s,
+      tile.body!.bounds.min.x - radius - 8,
+      tile.y,
+      6,
+      T.playerFireballScale,
+    );
+    tick(s, 6 * dt);
+    assert.equal(tile.broken, false, `${tile.kind} ${tile.x}`);
+    assert.ok(s.solids.includes(tile.body!));
+    if (tile.question) assert.equal(tile.used, tile === used);
+  }
+});
+
 test("mixed NPC speeds cross every staircase and gap across different runs", () => {
   for (const start of [1, 3, 4, 9, 15]) {
     let seed = start;
