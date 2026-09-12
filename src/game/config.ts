@@ -5,7 +5,7 @@ export const TUNING = {
   required: 12,
   finishWindow: 5,
   walkSpeed: 2.6,
-  airSpeed: 5.2,
+  airSpeed: 2.6,
   jumpSpeed: 11,
   gravity: 1500,
   platformSpeed: 64,

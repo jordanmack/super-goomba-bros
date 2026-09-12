@@ -45,9 +45,10 @@ Original asset sources and frame details are in the
 
 The Goomba walks at one fixed pace. There is no sprint or Shift boost. Normal
 and giant forms use the same standard jump height. Holding Jump adds no height
-and does not cause repeated jumps. A jump gains forward speed while a direction
-is held so the original wide gaps are reachable. Walking off a ledge keeps the
-walking pace. Releasing direction stops horizontal motion.
+and does not cause repeated jumps. Jump horizontal speed matches walk speed
+while a direction is held. Some original gaps are wider than that jump.
+Walking off a ledge keeps the walking pace. Releasing direction stops
+horizontal motion.
 
 In water, each Jump press is an upward swim stroke. Gravity is reduced and the
 player stays below the top of the playfield. Pipes have a short re-entry delay.

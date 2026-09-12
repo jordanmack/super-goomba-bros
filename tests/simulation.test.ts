@@ -9,9 +9,9 @@ import {
 } from "../src/game/simulation.ts";
 import { TUNING as T } from "../src/game/config.ts";
 import { areaData, areaGaps } from "../src/game/levels.ts";
+import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
 const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
-const WORLD_WIDTH = FIRST_AREA.width * 32;
 const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
@@ -69,13 +69,16 @@ test("small and giant player jumps stay at standard height even when held", () =
   assert.ok(Math.max(...heights) - Math.min(...heights) < 1);
 });
 
-test("forward jump reach increases while walking keeps its fixed pace", () => {
+test("jump horizontal speed matches walk speed, and releasing direction still stops in air", () => {
+  assert.equal(T.airSpeed, T.walkSpeed);
   const sim = game();
   tick(sim, 0.2, { right: true });
-  assert.equal(sim.player.body.velocity.x, T.walkSpeed);
+  const walkVx = sim.player.body.velocity.x;
+  assert.equal(walkVx, T.walkSpeed);
   tick(sim, 1 / 60, { right: true, jump: true });
   tick(sim, 0.15, { right: true });
   assert.equal(sim.player.grounded, false);
+  assert.equal(sim.player.body.velocity.x, walkVx);
   assert.equal(sim.player.body.velocity.x, T.airSpeed);
   tick(sim, 0.1);
   assert.equal(
@@ -861,43 +864,27 @@ test("fear traits produce different running urgency", () => {
   assert.equal(shy.state, "run");
 });
 
-test("a full seeded run can win with Mario active and without teleporting", () => {
-  let seed = 1;
-  const s = new Simulation(
-    () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646,
-  );
+test("a recorded World 1-1 run can win with Mario active and without teleporting", () => {
+  const s = new Simulation(() => 0.5);
   s.reset();
   let marioAppeared = false;
-  for (let i = 0; i < 60 * 90 && !["dead", "won"].includes(s.mode); i++) {
-    const p = s.player.body.position;
-    const waiting = p.x >= 5390 && s.saved < T.required;
-    const nearGap = GAPS.some(([l, r]) => p.x + 20 > l && p.x + 20 < r);
-    const landing =
-      nearGap &&
-      !s.player.grounded &&
-      s.player.body.velocity.y >= 0 &&
-      GAPS.some(([l]) => p.x < l && p.x + 20 > l);
-    const jump =
-      s.player.grounded &&
-      (nearGap ||
-        s.solids.some(
-          (b) =>
-            p.x + 35 > b.bounds.min.x &&
-            p.x + 35 < b.bounds.max.x &&
-            p.y + 14 > b.bounds.min.y + 5 &&
-            p.y < b.bounds.max.y,
-        ));
-    s.cameraX = Math.max(0, Math.min(WORLD_WIDTH - 960, p.x - 960 * 0.36));
-    s.step(dt, {
-      ...emptyInput(),
-      right: !waiting && !landing,
-      jump,
-    });
-    marioAppeared ||= s.marioActive;
+  for (const [bits, frames] of routes["1-1"]) {
+    for (let frame = 0; frame < frames; frame++) {
+      s.step(dt, {
+        ...emptyInput(),
+        left: !!(bits & 1),
+        right: !!(bits & 2),
+        jump: !!(bits & 4),
+        down: !!(bits & 8),
+      });
+      marioAppeared ||= s.marioActive;
+      assert.notEqual(s.mode, "dead");
+    }
   }
-  assert.equal(s.mode, "won");
+  assert.ok(s.mode === "finishing" || s.mode === "won");
   assert.ok(s.saved >= T.required);
   assert.ok(marioAppeared);
+  assert.ok(s.activeRoom.atDoor(s.player));
 });
 
 test("side contact is not a stomp", () => {

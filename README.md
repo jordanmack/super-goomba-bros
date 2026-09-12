@@ -32,8 +32,8 @@ starts at World 1-1 and progresses in order.
 | Shoot with a flower | Z | Fire |
 | Pause | Escape | Pause |
 
-Normal jumps have a fixed height. Forward jumps carry farther than walking to
-cross the imported layouts. Releasing direction stops horizontal movement.
+Normal jumps have a fixed height. Jump horizontal speed matches walk speed.
+Releasing direction stops horizontal movement.
 Springs provide their own stronger bounce. There is no Run or Hide action.
 Touching an unwarned NPC automatically speaks an urgent warning.
 

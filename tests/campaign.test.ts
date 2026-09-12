@@ -158,7 +158,8 @@ test("hidden blocks allow a fall through, then reveal and support the player aft
   );
 });
 
-test("the player can cross World 4-3's eight-tile gap at the normal jump height", () => {
+test("World 4-3's eight-tile gap stays out of reach at walk-speed jumps of standard height", () => {
+  assert.equal(T.airSpeed, T.walkSpeed);
   const sim = new Simulation(() => 0.5, physics());
   sim.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-3");
   sim.reset();
@@ -170,7 +171,6 @@ test("the player can cross World 4-3's eight-tile gap at the normal jump height"
     sim.step(1 / 60, { ...emptyInput(), right: true });
     highest = Math.min(highest, sim.player.body.position.y);
   }
-  assert.ok(sim.player.alive && sim.player.body.position.x >= 1024);
-  assert.ok(Math.abs(sim.player.body.bounds.max.y - (MAP_TOP + 4 * 32)) < 0.1);
+  assert.ok(sim.player.body.position.x < 1024);
   assert.ok(MAP_TOP + 5 * 32 - 14 - highest < 150);
 });
