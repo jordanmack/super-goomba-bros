@@ -142,6 +142,7 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     platform: crop(items, 80, 24, 48, 8),
     coin: crop(items, 0, 80, 16, 16),
     mushroom: crop(items, 0, 0, 16, 16),
+    oneUp: crop(items, 16, 0, 16, 16),
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
     marioFlag,

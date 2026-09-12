@@ -45,7 +45,9 @@ function poleOf(s: Simulation) {
 }
 
 function give(s: Simulation, actor: Actor, kind: ItemKind) {
-  const box = s.obstacles.find((c) => c.question && !c.used)!;
+  const box = s.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && c.content !== "1-up",
+  )!;
   s.hitBlock(box, s.player);
   const item = s.items.at(-1)!;
   item.kind = kind;
@@ -507,7 +509,7 @@ test("question blocks release each random item once, including on Mario hits", (
   ] as const) {
     const s = game();
     s.random = () => roll;
-    const box = s.obstacles.find((c) => c.question)!;
+    const box = s.obstacles.find((c) => c.question && !c.hidden)!;
     s.hitBlock(box, s.mario);
     assert.equal(s.items[0].kind, kind);
     assert.equal(box.used, true);
@@ -1532,8 +1534,9 @@ test("one hit plays the complete death sequence before resetting run state", () 
   s.fireballs.push({ id: 88, x: 0, y: 0, vx: 1, age: 0 });
   s.kill(s.player);
   assert.equal(s.mode, "dead");
+  assert.equal(s.lives, T.startingLives - 1);
   tick(s, T.deathSequenceSeconds + 0.1);
-  assert.equal(s.mode, "playing");
+  assert.equal(s.mode, "intro");
   assert.equal(s.warned, 0);
   assert.equal(s.saved, 0);
   assert.equal(s.coins, 0);
@@ -1544,6 +1547,9 @@ test("one hit plays the complete death sequence before resetting run state", () 
   assert.equal(s.bubbleLeft, 0);
   assert.equal(s.player.pipeWait ?? 0, 0);
   assert.equal(s.playerDeath, null);
+  tick(s, T.introSeconds + 0.1);
+  assert.equal(s.mode, "playing");
+  assert.equal(s.lives, T.startingLives - 1);
 });
 
 test("player death hops then falls, and pit deaths skip the hop", () => {
@@ -1956,4 +1962,86 @@ test("Mario hunts an NPC, lands a stomp, then acquires another victim", () => {
   );
   assert.ok(!s.npcs[1].alive || s.marioTarget === s.npcs[1].id);
   assert.ok(s.particles.some((p) => p.color === "#bc0018"));
+});
+
+test("hidden coins, hidden 1-ups, and 1-up bricks keep original contents", () => {
+  const s = game();
+  const visible = s.obstacles.find(
+    (c) => c.question && !c.hidden && c.content !== "1-up",
+  )!;
+  s.random = () => 0.5;
+  s.hitBlock(visible, s.player);
+  assert.equal(s.items[0].kind, "mushroom");
+  const hidden1up = s.obstacles.find((c) => c.hidden)!;
+  assert.equal(hidden1up.content, "1-up");
+  s.hitBlock(hidden1up, s.player);
+  assert.equal(hidden1up.used, true);
+  assert.equal(hidden1up.body!.headOnly, false);
+  assert.equal(s.items.at(-1)!.kind, "oneUp");
+  const before = s.lives;
+  s.collect(s.player, s.items.at(-1)!);
+  assert.equal(s.lives, before + 1);
+  assert.ok(s.events.includes("oneUp"));
+  assert.equal(s.player.scale, 1);
+
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
+  s.reset();
+  const hiddenCoin = s.obstacles.find(
+    (c) => c.hidden && c.content === "coin",
+  )!;
+  const coins = s.coins;
+  s.hitBlock(hiddenCoin, s.player);
+  assert.equal(hiddenCoin.used, true);
+  assert.equal(hiddenCoin.body!.headOnly, false);
+  assert.equal(s.coins, coins + 1);
+  assert.equal(s.items.length, 0);
+  assert.equal(s.coinPops.length, 1);
+  assert.ok(s.events.includes("coin"));
+  s.hitBlock(hiddenCoin, s.player);
+  assert.equal(s.coins, coins + 1);
+
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  const brick = s.obstacles.find((c) => c.content === "1-up" && !c.hidden)!;
+  s.player.scale = T.giantScale;
+  s.hitBlock(brick, s.player);
+  assert.equal(brick.broken, false);
+  assert.equal(brick.used, true);
+  assert.equal(s.items[0].kind, "oneUp");
+});
+
+test("lives, world intro, and game over follow a campaign attempt", () => {
+  const s = game();
+  assert.equal(s.lives, T.startingLives);
+  s.reset("intro");
+  assert.equal(s.mode, "intro");
+  tick(s, T.introSeconds - 0.05);
+  assert.equal(s.mode, "intro");
+  assert.equal(s.elapsed, 0);
+  tick(s, 0.1);
+  assert.equal(s.mode, "playing");
+
+  s.lives = 2;
+  s.saved = 4;
+  s.nextLevel();
+  assert.equal(s.mode, "intro");
+  assert.equal(s.level.id, "1-2");
+  assert.equal(s.lives, 2);
+  assert.equal(s.saved, 0);
+  tick(s, T.introSeconds + 0.05);
+  assert.equal(s.mode, "playing");
+
+  s.lives = 1;
+  s.kill(s.player);
+  assert.equal(s.lives, 0);
+  assert.equal(s.mode, "dead");
+  tick(s, T.deathSequenceSeconds + 0.05);
+  assert.equal(s.mode, "gameover");
+  assert.ok(s.events.includes("gameover"));
+  tick(s, 0.2);
+  assert.equal(s.mode, "gameover");
+  tick(s, T.gameoverSeconds);
+  assert.equal(s.mode, "title");
+  assert.equal(s.levelIndex, 0);
+  assert.equal(s.lives, T.startingLives);
 });

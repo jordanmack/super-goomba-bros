@@ -28,6 +28,27 @@
 .game .scanlines {
   opacity: 0;
 }
+.intro-world {
+  font-size: 16px;
+  color: #fff;
+  letter-spacing: 2px;
+}
+.intro-lives {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 16px;
+  color: #fff;
+}
+.intro-lives img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+.game.at-intro .topbar {
+  background: #000;
+  box-shadow: none;
+}
 
 :root {
   font-family: "Press Start 2P", monospace;
@@ -267,6 +288,9 @@ p {
 }
 .coin-counter strong {
   color: #ffd76a;
+}
+.lives-counter strong {
+  color: #b8f0a0;
 }
 .in-game .topbar {
   background: #173e3cdd;
@@ -628,6 +652,12 @@ p {
   gap: 25px;
   padding: 30px;
 }
+.overlay.interstitial-overlay {
+  background: #000;
+  z-index: 5;
+  pointer-events: none;
+  gap: 40px;
+}
 .overlay .level-label {
   color: #b9d495;
   margin: 0;
@@ -637,6 +667,12 @@ p {
   line-height: 1.6;
   color: #f8dd8a;
   text-shadow: 3px 3px #92534a;
+}
+.overlay.interstitial-overlay h2 {
+  font-size: 24px;
+  color: #fff;
+  text-shadow: none;
+  letter-spacing: 2px;
 }
 .overlay > p:not(.level-label) {
   font-size: 10px;

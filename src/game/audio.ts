@@ -15,6 +15,8 @@ import bump from "../assets/audio/bump.wav?inline";
 import fireball from "../assets/audio/fireball.wav?inline";
 import brick from "../assets/audio/breakblock.wav?inline";
 import powerup from "../assets/audio/powerup.wav?inline";
+import oneUp from "../assets/audio/1-up.wav?inline";
+import gameover from "../assets/audio/gameover.wav?inline";
 
 export const RECORDINGS = {
   overworld,
@@ -32,6 +34,8 @@ export const RECORDINGS = {
   fireball,
   brick,
   powerup,
+  oneUp,
+  gameover,
 };
 const MUSIC_LOOPS: Record<
   string,
@@ -67,6 +71,8 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   shrink: "pipe",
   win: "clear",
   splat: "stomp",
+  oneUp: "oneUp",
+  gameover: "gameover",
 };
 
 export class GameAudio {
@@ -78,7 +84,7 @@ export class GameAudio {
   private voices = new Set<OscillatorNode>();
   private disabled = false;
   private cue: Phaser.Sound.WebAudioSound | null = null;
-  private cueQueue: ("death" | "clear")[] = [];
+  private cueQueue: ("death" | "clear" | "gameover")[] = [];
   private musicResume: { key: string; seek: number } | null = null;
 
   constructor(game: Phaser.Game) {
@@ -180,7 +186,7 @@ export class GameAudio {
     effect.play();
     return effect;
   }
-  private playCue(name: "death" | "clear", saveResume = false) {
+  private playCue(name: "death" | "clear" | "gameover", saveResume = false) {
     this.stopMusic(saveResume);
     if (this.cue) {
       if (this.cue.key !== name && !this.cueQueue.includes(name))
@@ -223,8 +229,16 @@ export class GameAudio {
 
   event(event: GameEvent) {
     if (!this.available) return;
-    if (event === "death" || event === "win" || event === "marioDeath") {
-      this.playCue(event === "win" ? "clear" : "death", event === "marioDeath");
+    if (
+      event === "death" ||
+      event === "win" ||
+      event === "marioDeath" ||
+      event === "gameover"
+    ) {
+      this.playCue(
+        event === "win" ? "clear" : event === "gameover" ? "gameover" : "death",
+        event === "marioDeath",
+      );
       return;
     }
     if (event === "warn") this.playWarning();

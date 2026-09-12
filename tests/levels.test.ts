@@ -113,6 +113,21 @@ test("all 32 campaign levels and 34 shared areas reproduce the bundled data", ()
   assert.deepEqual(levels.find((l) => l.id === "4-2").route, ["29", "41"]);
 });
 
+test("extracted hidden blocks keep 19 coins, 8 one-ups, and two 1-up bricks", () => {
+  const hidden = areas.flatMap((area) =>
+    area.blocks.filter((block) => block.hidden),
+  );
+  assert.equal(hidden.filter((block) => block.content === "coin").length, 19);
+  assert.equal(hidden.filter((block) => block.content === "1-up").length, 8);
+  assert.equal(hidden.length, 27);
+  assert.equal(
+    areas.flatMap((area) =>
+      area.blocks.filter((block) => block.content === "1-up" && !block.hidden),
+    ).length,
+    2,
+  );
+});
+
 test("pipe routes preserve world-specific underground return pages and 8-4 connections", () => {
   const entry = areas
     .find((a) => a.id === "25")

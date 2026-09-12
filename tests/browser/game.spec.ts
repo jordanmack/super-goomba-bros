@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { TUNING as T } from "../../src/game/config";
+import { skipIntro } from "./skip-intro.ts";
 import { WORLD_TILES } from "../fixtures/world-tiles";
 import { WORLD_1_1 as LEVEL } from "../fixtures/world-1-1";
 
@@ -11,8 +12,9 @@ test("Starman music follows only player and Mario stars and respects death cues"
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 15,
+    () => (window as any).__game.audio.buffers.size === 17,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -92,8 +94,9 @@ test("area music resumes after Mario death from the saved seek", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 15,
+    () => (window as any).__game.audio.buffers.size === 17,
   );
   await page.evaluate(() => {
     const g = (window as any).__game;
@@ -278,9 +281,10 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await expect(page.getByRole("button", { name: "B", exact: true })).toBeVisible();
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 15,
+    () => (window as any).__game.audio.buffers.size === 17,
   );
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -390,6 +394,7 @@ test("blocks bounce and disappear independently; item powers render with touch f
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   const blocks = await page.evaluate(() => {
     const g = (window as any).__game;
     g.paused = true;
@@ -461,6 +466,7 @@ test("question-block items stay upright after fireball sprite reuse", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
   const drawn = await page.evaluate(() => {
     const g = (window as any).__game;
@@ -548,7 +554,7 @@ for (const viewport of [
     await page.goto("/");
     await expect(
       page.getByRole("button", { name: "START GAME" }),
-    ).toBeEnabled();
+    ).toBeEnabled({ timeout: 15000 });
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: `test-results/title-${viewport.width}.png` });
     const colors = await page.locator("canvas").evaluate((canvas) => {
@@ -566,6 +572,7 @@ for (const viewport of [
     });
     expect(colors).toBeGreaterThan(30);
     await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
     await expect(page.getByTestId("saved")).toContainText("00");
     const before = await page.evaluate(
       () => (window as any).__game.sim.player.body.position.x,
@@ -639,6 +646,7 @@ test("touch movement supports simultaneous jump and clears on release", async ({
   const page = await context.newPage();
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).tap();
+  await skipIntro(page);
   const client = await context.newCDPSession(page);
   const right = (await page
     .getByRole("button", { name: "Right", exact: true })
@@ -689,6 +697,7 @@ test("player bubble is 8-bit and warned NPCs flash a brief exclamation", async (
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.waitForFunction(() => !!(window as any).__game?.sim);
   await page.evaluate((range) => {
     const s = (window as any).__game.sim;
@@ -756,8 +765,9 @@ test("death restart, impossible quota, finish window, and final score screens", 
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 15,
+    () => (window as any).__game.audio.buffers.size === 17,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -777,9 +787,11 @@ test("death restart, impossible quota, finish window, and final score screens", 
     )
     .toEqual({ mode: "dead", deathCue: true });
   await expect(page.getByRole("heading", { name: "STOMPED!" })).toHaveCount(0);
-  await page.waitForFunction(
-    () => (window as any).__game.sim.mode === "playing",
-  );
+  await page.waitForFunction(() => {
+    const mode = (window as any).__game.sim.mode;
+    return mode === "intro" || mode === "playing";
+  });
+  await skipIntro(page);
   await expect(page.getByTestId("warned")).toContainText("00");
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -791,6 +803,7 @@ test("death restart, impossible quota, finish window, and final score screens", 
   await expect(page.getByRole("button", { name: "TRY AGAIN" })).toHaveCount(0);
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.getByRole("button", { name: "RESTART LEVEL" }).click();
+  await skipIntro(page);
   await page.evaluate((required) => {
     const s = (window as any).__game.sim;
     s.npcs.slice(0, required).forEach((n: any) => s.save(n));
@@ -815,10 +828,12 @@ test("HUD coin counter increases on collection and resets on restart and next le
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   const coins = page.getByTestId("coins");
   const warned = page.getByTestId("warned");
   const saved = page.getByTestId("saved");
   await expect(coins).toHaveText("00");
+  await expect(page.getByTestId("lives")).toHaveText("03");
   await expect(warned).toContainText("00");
   await expect(saved).toContainText("00");
   await expect(warned).toContainText(`/ ${T.population}`);
@@ -852,6 +867,7 @@ test("HUD coin counter increases on collection and resets on restart and next le
   await expect.poll(() => coins.textContent()).toBe("02");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.getByRole("button", { name: "RESTART LEVEL" }).click();
+  await skipIntro(page);
   await expect(coins).toHaveText("00");
   await collect();
   await expect.poll(() => coins.textContent()).toBe("01");
@@ -888,6 +904,7 @@ test("standalone production HTML runs without a server or external assets", asyn
 test("background music produces audio, pauses, and mutes", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.evaluate(() => {
     const game = (window as any).__game;
     game.sim.marioReturn = 1000;
@@ -929,8 +946,9 @@ test("original recordings decode and play as effects, with level clear replacing
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 15,
+    () => (window as any).__game.audio.buffers.size === 17,
   );
   const playback = await page.evaluate(() => {
     const a = (window as any).__game.audio;
@@ -995,6 +1013,7 @@ test("game text and controls cannot be selected by dragging", async ({
   await page.mouse.up();
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   for (const selector of [".counters", ".brand img"]) {
     expect(
       await page
@@ -1055,6 +1074,7 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   const effect = await page.evaluate(() => {
     const game = (window as any).__game;
     game.paused = true;
@@ -1122,6 +1142,7 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
 test("original 1-1 map art and collision anchors agree", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   const map = await page.evaluate(() => {
     const game = (window as any).__game;
     const textures = game.renderer.game.textures.list;

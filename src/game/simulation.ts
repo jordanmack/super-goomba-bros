@@ -20,7 +20,14 @@ export const emptyInput = (): Input => ({
   down: false,
   run: false,
 });
-export type Mode = "title" | "playing" | "dead" | "finishing" | "won";
+export type Mode =
+  | "title"
+  | "intro"
+  | "playing"
+  | "dead"
+  | "finishing"
+  | "won"
+  | "gameover";
 export type Obstacle = {
   id: number;
   x: number;
@@ -33,7 +40,7 @@ export type Obstacle = {
   hidden?: boolean;
   used: boolean;
   bounce: number;
-  content?: ItemKind;
+  content?: string | null;
 };
 export type Actor = {
   id: number;
@@ -89,7 +96,9 @@ export type GameEvent =
   | "power"
   | "shrink"
   | "splat"
-  | "win";
+  | "win"
+  | "oneUp"
+  | "gameover";
 export type Particle = {
   x: number;
   y: number;
@@ -112,7 +121,7 @@ export type Fireball = {
   vy?: number;
   scale?: number;
 };
-export type ItemKind = "star" | "mushroom" | "flower";
+export type ItemKind = "star" | "mushroom" | "flower" | "oneUp";
 export type Item = {
   id: number;
   kind: ItemKind;
@@ -122,6 +131,7 @@ export type Item = {
   direction: number;
   age: number;
 };
+export type CoinPop = { x: number; y: number; age: number };
 export const rescueImpossible = (
   saved: number,
   living: number,
@@ -148,7 +158,7 @@ export class Simulation {
   nextLevel() {
     if (this.levelIndex < CAMPAIGN.length - 1) {
       this.levelIndex++;
-      this.reset();
+      this.reset("intro");
     }
   }
   private tryPipe(actor: Actor, down: boolean, right: boolean) {
@@ -257,6 +267,10 @@ export class Simulation {
   viewWidth = 960;
   private flagPrevPlayerX = 0;
   private flagPrevMarioX = 0;
+  lives: number = T.startingLives;
+  introLeft = 0;
+  gameoverLeft = 0;
+  coinPops: CoinPop[] = [];
   private nextId = 1;
   private jumped = false;
   private playerPace = T.walkSpeed as number;
@@ -306,6 +320,8 @@ export class Simulation {
         0;
     this.bubble = "";
     this.bubbleLeft = this.finishLeft = this.deadLeft = 0;
+    this.introLeft = mode === "intro" ? T.introSeconds : 0;
+    this.gameoverLeft = 0;
     this.marioActive = false;
     this.marioReturn = T.firstMarioAt;
     this.marioDecision = this.marioChase = this.marioIgnore = 0;
@@ -328,6 +344,7 @@ export class Simulation {
     this.cameraX = 0;
     this.fireballs = [];
     this.items = [];
+    this.coinPops = [];
     this.particles = [];
     this.events = [];
     this.jumped = false;
@@ -700,6 +717,7 @@ export class Simulation {
       this.mode = "dead";
       this.deadLeft = T.deathSequenceSeconds;
       this.bubbleLeft = 0;
+      this.lives = Math.max(0, this.lives - 1);
       this.events.push("death");
       const pit = a.body.position.y > 640;
       this.playerDeath = {
@@ -757,37 +775,76 @@ export class Simulation {
 
   hitBlock(c: Obstacle, hitter: Actor) {
     if (c.broken || c.kind !== "brick" || c.bounce > 0) return;
+    const prize = c.content === "1-up" || (c.hidden && c.content === "coin");
     if (
       !c.question &&
+      !prize &&
       (hitter === this.mario || (hitter === this.player && hitter.scale > 1))
     ) {
       this.breakBrick(c);
       return;
     }
     c.bounce = T.blockBounceSeconds;
-    this.events.push("bump");
-    if (c.question && !c.used) {
-      c.used = true;
-      if (c.body) c.body.headOnly = false;
-      c.content = (["star", "mushroom", "flower"] as const)[
-        Math.min(2, Math.floor(this.random() * 3))
-      ];
-      const body = this.physics.rectangle(c.x, c.y, 24, 28, false);
-      Body.setFrozen(body, true);
-      this.items.push({
-        id: this.nextId++,
-        kind: c.content,
-        body,
-        emerge: 0.45,
-        originY: c.y,
-        direction: hitter.facing,
-        age: 0,
-      });
+    if (c.used) {
+      this.events.push("bump");
+      return;
     }
+    if (c.hidden && c.content === "coin") {
+      this.reveal(c);
+      this.coins++;
+      this.events.push("coin");
+      this.coinPops.push({ x: c.x, y: c.y, age: 0 });
+      return;
+    }
+    if (c.content === "1-up") {
+      this.reveal(c);
+      this.events.push("bump");
+      this.spawnItem(c, "oneUp", hitter.facing);
+      return;
+    }
+    this.events.push("bump");
+    if (c.question) {
+      this.reveal(c);
+      this.spawnItem(
+        c,
+        (["star", "mushroom", "flower"] as const)[
+          Math.min(2, Math.floor(this.random() * 3))
+        ],
+        hitter.facing,
+      );
+    }
+  }
+
+  private reveal(c: Obstacle) {
+    c.used = true;
+    if (c.body) c.body.headOnly = false;
+  }
+
+  private spawnItem(c: Obstacle, kind: ItemKind, facing: number) {
+    const body = this.physics.rectangle(c.x, c.y, 24, 28, false);
+    Body.setFrozen(body, true);
+    this.items.push({
+      id: this.nextId++,
+      kind,
+      body,
+      emerge: 0.45,
+      originY: c.y,
+      direction: facing,
+      age: 0,
+    });
   }
 
   collect(a: Actor, item: Item) {
     if (!a.alive || a.saved || (a === this.mario && !this.marioActive)) return;
+    if (item.kind === "oneUp") {
+      this.physics.remove(item.body);
+      this.items = this.items.filter((i) => i !== item);
+      if (a !== this.mario) {
+        this.lives++;
+        this.events.push("oneUp");
+      }
+      return;
+    }
     if (item.kind === "star") a.starLeft = T.starSeconds;
     if (a === this.mario) {
       if (item.kind === "flower") this.setMarioStage(2, this.marioStage === 0);
@@ -1086,7 +1143,27 @@ export class Simulation {
       this.updateParticles(dt);
       if (this.playerDeath) this.stepDeathHop(this.playerDeath, dt);
       this.deadLeft -= dt;
-      if (this.deadLeft <= 0) this.reset();
+      if (this.deadLeft <= 0) {
+        if (this.lives <= 0) {
+          this.mode = "gameover";
+          this.gameoverLeft = T.gameoverSeconds;
+          this.events.push("gameover");
+        } else this.reset("intro");
+      }
+      return;
+    }
+    if (this.mode === "intro") {
+      this.introLeft -= dt;
+      if (this.introLeft <= 0) this.mode = "playing";
+      return;
+    }
+    if (this.mode === "gameover") {
+      this.gameoverLeft -= dt;
+      if (this.gameoverLeft <= 0) {
+        this.levelIndex = 0;
+        this.lives = T.startingLives;
+        this.reset("title");
+      }
       return;
     }
     if (this.mode !== "playing" && this.mode !== "finishing") return;
@@ -1245,6 +1322,8 @@ export class Simulation {
           this.hitBlock(c, actor);
       }
     this.updateItems(dt);
+    for (const pop of this.coinPops) pop.age += dt;
+    this.coinPops = this.coinPops.filter((pop) => pop.age < 0.5);
     if (this.marioActive && this.mario.starLeft <= 0) {
       for (const a of [this.player, ...this.npcs]) {
         if (!a.alive || a.saved) continue;

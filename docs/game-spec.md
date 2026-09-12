@@ -125,7 +125,8 @@ Saved NPCs stay safe and cannot return to danger.
 ## Counters and finish
 
 Display separate Warned and Saved counters plus rescue progress against the
-configured requirement. Display collected coins at the top of the screen.
+configured requirement. Display collected coins and remaining lives at the top
+of the screen.
 
 Warned increases on the first warning heard by an NPC. A later death does not
 reduce it. Saved increases only when an NPC reaches a rescue door alive.
@@ -144,8 +145,8 @@ Once enough NPCs are saved and the player contacts the doorway:
 5. At the cutoff, lock the counts and show the result.
 
 Later arrivals do not count and cannot extend the window. Next Level starts the
-next stage with fresh counters, actors, blocks, and powers. The final Play Again
-starts a new campaign.
+next stage through the intro with fresh counters, actors, blocks, and powers.
+Lives persist. The final Play Again starts a new campaign with three lives.
 
 A rescue is impossible when `saved + living_unsaved < required`. Include warned
 and unwarned living NPCs. Keep the goal locked, show that too many were lost,
@@ -184,13 +185,18 @@ Floating bricks and question blocks are solid. A small-player head hit bounces
 a brick without breaking it. A giant-player or Mario head hit breaks an ordinary
 brick and removes its collision. Breaking a brick under an NPC does not kill it.
 
-Each question block releases one random star, mushroom, or flower and becomes
-a used block. Original hidden blocks are revealed by a head hit. An unrevealed
-hidden block does not support a character landing from above.
+Visible question blocks that are not hidden 1-up or hidden coin blocks release
+one random star, mushroom, or flower and become a used block. Original hidden
+blocks are revealed by a head hit. An unrevealed hidden block does not support
+a character landing from above. Hidden coin blocks release a coin, then stay as
+a used platform. Hidden 1-up blocks and the original non-hidden 1-up bricks
+release the green 1-up mushroom, not a red mushroom or other power. The omitted
+castle stop block stays omitted so the rescue door remains open.
 
-An item emerges before it can be collected. Mushrooms move and fall, stars
-bounce, and flowers remain where they land. Living characters can collect by
-contact. Items expire after their lifetime or when they leave the level.
+An item emerges before it can be collected. Mushrooms and 1-up mushrooms move
+and fall, stars bounce, and flowers remain where they land. Living characters
+can collect by contact. Items expire after their lifetime or when they leave
+the level. A 1-up grants an extra life and plays the original 1-up sound.
 
 - A star grants temporary immunity. Player and NPC star contact defeats Mario
   unless he also has a star. Mario avoids visible star holders.
@@ -215,12 +221,19 @@ Stars protect against those fireballs.
 
 ## Death and audio
 
-One successful attack kills an unprotected player. Mushroom form shrinks on the
-first damaging stomp or hit; it is not full immunity. Mario's fireballs still
-kill characters who are not star-protected, including giants. Stars grant full
-immunity. Falling out of the level also kills.
-Death restarts the current stage with cleared counters, powers, items, speech,
-used blocks, and pursuit state.
+A campaign starts with three lives. Lives persist across stages in one
+campaign. Play Again resets to three. One successful attack kills an
+unprotected player. Mushroom form shrinks on the first damaging stomp or hit;
+it is not full immunity. Mario's fireballs still kill characters who are not
+star-protected, including giants. Stars grant full immunity. Falling out of
+the level also kills. Death spends a life. If lives remain, the original-style
+black intro shows WORLD n-n and the player Goomba × remaining lives, then the
+current stage restarts with cleared counters, powers, items, speech, used
+blocks, and pursuit state. The intro is silent; area music starts with play.
+Start Game, Next Level, and Pause Restart Level go through that intro when
+lives remain. The title screen stays the title screen. When lives reach 0, the
+death cue still finishes, then GAME OVER appears on that same black screen
+with the original game-over music. When that cue finishes, return to the title.
 
 Mario's kills produce bounded pixel-blood bursts and temporary stains. NPC
 deaths have no death-song sequence. Player and Mario deaths play the complete
@@ -230,9 +243,9 @@ returns quickly. His return must not cut off the cue.
 
 Play the original area music and effects. Start audio after a user gesture.
 Pause stops playback progress; mute silences music and effects. Player or active
-Mario stars use Starman music. NPC stars do not change music. Death and clear
-cues take priority and must finish. There is no heartbeat, distance meter, or
-approach-based volume change.
+Mario stars use Starman music. NPC stars do not change music. Death, clear, and
+game-over cues take priority and must finish. There is no heartbeat, distance
+meter, or approach-based volume change.
 
 An unavailable audio decoder must not break controls or leave uncaught errors.
 Record the failure and show sound as unavailable. Do not insert fake decoded

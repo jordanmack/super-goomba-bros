@@ -111,6 +111,7 @@ export class Room {
         kind: "brick",
         question: block.kind === "question",
         hidden: block.hidden,
+        content: block.content ?? undefined,
         broken: false,
         used: false,
         bounce: 0,

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipIntro } from "./skip-intro.ts";
 
 test.use({
   viewport: { width: 844, height: 390 },
@@ -78,6 +79,7 @@ test.beforeEach(async ({ page }) => {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).tap();
+  await skipIntro(page);
   await page.evaluate(() => {
     (window as any).__game.sim.marioReturn = 1e6;
   });
@@ -264,6 +266,7 @@ test("pause, restart, and automatic death reset require fresh presses", async ({
   await touch(page, "touchstart", [right]);
   await page.getByRole("button", { name: "Pause", exact: true }).tap();
   await page.getByRole("button", { name: "RESTART LEVEL", exact: true }).tap();
+  await skipIntro(page);
   await input(page, {});
   await touch(page, "touchend", [], [right]);
   right = await point(page, "Right", 1);
@@ -291,6 +294,11 @@ test("pause, restart, and automatic death reset require fresh presses", async ({
   await touch(page, "touchend", [], [right]);
   await touch(page, "touchstart", [right]);
   await input(page, {});
+  await page.waitForFunction(() => {
+    const mode = (window as any).__game.sim.mode;
+    return mode === "intro" || mode === "playing";
+  });
+  await skipIntro(page);
   await page.waitForFunction(
     () => (window as any).__game.sim.mode === "playing",
   );

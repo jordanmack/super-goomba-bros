@@ -56,16 +56,20 @@ door, including after leaving an underground or water area. They keep moving
 while the player visits another area. Mario notices running crowds and warnings,
 then pursues, jumps, and fires when powered.
 
-Question blocks release random stars, mushrooms, or flowers. Mushrooms grow
-Goombas and NPCs; flowers turn them white. Player fireballs match the Goomba's
-size and share one firing cooldown. Stars defeat Mario. Giant-player stomps and
-fireballs reduce him through fire, big, and small stages. His power can increase
-on return or through items, with no spontaneous upgrade while active.
+Visible question blocks release random stars, mushrooms, or flowers. Hidden
+coin and 1-up blocks keep their original contents. Mushrooms grow Goombas and
+NPCs; flowers turn them white. A 1-up grants an extra life. Player fireballs
+match the Goomba's size and share one firing cooldown. Stars defeat Mario.
+Giant-player stomps and fireballs reduce him through fire, big, and small
+stages. His power can increase on return or through items, with no spontaneous
+upgrade while active.
 
-Death restarts the current stage. The goal stays locked if too many NPCs die.
-A successful entry gives the remaining NPCs one fixed rescue window. Next Level
-starts a fresh stage; Play Again on the final result starts a new campaign.
-Nothing is stored between browser sessions.
+A campaign starts with three lives. Death spends a life, shows the world intro,
+and restarts the current stage. 0 lives is game over, then the title. The goal
+stays locked if too many NPCs die. A successful entry gives the remaining NPCs
+one fixed rescue window. Next Level starts a fresh stage through the intro;
+Play Again on the final result starts a new campaign. Nothing is stored between
+browser sessions.
 
 ## Checks and build
 

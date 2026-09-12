@@ -31,11 +31,13 @@ changes. The loop markers in `../../game/audio.ts` are the source of timing data
 
 Rescue and coin collection use the coin sound; bloody impacts use the stomp
 sound. Block bumps, breaks, pipe travel, shrinking, and power-up pickups use
-the corresponding original effects. Warnings use a custom short square-wave
-voice. There is no approach heartbeat or distance-based music change.
+the corresponding original effects. A 1-up uses `smb_1-up.wav`. Game over uses
+`smb_gameover.wav`. Warnings use a custom short square-wave voice. There is no
+approach heartbeat or distance-based music change. The world intro is silent.
 Mario's defeat uses the original death recording. It interrupts the overworld
 music, which resumes after the cue finishes while the level continues.
 
-Major death and clear cues are serialized so neither is cut off or played over
-the other. A new stage preserves an unfinished cue. Unsupported audio decoding
-is recorded and shown as unavailable; it does not stop the game's controls.
+Major death, clear, and game-over cues are serialized so none is cut off or
+played over another. A new stage preserves an unfinished cue. Unsupported audio
+decoding is recorded and shown as unavailable; it does not stop the game's
+controls.

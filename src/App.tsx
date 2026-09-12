@@ -33,6 +33,7 @@ type Snapshot = {
   warned: number;
   saved: number;
   coins: number;
+  lives: number;
   living: number;
   elapsed: number;
   doomed: boolean;
@@ -53,6 +54,7 @@ const initial: Snapshot = {
   warned: 0,
   saved: 0,
   coins: 0,
+  lives: T.startingLives,
   living: T.population,
   elapsed: 0,
   doomed: false,
@@ -194,6 +196,7 @@ export default function App() {
             warned: sim.warned,
             saved: sim.saved,
             coins: sim.coins,
+            lives: sim.lives,
             living: sim.living(),
             elapsed: sim.elapsed,
             doomed: sim.doomed,
@@ -244,16 +247,24 @@ export default function App() {
     };
   }, []);
 
-  const start = () => {
+  const enterLevel = (opts?: { lives?: number; levelIndex?: number }) => {
     const game = runtime.current;
     if (!game || !ready) return;
-    game.sim.reset();
+    if (opts?.levelIndex !== undefined) game.sim.levelIndex = opts.levelIndex;
+    if (opts?.lives !== undefined) game.sim.lives = opts.lives;
+    game.sim.reset("intro");
     game.audio.resetMusic();
     game.clearInput();
     game.paused = false;
     setPaused(false);
     startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
+  };
+  const start = () => enterLevel({ lives: T.startingLives });
+  const restartLevel = () => {
+    const game = runtime.current;
+    if (!game || game.sim.lives <= 0) return;
+    enterLevel();
   };
   const pause = () => {
     const game = runtime.current;
@@ -276,10 +287,7 @@ export default function App() {
     startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
   };
-  const replay = () => {
-    if (runtime.current) runtime.current.sim.levelIndex = 0;
-    start();
-  };
+  const replay = () => enterLevel({ lives: T.startingLives, levelIndex: 0 });
   const mute = () => {
     if (runtime.current) runtime.current.audio.muted = !muted;
     setMuted(!muted);
@@ -310,6 +318,12 @@ export default function App() {
     (document.activeElement as HTMLElement)?.blur();
   };
   const active = state.mode !== "title";
+  const playing =
+    state.mode === "playing" ||
+    state.mode === "finishing" ||
+    state.mode === "dead" ||
+    state.mode === "won";
+  const interstitial = state.mode === "intro" || state.mode === "gameover";
   const overlay = paused || state.mode === "won";
   const minutes = Math.floor(state.elapsed / 60)
     .toString()
@@ -321,7 +335,7 @@ export default function App() {
   return (
     <main
       ref={surface}
-      className={`game ${active ? "in-game" : "at-title"}`}
+      className={`game ${active ? "in-game" : "at-title"}${interstitial ? " at-intro" : ""}`}
       onContextMenu={(e) => e.preventDefault()}
       onSelect={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
@@ -359,6 +373,12 @@ export default function App() {
                 {String(state.coins).padStart(2, "0")}
               </strong>
             </div>
+            <div className="lives-counter">
+              <span>LIVES</span>
+              <strong data-testid="lives">
+                {String(state.lives).padStart(2, "0")}
+              </strong>
+            </div>
           </div>
         )}
         <div className="tools">
@@ -378,7 +398,7 @@ export default function App() {
           >
             {muted ? <VolumeX /> : <Volume2 />}
           </button>
-          {active && (
+          {playing && (
             <button
               onClick={pause}
               title={paused ? "Resume" : "Pause"}
@@ -453,127 +473,147 @@ export default function App() {
               <span>LAST RESCUES: {Math.ceil(state.finishLeft)}</span>
             </div>
           )}
-          <footer className="play-footer">
-            <div className="journey">
-              <span>THE GREAT ESCAPE</span>
-              <div>
-                <i style={{ width: `${state.progress * 100}%` }} />
+          {playing && (
+            <footer className="play-footer">
+              <div className="journey">
+                <span>THE GREAT ESCAPE</span>
+                <div>
+                  <i style={{ width: `${state.progress * 100}%` }} />
+                </div>
+                <DoorOpen size={14} />
               </div>
-              <DoorOpen size={14} />
-            </div>
-            <div
-              className={`controls layout-${padLayout}`}
-              aria-label={
-                padLayout === "nes" ? "NES controller" : "Compact controller"
-              }
-            >
-              {padLayout === "compact" ? (
-                <>
-                  <div className="dpad">
-                    {actionButton(
-                      "jump",
-                      "Up",
-                      <ArrowUp />,
-                      "Up / Jump (Up / W)",
-                      "dpad-up",
-                    )}
+              <div
+                className={`controls layout-${padLayout}`}
+                aria-label={
+                  padLayout === "nes" ? "NES controller" : "Compact controller"
+                }
+              >
+                {padLayout === "compact" ? (
+                  <>
+                    <div className="dpad">
+                      {actionButton(
+                        "jump",
+                        "Up",
+                        <ArrowUp />,
+                        "Up / Jump (Up / W)",
+                        "dpad-up",
+                      )}
+                      {actionButton(
+                        "left",
+                        "Left",
+                        <ArrowLeft />,
+                        "Walk left (Left / A)",
+                        "dpad-left",
+                      )}
+                      {actionButton(
+                        "down",
+                        "Down",
+                        <ArrowDown />,
+                        "Enter pipe (Down / S)",
+                        "dpad-down",
+                      )}
+                      {actionButton(
+                        "right",
+                        "Right",
+                        <ArrowRight />,
+                        "Walk right (Right / D)",
+                        "dpad-right",
+                      )}
+                    </div>
+                    <div className="face-buttons">
+                      {actionButton(
+                        "run",
+                        "B",
+                        null,
+                        "Run and fire (Shift / Z)",
+                        "face-b",
+                      )}
+                      {actionButton(
+                        "jump",
+                        "A",
+                        null,
+                        "Jump (Space)",
+                        "face-a",
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <NesPadArt />
+                    {actionButton("up", "Up", null, "Up", "nes-hit nes-up")}
                     {actionButton(
                       "left",
                       "Left",
-                      <ArrowLeft />,
+                      null,
                       "Walk left (Left / A)",
-                      "dpad-left",
+                      "nes-hit nes-left",
                     )}
                     {actionButton(
                       "down",
                       "Down",
-                      <ArrowDown />,
+                      null,
                       "Enter pipe (Down / S)",
-                      "dpad-down",
+                      "nes-hit nes-down",
                     )}
                     {actionButton(
                       "right",
                       "Right",
-                      <ArrowRight />,
+                      null,
                       "Walk right (Right / D)",
-                      "dpad-right",
+                      "nes-hit nes-right",
                     )}
-                  </div>
-                  <div className="face-buttons">
+                    {actionButton(
+                      "select",
+                      "Select",
+                      null,
+                      "Select",
+                      "nes-hit nes-select",
+                    )}
+                    {actionButton(
+                      "start",
+                      "Start",
+                      null,
+                      "Pause (Start)",
+                      "nes-hit nes-start",
+                    )}
                     {actionButton(
                       "run",
                       "B",
                       null,
                       "Run and fire (Shift / Z)",
-                      "face-b",
+                      "nes-hit nes-b",
                     )}
                     {actionButton(
                       "jump",
                       "A",
                       null,
                       "Jump (Space)",
-                      "face-a",
+                      "nes-hit nes-a",
                     )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <NesPadArt />
-                  {actionButton("up", "Up", null, "Up", "nes-hit nes-up")}
-                  {actionButton(
-                    "left",
-                    "Left",
-                    null,
-                    "Walk left (Left / A)",
-                    "nes-hit nes-left",
-                  )}
-                  {actionButton(
-                    "down",
-                    "Down",
-                    null,
-                    "Enter pipe (Down / S)",
-                    "nes-hit nes-down",
-                  )}
-                  {actionButton(
-                    "right",
-                    "Right",
-                    null,
-                    "Walk right (Right / D)",
-                    "nes-hit nes-right",
-                  )}
-                  {actionButton(
-                    "select",
-                    "Select",
-                    null,
-                    "Select",
-                    "nes-hit nes-select",
-                  )}
-                  {actionButton(
-                    "start",
-                    "Start",
-                    null,
-                    "Pause (Start)",
-                    "nes-hit nes-start",
-                  )}
-                  {actionButton(
-                    "run",
-                    "B",
-                    null,
-                    "Run and fire (Shift / Z)",
-                    "nes-hit nes-b",
-                  )}
-                  {actionButton(
-                    "jump",
-                    "A",
-                    null,
-                    "Jump (Space)",
-                    "nes-hit nes-a",
-                  )}
-                </>
-              )}
-            </div>
-          </footer>
+                  </>
+                )}
+              </div>
+            </footer>
+          )}
         </>
+      )}
+      {interstitial && !paused && (
+        <section
+          className="overlay interstitial-overlay"
+          aria-label={state.mode === "gameover" ? "Game over" : "World intro"}
+        >
+          {state.mode === "gameover" ? (
+            <h2>GAME OVER</h2>
+          ) : (
+            <>
+              <p className="intro-world">WORLD {state.level}</p>
+              <div className="intro-lives">
+                {portrait && <img src={portrait} alt="" />}
+                <span>× {String(state.lives).padStart(2, "0")}</span>
+              </div>
+            </>
+          )}
+        </section>
       )}
       {overlay && (
         <section
@@ -587,7 +627,7 @@ export default function App() {
               <button className="primary" onClick={pause}>
                 <Play size={20} /> RESUME
               </button>
-              <button className="secondary" onClick={start}>
+              <button className="secondary" onClick={restartLevel}>
                 <RotateCcw size={16} /> RESTART LEVEL
               </button>
               <button className="secondary" onClick={switchPad}>

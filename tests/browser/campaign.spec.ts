@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import campaign from "../../src/assets/levels/campaign.json" with { type: "json" };
 import { TUNING as T } from "../../src/game/config";
+import { skipIntro } from "./skip-intro.ts";
 
 test("all campaign stages render their tilemap and palette with Arcade bodies", async ({
   page,
@@ -13,6 +14,7 @@ test("all campaign stages render their tilemap and palette with Arcade bodies", 
   });
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   for (const [index, level] of campaign.levels.entries()) {
     const state = await page.evaluate((index) => {
       const g = (window as any).__game,
@@ -59,6 +61,7 @@ test("next stage resets counters and preserves the complete clear cue", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.evaluate((required) => {
     const g = (window as any).__game;
     g.sim.npcs.slice(0, required).forEach((npc: any) => g.sim.save(npc));
@@ -99,6 +102,7 @@ test("a short touch on Pipe travels to the bonus area and changes its music", as
   const page = await context.newPage();
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).tap();
+  await skipIntro(page);
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
     s.marioReturn = 1e6;
@@ -134,6 +138,7 @@ test("unavailable audio decoding is reported while the game remains playable", a
   });
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await expect(
     page.getByRole("button", { name: "Audio unavailable" }),
   ).toBeDisabled();
@@ -165,6 +170,7 @@ test("death and clear songs play fully in sequence without overlapping", async (
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
   await page.evaluate(() => {
     const g = (window as any).__game;
     g.sim.step = () => {};
@@ -189,4 +195,51 @@ test("death and clear songs play fully in sequence without overlapping", async (
       timeout: 5000,
     })
     .toBe(true);
+});
+
+test("start shows a silent world intro, and 0 lives shows game over then title", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  const intro = page.getByRole("region", { name: "World intro" });
+  await expect(intro).toBeVisible();
+  await expect(intro).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  await expect(intro.getByText("WORLD 1-1")).toBeVisible();
+  await expect(intro.locator(".intro-lives")).toContainText("× 03");
+  await expect(page.getByTestId("lives")).toHaveText("03");
+  expect(
+    await page.evaluate(() => (window as any).__game.audio.music),
+  ).toBeNull();
+  await page.waitForFunction(
+    () => (window as any).__game.sim.mode === "playing",
+  );
+  await expect(intro).toBeHidden();
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).__game.audio.music))
+    .toBe(true);
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.lives = 1;
+    s.kill(s.player, false);
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.sim.mode))
+    .toBe("dead");
+  await expect(page.getByRole("heading", { name: "STOMPED!" })).toHaveCount(0);
+  const gameOver = page.getByRole("region", { name: "Game over" });
+  await expect(gameOver).toBeVisible({ timeout: 8000 });
+  await expect(page.getByRole("heading", { name: "GAME OVER" })).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        [...(window as any).__game.audio.effects].some(
+          (sound: any) => sound.key === "gameover" && sound.isPlaying,
+        ),
+      ),
+    )
+    .toBe(true);
+  await expect(page.getByRole("region", { name: "Title screen" })).toBeVisible({
+    timeout: 8000,
+  });
 });
