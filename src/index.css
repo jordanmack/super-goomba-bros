@@ -174,12 +174,18 @@ p {
   flex-direction: column;
   text-align: center;
   z-index: 3;
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
 }
 .level-label {
   font-size: 9px;
   line-height: 1.8;
   color: #214e4a;
   margin-bottom: 20px;
+}
+.title-screen .level-label {
+  font-size: 16px;
+  max-width: 100%;
 }
 .title-screen h1 {
   font-size: 56px;
@@ -195,12 +201,12 @@ p {
   flex-direction: column;
 }
 .title-screen h1 span:first-child {
-  font-size: 27px;
+  font-size: 32px;
   color: #fbe783;
   margin-bottom: 4px;
 }
 .title-screen h1 span:last-child {
-  font-size: 43px;
+  font-size: 48px;
   color: #fbd16f;
 }
 .primary {
@@ -227,10 +233,12 @@ p {
 }
 .title-screen .primary {
   margin-top: 29px;
+  font-size: 16px;
 }
 .edition {
   margin-top: 24px;
-  font-size: 8px;
+  font-size: 16px;
+  max-width: 100%;
   color: #234e44;
   line-height: 1.8;
 }
@@ -517,10 +525,10 @@ p {
     top: 20%;
   }
   .title-screen h1 {
-    font-size: 68px;
+    font-size: 72px;
   }
   .title-screen h1 span:last-child {
-    font-size: 52px;
+    font-size: 56px;
   }
   .title-screen .primary {
     margin-top: 40px;
@@ -543,23 +551,30 @@ p {
     top: 21%;
   }
   .title-screen h1 {
-    font-size: 36px;
+    font-size: 40px;
   }
   .title-screen h1 span:first-child {
-    font-size: 21px;
+    font-size: 24px;
   }
   .title-screen h1 span:last-child {
-    font-size: 30px;
+    font-size: 32px;
   }
   .level-label {
     font-size: 7px;
     max-width: 280px;
     line-height: 2;
   }
+  .title-screen .level-label {
+    font-size: 16px;
+    max-width: 100%;
+    line-height: 1.8;
+    padding: 0 16px;
+  }
   .edition {
-    font-size: 7px;
-    max-width: 280px;
-    line-height: 2;
+    font-size: 16px;
+    max-width: 100%;
+    line-height: 1.8;
+    padding: 0 16px;
   }
   .tools {
     gap: 6px;
@@ -661,6 +676,37 @@ p {
     bottom: 93px;
   }
 }
+@media (max-width: 700px) and (max-height: 600px) {
+  .title-screen {
+    top: 80px;
+  }
+  .title-screen .level-label {
+    margin-bottom: 8px;
+  }
+  .title-screen .primary {
+    margin-top: 16px;
+  }
+  .edition {
+    margin-top: 12px;
+  }
+}
+@media (max-width: 700px) and (max-height: 540px) {
+  .title-screen h1 {
+    font-size: 40px;
+  }
+  .title-screen h1 span:first-child {
+    font-size: 24px;
+  }
+  .title-screen h1 span:last-child {
+    font-size: 24px;
+  }
+  .title-screen .primary {
+    margin-top: 12px;
+    min-height: 48px;
+    padding: 8px 17px;
+    font-size: 16px;
+  }
+}
 @media (max-height: 540px) and (min-width: 600px) {
   .topbar {
     padding: 10px 20px;
@@ -677,30 +723,30 @@ p {
     height: 32px;
   }
   .title-screen {
-    top: 12%;
+    top: 64px;
   }
   .title-screen h1 {
-    font-size: 33px;
+    font-size: 40px;
   }
   .title-screen h1 span:first-child {
-    font-size: 18px;
+    font-size: 24px;
   }
   .title-screen h1 span:last-child {
     font-size: 24px;
   }
   .title-screen .level-label {
     margin-bottom: 8px;
-    font-size: 7px;
+    font-size: 16px;
   }
   .title-screen .primary {
     margin-top: 12px;
-    min-height: 40px;
+    min-height: 48px;
     padding: 8px 17px;
-    font-size: 9px;
+    font-size: 16px;
   }
   .edition {
     margin-top: 12px;
-    font-size: 6px;
+    font-size: 16px;
   }
   .in-game .topbar {
     padding: 9px 18px;
