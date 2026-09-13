@@ -13,6 +13,12 @@ export const TUNING = {
   jumpHoldGravity: 900,
   jumpFallGravity: 1500,
   stompBounce: 8,
+  // NES kicked-shell X speed $30 = 3 px/frame, at this game's 2x tile scale.
+  shellSpeed: 6,
+  // RevivalRateData $10 * 21-frame interval timer = 336 frames.
+  shellWake: 5.6,
+  // Legs-out shake while EnemyIntervalTimer is 1-4 (4 * 21 frames).
+  shellShake: 1.4,
   gravity: 1500,
   platformSpeed: 64,
   platformTravel: 96,

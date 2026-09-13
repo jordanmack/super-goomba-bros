@@ -67,6 +67,9 @@ export type Actor = {
   hugeLeft: number;
   exclaimLeft: number;
   flower: boolean;
+  shell: "none" | "stopped" | "moving";
+  wakeLeft: number;
+  kickIgnore: number;
   blockedFor: number;
   lastX: number;
   areaId?: string;
@@ -105,6 +108,7 @@ export type GameEvent =
   | "power"
   | "shrink"
   | "splat"
+  | "kick"
   | "win"
   | "oneUp"
   | "gameover"
@@ -446,6 +450,7 @@ export class Simulation {
   private jumped = false;
   private playerPace = T.walkSpeed as number;
   private bouncedNpcs = new Set<Actor>();
+  private shellStomps = new Set<Actor>();
   random: () => number;
 
   constructor(random = Math.random, physics = new PhysicsWorld()) {
@@ -522,6 +527,7 @@ export class Simulation {
     this.bouncedNpcs.clear();
     this.flagPrevPlayerX = this.player.body.position.x;
     this.flagPrevMarioX = this.mario.body.position.x;
+    this.shellStomps.clear();
   }
 
   private actor(x: number, kind: Actor["kind"]): Actor {
@@ -557,6 +563,9 @@ export class Simulation {
       hugeLeft: 0,
       exclaimLeft: 0,
       flower: false,
+      shell: "none",
+      wakeLeft: 0,
+      kickIgnore: 0,
       blockedFor: 0,
       lastX: x,
     };
@@ -1308,6 +1317,7 @@ export class Simulation {
       const prevTop = prevNpcTops.get(n);
       if (
         prevTop !== undefined &&
+        !this.inPipe(n) &&
         this.fallingOntoNpc(n, playerBottom, prevTop) &&
         this.player.body.bounds.max.y >= this.npcTop(n)
       ) {
@@ -1316,8 +1326,193 @@ export class Simulation {
           x: this.player.body.velocity.x,
           y: -T.stompBounce,
         });
+        if (n.kind === "koopa") this.koopaStomp(n, this.player);
       }
     }
+  }
+
+  private overlapActors(a: Actor, b: Actor) {
+    const halfW = (actor: Actor) => 12 * actor.scale;
+    const halfH = (actor: Actor) =>
+      (actor.kind === "mario" ? 19 : 14) * actor.scale;
+    return (
+      Math.abs(a.body.position.x - b.body.position.x) <
+        halfW(a) + halfW(b) &&
+      Math.abs(a.body.position.y - b.body.position.y) < halfH(a) + halfH(b)
+    );
+  }
+
+  private shellFallSpeed(n: Actor) {
+    return this.roomFor(n).data.type === "water" ? 0 : n.body.velocity.y;
+  }
+
+  private enterShell(n: Actor, stomper?: Actor) {
+    n.shell = "stopped";
+    n.wakeLeft = T.shellWake;
+    n.kickIgnore = stomper?.id ?? 0;
+    n.navVx = undefined;
+    n.navHoldX = undefined;
+    n.idleDrop = undefined;
+    n.jumpHeld = false;
+    n.navBackoff = undefined;
+    n.navDrop = undefined;
+    n.swimPath = undefined;
+    Body.setVelocity(n.body, { x: 0, y: this.shellFallSpeed(n) });
+  }
+
+  private stopShell(n: Actor, stomper?: Actor) {
+    n.shell = "stopped";
+    n.wakeLeft = T.shellWake;
+    n.kickIgnore = stomper?.id ?? 0;
+    n.swimPath = undefined;
+    Body.setVelocity(n.body, { x: 0, y: this.shellFallSpeed(n) });
+  }
+
+  private kickShell(n: Actor, kicker: Actor) {
+    const dir =
+      Math.sign(n.body.position.x - kicker.body.position.x) ||
+      kicker.facing ||
+      1;
+    n.shell = "moving";
+    n.facing = dir;
+    n.wakeLeft = 0;
+    n.kickIgnore = kicker.id;
+    n.swimPath = undefined;
+    Body.setVelocity(n.body, {
+      x: dir * T.shellSpeed,
+      y: this.shellFallSpeed(n),
+    });
+    this.events.push("kick");
+  }
+
+  private wakeShell(n: Actor) {
+    n.shell = "none";
+    n.wakeLeft = 0;
+    n.kickIgnore = 0;
+    if (n.warned) {
+      n.state = "run";
+      n.wait = -0.01;
+    } else {
+      n.state = "idle";
+      n.idleWalking = true;
+      n.idleWait = 0.4;
+      n.homeX = n.body.position.x;
+    }
+  }
+
+  private koopaStomp(n: Actor, stomper: Actor) {
+    this.shellStomps.add(n);
+    if (n.shell === "moving") this.stopShell(n, stomper);
+    else if (n.shell === "stopped") this.kickShell(n, stomper);
+    else this.enterShell(n, stomper);
+  }
+
+  private shellBlocked(n: Actor, direction: number) {
+    const ahead = n.body.position.x + direction * (n.body.width / 2 + 3);
+    return this.solids.some(
+      (s) =>
+        !s.headOnly &&
+        ahead > s.bounds.min.x &&
+        ahead < s.bounds.max.x &&
+        n.body.bounds.max.y > s.bounds.min.y + 4 &&
+        n.body.bounds.min.y < s.bounds.max.y,
+    );
+  }
+
+  private updateShelledKoopa(n: Actor, dt: number) {
+    const water = this.roomFor(n).data.type === "water";
+    if (n.shell === "stopped") {
+      n.wakeLeft = Math.max(0, n.wakeLeft - dt);
+      this.move(n, 0);
+      if (water) Body.setVelocity(n.body, { x: 0, y: 0 });
+      if (n.wakeLeft === 0) this.wakeShell(n);
+      return;
+    }
+    if (this.shellBlocked(n, n.facing)) n.facing *= -1;
+    this.move(n, n.facing * T.shellSpeed);
+    if (water)
+      Body.setVelocity(n.body, { x: n.facing * T.shellSpeed, y: 0 });
+  }
+
+  private shellHits(victim: Actor) {
+    if (!victim.alive || victim.saved || this.inPipe(victim)) return;
+    if (victim === this.mario) {
+      if (this.marioStun > 0) return;
+      this.hitMarioByFireball();
+      return;
+    }
+    this.hurt(victim);
+  }
+
+  private collideShells(
+    marioBottom: number,
+    marioFalling: boolean,
+    prevNpcTops: Map<Actor, number>,
+  ) {
+    for (const n of this.npcs) {
+      if (
+        n.kind !== "koopa" ||
+        n.shell === "none" ||
+        !n.alive ||
+        n.saved ||
+        this.inPipe(n)
+      )
+        continue;
+      const ignore = [this.player, this.mario, ...this.npcs].find(
+        (a) => a.id === n.kickIgnore,
+      );
+      if (n.kickIgnore && (!ignore || !this.overlapActors(n, ignore)))
+        n.kickIgnore = 0;
+      const side = (a: Actor) =>
+        a.alive &&
+        !a.saved &&
+        a !== n &&
+        !this.inPipe(a) &&
+        this.overlapActors(n, a) &&
+        !this.shellStomps.has(n) &&
+        n.kickIgnore !== a.id;
+      if (side(this.player)) {
+        if (n.shell === "stopped") this.kickShell(n, this.player);
+        else this.shellHits(this.player);
+      }
+      if (
+        this.marioActive &&
+        this.mario.alive &&
+        !this.inPipe(this.mario) &&
+        this.overlapActors(this.mario, n) &&
+        !this.shellStomps.has(n) &&
+        n.kickIgnore !== this.mario.id
+      ) {
+        const prevTop = prevNpcTops.get(n);
+        const fallingOn =
+          marioFalling &&
+          prevTop !== undefined &&
+          marioBottom <= prevTop &&
+          this.mario.body.bounds.max.y >= this.npcTop(n);
+        if (fallingOn) {
+          this.koopaStomp(n, this.mario);
+          Body.setVelocity(this.mario.body, {
+            x: this.mario.body.velocity.x,
+            y: -T.stompBounce,
+          });
+        } else if (n.shell === "stopped") this.kickShell(n, this.mario);
+        else this.shellHits(this.mario);
+      }
+      if (n.shell === "moving") {
+        for (const other of this.npcs) {
+          if (
+            other === n ||
+            !other.alive ||
+            other.saved ||
+            this.inPipe(other) ||
+            !this.overlapActors(n, other)
+          )
+            continue;
+          this.shellHits(other);
+        }
+      }
+    }
+    this.shellStomps.clear();
   }
 
   private burst(x: number, y: number, blood: boolean) {
@@ -1539,6 +1734,8 @@ export class Simulation {
       }));
     const playerBottom = this.player.body.position.y + 14 * this.player.scale;
     const playerFalling = this.player.body.velocity.y > 0.2;
+    const marioBottom = this.mario.body.position.y + 19 * this.mario.scale;
+    const marioFalling = this.mario.body.velocity.y > 0.2;
     const prevNpcTops = new Map<Actor, number>();
     for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
     this.physics.step(dt);
@@ -1569,6 +1766,7 @@ export class Simulation {
         if (collector) this.collectCoin(coin, collector);
       }
     this.bouncePlayerOffNpcs(playerBottom, playerFalling, prevNpcTops);
+    this.collideShells(marioBottom, marioFalling, prevNpcTops);
     this.pruneBouncedNpcs();
     this.autoWarn();
     for (const { actor, top } of hitters)
@@ -1696,6 +1894,18 @@ export class Simulation {
   private updateNpcs(dt: number) {
     for (const n of this.npcs) {
       if (!n.alive || n.saved || this.inPipe(n)) continue;
+      if (n.kind === "koopa" && n.shell !== "none") {
+        const room = this.roomFor(n);
+        if (
+          room.data.goal &&
+          room.data.goal.kind !== "pipe" &&
+          n.body.position.x >= room.goalX &&
+          room.atDoor(n)
+        )
+          this.save(n);
+        else this.updateShelledKoopa(n, dt);
+        continue;
+      }
       if (n.grounded) n.navVx = undefined;
       if (
         n.navDetourBelow &&
@@ -1908,6 +2118,7 @@ export class Simulation {
       (n) =>
         n.alive &&
         !n.saved &&
+        n.shell === "none" &&
         n.warned &&
         n.state === "run" &&
         Math.abs(n.body.velocity.x) > 1 &&
@@ -2160,6 +2371,11 @@ export class Simulation {
     for (const a of candidates) {
       const p = a.body.position;
       if (
+        a.kind === "koopa" &&
+        a.shell !== "none"
+      )
+        continue;
+      if (
         this.mario.body.velocity.y > 0.2 &&
         m.y < p.y - 8 &&
         Math.abs(p.x - m.x) <
@@ -2167,7 +2383,13 @@ export class Simulation {
         Math.abs(p.y - m.y) <
           Math.max(34, 14 * a.scale + 19 * this.mario.scale)
       ) {
-        if (!this.hurt(a)) continue;
+        if (a.kind === "koopa") {
+          this.koopaStomp(a, this.mario);
+          Body.setVelocity(this.mario.body, {
+            x: this.mario.body.velocity.x,
+            y: -T.stompBounce,
+          });
+        } else if (!this.hurt(a)) continue;
         this.marioTarget = null;
         this.marioChase = 0;
         this.marioLook = 0;

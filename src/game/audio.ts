@@ -11,6 +11,7 @@ import death from "../assets/audio/mariodie.wav?inline";
 import pipe from "../assets/audio/pipe.wav?inline";
 import clear from "../assets/audio/stage_clear.wav?inline";
 import stomp from "../assets/audio/stomp.wav?inline";
+import kick from "../assets/audio/kick.wav?inline";
 import bump from "../assets/audio/bump.wav?inline";
 import fireball from "../assets/audio/fireball.wav?inline";
 import brick from "../assets/audio/breakblock.wav?inline";
@@ -32,6 +33,7 @@ export const RECORDINGS = {
   pipe,
   clear,
   stomp,
+  kick,
   bump,
   fireball,
   brick,
@@ -75,6 +77,7 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   shrink: "pipe",
   win: "clear",
   splat: "stomp",
+  kick: "kick",
   oneUp: "oneUp",
   gameover: "gameover",
   appear: "appear",

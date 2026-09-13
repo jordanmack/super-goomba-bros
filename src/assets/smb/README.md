@@ -40,8 +40,9 @@ The unchanged source sheets come from Mario Universe:
 Frame crops are in [smb-sprites.ts](../../game/smb-sprites.ts). Walking and running
 use original movement frames, with animation speed tied to movement speed.
 Mario also has idle, skid, jump, and death poses. Goombas and Koopas use their
-two-frame cycles. Fire Goombas and Koopas use a white power-up palette while
-retaining their original faces and outlines.
+two-frame cycles. Koopa shells use the original closed and legs-out frames, at
+the Koopa's current mushroom scale. Fire Goombas and Koopas use a white power-up
+palette while retaining their original faces and outlines.
 
 Items, coins, platforms, fireballs, and flagpole flags also use original sprite
 frames. The Goomba flag recolors the original Mario flag.

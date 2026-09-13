@@ -778,6 +778,10 @@ function parkNpcs(s: Simulation, keep: Actor[], x = 4000) {
   }
 }
 
+function troopa(s: Simulation) {
+  return s.npcs.find((n) => n.kind === "koopa")!;
+}
+
 test("a falling player bounces on an NPC without killing or warning it", () => {
   const s = game();
   const n = s.npcs[0];
@@ -2322,7 +2326,11 @@ test("Mario hunts an NPC, lands a stomp, then acquires another victim", () => {
       })),
     }),
   );
-  assert.ok(!s.npcs[1].alive || s.marioTarget === s.npcs[1].id);
+  assert.ok(
+    !s.npcs[1].alive ||
+      s.npcs[1].shell !== "none" ||
+      s.marioTarget === s.npcs[1].id,
+  );
   assert.ok(s.particles.some((p) => p.color === "#bc0018"));
 });
 
@@ -2553,4 +2561,437 @@ test("first damaging stomp shrinks 8x form and cancels the timer", () => {
   assert.equal(s.player.hugeLeft, 0);
   assert.equal(s.player.body.ignoreWalls, false);
   assert.ok(s.events.includes("shrink"));
+});
+
+test("stomping a walking Koopa shells it, bounces the stomper, and is not a death", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.warned = true;
+  n.state = "run";
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 200, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(n.alive);
+  assert.equal(n.saved, false);
+  assert.equal(n.shell, "stopped");
+  assert.equal(n.warned, true);
+  assert.equal(s.living(), T.population);
+  assert.equal(s.events.includes("splat"), false);
+  assert.equal(s.particles.length, 0);
+});
+
+test("a falling player bounce still leaves a Goomba unshellable", () => {
+  const s = game();
+  const n = s.npcs[0];
+  assert.equal(n.kind, "goomba");
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 200, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(n.alive);
+  assert.equal(n.shell, "none");
+  assert.equal(s.events.includes("splat"), false);
+});
+
+test("side contact with a walking Koopa does not hurt or shell it", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  at(s, 180, 415);
+  tick(s, dt);
+  assert.ok(s.player.alive);
+  assert.equal(n.shell, "none");
+  assert.ok(n.alive);
+  assert.equal(s.events.includes("splat"), false);
+  assert.equal(s.events.includes("kick"), false);
+});
+
+test("a stopped shell is kicked by a side bump at original shell speed", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.idleWalking = false;
+  n.wait = 99;
+  at(s, 200, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(n.shell, "stopped");
+  at(s, 100, 415);
+  tick(s, dt);
+  at(s, 180, 415);
+  tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.equal(n.facing, 1);
+  assert.equal(n.body.velocity.x, T.shellSpeed);
+  assert.equal(T.shellSpeed, 6);
+  assert.ok(s.events.includes("kick"));
+  assert.ok(n.alive);
+});
+
+test("stomping a stopped shell kicks it the kicker's way", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  at(s, 200, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(n.shell, "stopped");
+  at(s, 80, 415);
+  tick(s, dt);
+  at(s, 188, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  const kicks = s.events.filter((e) => e === "kick").length;
+  tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.equal(n.facing, 1);
+  assert.equal(n.body.velocity.x, T.shellSpeed);
+  assert.equal(s.events.filter((e) => e === "kick").length, kicks + 1);
+  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.alive);
+});
+
+test("stomping a moving shell stops it; side contact kills after kick grace", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  at(s, 192, 415);
+  tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.ok(s.player.alive);
+  tick(s, 2 * dt);
+  assert.ok(
+    Math.abs(n.body.position.x - s.player.body.position.x) < 24,
+    "still overlapping, so survival is from kick grace",
+  );
+  assert.ok(s.player.alive);
+  tick(s, 0.3);
+  assert.ok(s.player.alive);
+  at(s, n.body.position.x, n.body.position.y - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(n.shell, "stopped");
+  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.alive);
+  at(s, 80, 415);
+  tick(s, dt);
+  n.shell = "moving";
+  n.facing = 1;
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
+  at(s, n.body.position.x + 8, 415);
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.player.alive, false);
+  assert.ok(s.events.includes("splat"));
+});
+
+test("a stopped shell wakes on the original timer and keeps warned or idle", () => {
+  assert.equal(T.shellWake, 5.6);
+  assert.equal(T.shellShake, 1.4);
+  for (const warned of [false, true]) {
+    const s = game();
+    const n = troopa(s);
+    parkNpcs(s, [n]);
+    n.warned = warned;
+    n.state = warned ? "run" : "idle";
+    Body.setPosition(n.body, { x: 200, y: 415 });
+    n.idleWalking = false;
+    n.wait = 99;
+    at(s, 200, 415 - 30);
+    Body.setVelocity(s.player.body, { x: 0, y: 4 });
+    tick(s, dt);
+    assert.equal(n.shell, "stopped");
+    at(s, 80, 415);
+    tick(s, T.shellWake - 0.05);
+    assert.equal(n.shell, "stopped");
+    assert.ok(n.wakeLeft <= T.shellShake);
+    tick(s, 0.1);
+    assert.equal(n.shell, "none");
+    assert.equal(n.warned, warned);
+    assert.equal(n.state, warned ? "run" : "idle");
+    assert.ok(n.alive);
+  }
+});
+
+test("fireballs, pits, and other moving shells still kill; a shelled Koopa can be saved", () => {
+  const s = game();
+  const shells = s.npcs.filter((n) => n.kind === "koopa");
+  const n = shells[0]!;
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  s.fireballs.push({
+    id: 99,
+    x: 200,
+    y: 415,
+    vx: 0,
+    age: 0,
+    owner: "mario",
+    vy: 0,
+  });
+  tick(s, dt);
+  assert.equal(n.alive, false);
+  assert.ok(s.events.includes("splat"));
+
+  const s2 = game();
+  const pit = troopa(s2);
+  parkNpcs(s2, [pit]);
+  pit.shell = "stopped";
+  pit.wakeLeft = T.shellWake;
+  Body.setPosition(pit.body, { x: 200, y: 700 });
+  tick(s2, dt);
+  assert.equal(pit.alive, false);
+  assert.equal(s2.events.includes("splat"), false);
+
+  const s3 = game();
+  const a = s3.npcs.filter((npc) => npc.kind === "koopa")[0]!;
+  const b = s3.npcs.filter((npc) => npc.kind === "koopa")[1]!;
+  parkNpcs(s3, [a, b]);
+  Body.setPosition(a.body, { x: 200, y: 415 });
+  Body.setPosition(b.body, { x: 214, y: 415 });
+  a.shell = "moving";
+  a.facing = 1;
+  a.kickIgnore = 0;
+  Body.setVelocity(a.body, { x: T.shellSpeed, y: 0 });
+  b.shell = "stopped";
+  b.wakeLeft = T.shellWake;
+  tick(s3, dt);
+  assert.ok(a.alive);
+  assert.equal(b.alive, false);
+  assert.ok(s3.events.includes("splat"));
+
+  const sStar = game();
+  const starred = troopa(sStar);
+  const hurter = sStar.npcs.filter((npc) => npc.kind === "koopa")[1]!;
+  parkNpcs(sStar, [starred, hurter]);
+  starred.starLeft = T.starSeconds;
+  Body.setPosition(starred.body, { x: 214, y: 415 });
+  Body.setPosition(hurter.body, { x: 200, y: 415 });
+  hurter.shell = "moving";
+  hurter.facing = 1;
+  hurter.kickIgnore = 0;
+  Body.setVelocity(hurter.body, { x: T.shellSpeed, y: 0 });
+  tick(sStar, dt);
+  assert.ok(starred.alive);
+  assert.equal(starred.starLeft > 0, true);
+
+  const s4 = game();
+  const saved = troopa(s4);
+  parkNpcs(s4, [saved], 80);
+  saved.shell = "stopped";
+  saved.wakeLeft = T.shellWake;
+  Body.setPosition(saved.body, { x: GOAL_X + 2, y: 415 });
+  tick(s4, dt);
+  assert.ok(saved.alive);
+  assert.equal(saved.saved, true);
+  assert.equal(s4.saved, 1);
+  assert.ok(s4.events.includes("saved"));
+});
+
+test("Mario hunt overlap with a moving shell does not stomp from the side", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "moving";
+  n.facing = 1;
+  n.kickIgnore = 0;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  s.marioActive = true;
+  s.setMarioStage(2);
+  s.marioLook = 10;
+  s.marioPause = 10;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 210, y: 400 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.equal(s.marioStage, 1);
+  assert.ok(s.events.includes("shrink"));
+});
+
+test("Mario side-falling into a moving shell takes damage instead of stomping", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "moving";
+  n.facing = 1;
+  n.kickIgnore = 0;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  s.marioActive = true;
+  s.setMarioStage(2);
+  s.marioLook = 10;
+  s.marioPause = 10;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 220, y: 410 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 2 });
+  tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.equal(s.marioStage, 1);
+  assert.ok(s.events.includes("shrink"));
+});
+
+test("Mario falling onto a moving shell stops it instead of taking damage", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "moving";
+  n.facing = 1;
+  n.kickIgnore = 0;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
+  s.marioActive = true;
+  s.setMarioStage(2);
+  s.marioLook = 10;
+  s.marioPause = 10;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 200, y: 375 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 10 });
+  tick(s, dt);
+  assert.equal(n.shell, "stopped");
+  assert.ok(s.mario.alive);
+  assert.equal(s.marioStage, 2);
+  assert.ok(s.mario.body.velocity.y < 0);
+  assert.equal(s.events.includes("shrink"), false);
+});
+
+test("Mario stomps shell a Koopa; a moving shell uses his damage stages", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  n.idleWalking = false;
+  n.wait = 99;
+  s.marioActive = true;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 200, y: 392 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.ok(n.alive);
+  assert.equal(n.shell, "stopped");
+  assert.equal(s.events.includes("splat"), false);
+  assert.ok(s.mario.body.velocity.y < 0);
+
+  n.shell = "moving";
+  n.facing = 1;
+  n.kickIgnore = 0;
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
+  s.setMarioStage(2);
+  s.marioLook = 10;
+  s.marioPause = 10;
+  Body.setPosition(s.mario.body, { x: 214, y: 411 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.marioStage, 1);
+  assert.ok(s.events.includes("shrink"));
+  assert.ok(s.mario.alive);
+  tick(s, 0.2);
+  assert.equal(s.marioStage, 1);
+  assert.ok(s.mario.alive);
+  assert.ok(s.marioActive);
+});
+
+test("moving green shells reverse on walls and fall off ledges", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
+  Body.setPosition(n.body, { x: pipe.x - 48, y: 415 });
+  n.shell = "moving";
+  n.facing = 1;
+  n.kickIgnore = 0;
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
+  let reversed = false;
+  for (let i = 0; i < 90; i++) {
+    tick(s, dt);
+    if (n.facing < 0) {
+      reversed = true;
+      break;
+    }
+  }
+  assert.ok(reversed);
+  assert.ok(n.alive);
+  assert.equal(n.shell, "moving");
+
+  const [gapLeft] = GAPS[0];
+  Body.setPosition(n.body, { x: gapLeft - 10, y: 415 });
+  n.facing = 1;
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
+  let fell = false;
+  for (let i = 0; i < 90; i++) {
+    tick(s, dt);
+    if (n.body.position.y > 430) {
+      fell = true;
+      break;
+    }
+  }
+  assert.ok(fell);
+});
+
+test("a moving shell kills another moving shell and keeps going", () => {
+  const s = game();
+  const [a, b] = s.npcs.filter((n) => n.kind === "koopa");
+  parkNpcs(s, [a, b]);
+  Body.setPosition(a.body, { x: 200, y: 415 });
+  Body.setPosition(b.body, { x: 214, y: 415 });
+  a.shell = "moving";
+  b.shell = "moving";
+  a.facing = 1;
+  b.facing = -1;
+  a.kickIgnore = 0;
+  b.kickIgnore = 0;
+  Body.setVelocity(a.body, { x: T.shellSpeed, y: 0 });
+  Body.setVelocity(b.body, { x: -T.shellSpeed, y: 0 });
+  tick(s, dt);
+  const dead = [a, b].filter((n) => !n.alive);
+  const live = [a, b].filter((n) => n.alive);
+  assert.equal(dead.length, 1);
+  assert.equal(live.length, 1);
+  assert.equal(live[0]!.shell, "moving");
+  assert.ok(s.events.includes("splat"));
+});
+
+test("a stopped water shell does not keep leftover swim speed", () => {
+  const s = game();
+  s.levelIndex = 5;
+  s.reset();
+  s.marioReturn = 1e6;
+  const n = troopa(s);
+  assert.equal(s.roomFor(n).data.type, "water");
+  parkNpcs(s, [n]);
+  const y = n.body.position.y;
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  Body.setVelocity(n.body, { x: 0, y: 3 });
+  tick(s, 0.2);
+  assert.equal(n.shell, "stopped");
+  assert.equal(n.body.velocity.y, 0);
+  assert.ok(Math.abs(n.body.position.y - y) < 2);
 });

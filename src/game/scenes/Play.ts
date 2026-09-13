@@ -294,6 +294,7 @@ export class Play extends Phaser.Scene {
     const mario = actor === sim.mario;
     const shown = sim.displayScale(actor);
     const smallMario = mario && shown < 1;
+    const shelled = actor.kind === "koopa" && actor.shell !== "none";
     const base = mario
       ? smallMario
         ? "smallMario"
@@ -311,7 +312,18 @@ export class Play extends Phaser.Scene {
       sim.marioChase > 0 &&
       sim.marioReaction === 0 &&
       (sim.marioAim - actor.body.position.x) * actor.body.velocity.x < -20;
-    if (moving && !skid) {
+    const shake =
+      shelled &&
+      actor.shell === "stopped" &&
+      actor.wakeLeft <= T.shellShake;
+    if (shelled) {
+      sprite
+        .stop()
+        .setTexture(
+          base +
+            (shake && Math.floor(sim.elapsed * 8) % 2 ? "ShellWake" : "Shell"),
+        );
+    } else if (moving && !skid) {
       sprite.play(`${base}-walk`, true);
       sprite.anims.timeScale = (Math.abs(actor.body.velocity.x) * 60) / 90;
     } else
@@ -321,9 +333,10 @@ export class Play extends Phaser.Scene {
           base + (mario && !actor.grounded ? "Jump" : skid ? "Skid" : ""),
         );
     const height =
-      (actor.kind === "koopa" ? 48 : mario ? 64 : 32) * shown;
+      (shelled ? 32 : actor.kind === "koopa" ? 48 : mario ? 64 : 32) * shown;
     sprite.setPosition(
-      Math.round(actor.body.position.x),
+      Math.round(actor.body.position.x) +
+        (shake && Math.floor(sim.elapsed * 16) % 2 ? shown : 0),
       Math.round(actor.body.bounds.max.y),
     );
     sprite

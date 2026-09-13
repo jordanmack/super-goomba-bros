@@ -30,12 +30,13 @@ recording's fade. Loop periods were checked against waveform energy and pitch
 changes. The loop markers in `../../game/audio.ts` are the source of timing data.
 
 Rescue and coin collection use the coin sound; bloody impacts use the stomp
-sound. Block bumps, breaks, pipe travel, shrinking, and power-up pickups use
-the corresponding original effects. Pause and resume play the original pause
-cue while music is held. A question-block item uses the original appear effect
-with the bump. A 1-up uses `smb_1-up.wav`. Game over uses `smb_gameover.wav`.
-Warnings use a custom short square-wave voice. There is no approach heartbeat
-or distance-based music change. The world intro is silent.
+sound; kicked shells use the original kick sound. Block bumps, breaks, pipe
+travel, shrinking, and power-up pickups use the corresponding original effects.
+Pause and resume play the original pause cue while music is held. A
+question-block item uses the original appear effect with the bump. A 1-up uses
+`smb_1-up.wav`. Game over uses `smb_gameover.wav`. Warnings use a custom short
+square-wave voice. There is no approach heartbeat or distance-based music
+change. The world intro is silent.
 Mario's defeat uses the original death recording. It interrupts the overworld
 music, which resumes after the cue finishes while the level continues.
 

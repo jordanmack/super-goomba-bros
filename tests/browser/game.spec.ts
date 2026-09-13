@@ -14,7 +14,7 @@ test("Starman music follows only player and Mario stars and respects death cues"
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 19,
+    () => (window as any).__game.audio.buffers.size === 20,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -96,7 +96,7 @@ test("area music resumes after Mario death from the saved seek", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 19,
+    () => (window as any).__game.audio.buffers.size === 20,
   );
   await page.evaluate(() => {
     const g = (window as any).__game;
@@ -284,7 +284,7 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
   await skipIntro(page);
   await expect(page.getByRole("button", { name: "B", exact: true })).toBeVisible();
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 19,
+    () => (window as any).__game.audio.buffers.size === 20,
   );
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -834,7 +834,7 @@ test("death restart, impossible quota, finish window, and final score screens", 
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 19,
+    () => (window as any).__game.audio.buffers.size === 20,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -1116,7 +1116,7 @@ test("original recordings decode and play as effects, with level clear replacing
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 19,
+    () => (window as any).__game.audio.buffers.size === 20,
   );
   const playback = await page.evaluate(() => {
     const a = (window as any).__game.audio;
@@ -1129,6 +1129,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "power",
       "splat",
       "appear",
+      "kick",
     ];
     const names = [
       "jump",
@@ -1139,6 +1140,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "powerup",
       "stomp",
       "appear",
+      "kick",
     ];
     const valid = effects.every((event, i) => {
       a.event(event);
@@ -1235,6 +1237,8 @@ test("pixel sprite poses render at native proportions", async ({ page }) => {
       "goombaWalk",
       "koopa",
       "koopaWalk",
+      "koopaShell",
+      "koopaShellWake",
       "mario",
       "marioWalk",
       "marioJump",
@@ -1263,7 +1267,7 @@ test("pixel sprite poses render at native proportions", async ({ page }) => {
     document.body.append(canvas);
     return names.length;
   });
-  expect(count).toBe(8);
+  expect(count).toBe(10);
   await page
     .locator("#debug-sprite-sheet")
     .screenshot({ path: "test-results/sprite-poses.png" });

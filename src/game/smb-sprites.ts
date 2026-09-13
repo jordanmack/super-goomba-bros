@@ -29,6 +29,8 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
   const koopa = crop(enemies, 150, 0, 16, 24, true);
   const koopaWalk = crop(enemies, 180, 0, 16, 24, true);
+  const koopaShell = crop(enemies, 360, 4, 16, 16);
+  const koopaShellWake = crop(enemies, 330, 4, 16, 16);
   const smallMario = crop(mario, 180, 0, 16, 16);
   const smallMarioWalk = crop(mario, 209, 0, 16, 16);
   const smallMarioWalk2 = crop(mario, 239, 0, 16, 16);
@@ -46,10 +48,14 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     goombaWalk,
     koopa,
     koopaWalk,
+    koopaShell,
+    koopaShellWake,
     fireGoomba: firePalette(goomba),
     fireGoombaWalk: firePalette(goombaWalk),
     fireKoopa: firePalette(koopa),
     fireKoopaWalk: firePalette(koopaWalk),
+    fireKoopaShell: firePalette(koopaShell),
+    fireKoopaShellWake: firePalette(koopaShellWake),
     smallMario,
     smallMarioWalk,
     smallMarioWalk2,
