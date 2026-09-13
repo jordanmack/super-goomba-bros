@@ -9,6 +9,10 @@ export class Play extends Phaser.Scene {
   actors = new Map<number, Phaser.GameObjects.Sprite>();
   obstacles = new Map<number, Phaser.GameObjects.Image>();
   effects: Phaser.GameObjects.Image[] = [];
+  private pipeMasks = new Map<
+    number,
+    { shape: Phaser.GameObjects.Rectangle; mask: Phaser.Filters.Mask }
+  >();
   tiles!: Phaser.Tilemaps.TilemapLayer;
   tick?: (time: number, delta: number) => void;
   draw?: () => void;
@@ -26,6 +30,11 @@ export class Play extends Phaser.Scene {
       this.actors.clear();
       this.obstacles.clear();
       this.effects = [];
+      for (const entry of this.pipeMasks.values()) {
+        entry.mask.destroy();
+        entry.shape.destroy();
+      }
+      this.pipeMasks.clear();
       this.room = undefined;
     });
   }
@@ -249,6 +258,35 @@ export class Play extends Phaser.Scene {
     sprite.setVisible(
       actor.alive && !actor.saved && !(actor === sim.mario && !sim.marioActive),
     );
+    sprite.setDepth(8);
+    const clip = actor.pipeTravel?.clip;
+    if (clip) {
+      sprite.enableFilters();
+      let entry = this.pipeMasks.get(actor.id);
+      if (!entry) {
+        const shape = this.add
+          .rectangle(0, 0, 1, 1, 0xffffff)
+          .setVisible(false);
+        entry = {
+          shape,
+          mask: sprite.filters!.external.addMask(
+            shape,
+            false,
+            this.cameras.main,
+          ),
+        };
+        this.pipeMasks.set(actor.id, entry);
+      }
+      entry.shape.setPosition(clip.x + clip.w / 2, clip.y + clip.h / 2);
+      entry.shape.setSize(clip.w, clip.h);
+    } else {
+      const entry = this.pipeMasks.get(actor.id);
+      if (entry) {
+        sprite.filters?.external.remove(entry.mask);
+        entry.shape.destroy();
+        this.pipeMasks.delete(actor.id);
+      }
+    }
     if (!sprite.visible) {
       sprite.stop();
       return;

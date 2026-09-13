@@ -18,6 +18,7 @@ export const TUNING = {
   platformTravel: 96,
   areaSpacing: 20000,
   pipeCooldown: 0.8,
+  pipeSpeed: 2,
   springImpulse: 17,
   swimImpulse: 4.5,
   swimGravity: 0.25,

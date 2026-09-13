@@ -173,6 +173,40 @@ export class Room {
     throw new Error(`No safe entrance in area ${this.data.id} at ${desiredX}`);
   }
 
+  dropOnto(actor: Actor, x: number) {
+    const half = actor.body.width / 2,
+      height = actor.body.height;
+    x = Math.max(
+      this.offset + half + 1,
+      Math.min(this.goalX - 48, x),
+    );
+    const supports = this.solids
+      .filter(
+        (s) =>
+          !s.headOnly &&
+          x + half > s.bounds.min.x &&
+          x - half < s.bounds.max.x &&
+          s.bounds.min.y >= MAP_TOP + 80,
+      )
+      .sort((a, b) => b.bounds.min.y - a.bounds.min.y);
+    for (const support of supports) {
+      Body.setPosition(actor.body, {
+        x,
+        y: support.bounds.min.y - height / 2,
+      });
+      if (!overlaps(actor.body, this.solids, 0.01).length) {
+        Body.setVelocity(actor.body, { x: 0, y: 0 });
+        actor.homeX = x;
+        actor.grounded = true;
+        return;
+      }
+    }
+    Body.setPosition(actor.body, { x, y: T.groundY - height / 2 });
+    Body.setVelocity(actor.body, { x: 0, y: 0 });
+    actor.homeX = x;
+    actor.grounded = true;
+  }
+
   updatePlatforms(elapsed: number, actors: Actor[]) {
     for (const platform of this.platforms) {
       const { body, origin, kind, phase } = platform;

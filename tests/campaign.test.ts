@@ -117,14 +117,22 @@ test("bonus pipe travel preserves rescues, powers, and NPC progress without fini
     x: (entry.column + entry.width / 2) * 32,
     y: MAP_TOP + entry.row * 32 - 14,
   });
+  const before = runner.body.position.x;
   sim.step(1 / 60, { ...emptyInput(), down: true });
+  assert.equal(sim.activeRoom.data.id, "25");
+  assert.ok(sim.player.pipeTravel);
+  let frames = 1;
+  while (sim.activeRoom.data.id === "25" && frames++ < 180)
+    sim.step(1 / 60, { ...emptyInput(), down: true });
   assert.equal(sim.activeRoom.data.id, "42");
+  while (sim.player.pipeTravel && frames++ < 360)
+    sim.step(1 / 60, emptyInput());
+  assert.equal(sim.player.pipeTravel, undefined);
   assert.ok(sim.player.body.position.x >= sim.activeRoom.offset);
   assert.equal(sim.mode, "playing");
   assert.equal(sim.saved, T.required);
   assert.equal(sim.warned, 13);
   assert.ok(sim.player.flower);
-  const before = runner.body.position.x;
   for (let i = 0; i < 90; i++) sim.step(1 / 60, emptyInput());
   assert.ok(
     runner.body.position.x > before + 40,
@@ -136,7 +144,13 @@ test("bonus pipe travel preserves rescues, powers, and NPC progress without fini
     y: MAP_TOP + exit.row * 32 + 32,
   });
   sim.step(1 / 60, { ...emptyInput(), right: true });
+  assert.equal(sim.activeRoom.data.id, "42");
+  frames = 1;
+  while (sim.activeRoom.data.id === "42" && frames++ < 180)
+    sim.step(1 / 60, { ...emptyInput(), right: true });
   assert.equal(sim.activeRoom.data.id, "25");
+  while (sim.player.pipeTravel && frames++ < 360)
+    sim.step(1 / 60, emptyInput());
   assert.equal(sim.mode, "playing");
   assert.equal(sim.saved, T.required);
   assert.ok(sim.player.flower);

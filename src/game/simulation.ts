@@ -71,6 +71,14 @@ export type Actor = {
   lastX: number;
   areaId?: string;
   pipeWait?: number;
+  pipeTravel?: {
+    phase: "enter" | "exit";
+    dir: "down" | "up" | "right" | "left";
+    remaining: number;
+    destArea: string;
+    destPage: number;
+    clip?: { x: number; y: number; w: number; h: number };
+  };
   navVx?: number;
   navDelay?: number;
   navHoldX?: number;
@@ -178,8 +186,45 @@ export class Simulation {
       this.reset("intro");
     }
   }
+  private inPipe(actor: Actor) {
+    return !!actor.pipeTravel;
+  }
+  private pipeVisual(actor: Actor) {
+    const mario = actor === this.mario;
+    return {
+      w: mario && this.marioStage === 0 ? 32 : 32 * actor.scale,
+      h: (actor.kind === "koopa" ? 48 : mario ? 64 : 32) * actor.scale,
+    };
+  }
+  private pipeOnPage(room: Room, page: number) {
+    const start = page * 16,
+      end = start + 16,
+      spawn = room.offset + page * 512 + 100;
+    const onPage = room.data.pipes.filter(
+      (p) => p.column >= start && p.column < end,
+    );
+    if (!onPage.length) return;
+    return onPage.reduce((best, pipe) => {
+      const x = room.offset + (pipe.column + pipe.width / 2) * 32,
+        bestX = room.offset + (best.column + best.width / 2) * 32;
+      return Math.abs(x - spawn) < Math.abs(bestX - spawn) ? pipe : best;
+    });
+  }
+  private pipeClip(
+    room: Room,
+    pipe: { column: number; row: number; width: number; height: number },
+    dir: "down" | "up" | "right" | "left",
+  ) {
+    const x = room.offset + pipe.column * 32,
+      y = MAP_TOP + pipe.row * 32,
+      w = pipe.width * 32,
+      h = pipe.height * 32;
+    if (dir === "down" || dir === "up")
+      return { x, y: MAP_TOP, w, h: Math.max(1, y - MAP_TOP) };
+    return { x: room.offset, y, w: Math.max(1, x - room.offset), h };
+  }
   private tryPipe(actor: Actor, down: boolean, right: boolean) {
-    if ((actor.pipeWait ?? 0) > 0) return false;
+    if ((actor.pipeWait ?? 0) > 0 || this.inPipe(actor)) return false;
     const room = this.roomFor(actor),
       p = actor.body.position;
     const pipe = room.data.pipes.find((pipe) => {
@@ -205,21 +250,132 @@ export class Simulation {
       pipe.destinations.find((d) => d.world === this.level.world) ??
       (room.data.id === "29" ? { area: this.level.main, page: 0 } : undefined);
     if (!destination) return false;
-    const target = this.loadRoom(destination.area);
-    actor.areaId = target.data.id;
-    actor.pipeWait = T.pipeCooldown;
+    const dir = pipe.direction === "down" ? "down" : "right";
+    const vis = this.pipeVisual(actor);
+    const left = room.offset + pipe.column * 32;
+    if (dir === "down")
+      Body.setPosition(actor.body, {
+        x: left + pipe.width * 16,
+        y: MAP_TOP + pipe.row * 32 - actor.body.height / 2,
+      });
+    Body.setVelocity(actor.body, { x: 0, y: 0 });
+    Body.setFrozen(actor.body, true);
+    actor.pipeTravel = {
+      phase: "enter",
+      dir,
+      remaining:
+        dir === "down"
+          ? vis.h
+          : Math.max(vis.w, left + vis.w / 2 - actor.body.position.x),
+      destArea: destination.area,
+      destPage: destination.page,
+      clip: this.pipeClip(room, pipe, dir),
+    };
     actor.idleDrop = undefined;
-    actor.facing = 1;
+    actor.facing = dir === "down" ? actor.facing : 1;
     actor.navVx = undefined;
     actor.navHoldX = undefined;
     actor.navBackoff = undefined;
     actor.swimPath = undefined;
-    target.place(actor, target.offset + destination.page * 512 + 100);
     if (actor === this.player) {
       this.events.push("pipe");
       this.bubbleLeft = 0;
     }
     return true;
+  }
+  private updatePipeTravel(dt: number) {
+    const step = T.pipeSpeed * dt * 60;
+    for (const actor of [this.player, ...this.npcs, this.mario]) {
+      const travel = actor.pipeTravel;
+      if (!travel) continue;
+      const move = Math.min(step, travel.remaining);
+      const p = actor.body.position;
+      if (travel.dir === "down")
+        Body.setPosition(actor.body, { x: p.x, y: p.y + move });
+      else if (travel.dir === "up")
+        Body.setPosition(actor.body, { x: p.x, y: p.y - move });
+      else if (travel.dir === "right")
+        Body.setPosition(actor.body, { x: p.x + move, y: p.y });
+      else Body.setPosition(actor.body, { x: p.x - move, y: p.y });
+      travel.remaining -= move;
+      if (travel.remaining > 0) continue;
+      if (travel.phase === "enter") this.beginPipeExit(actor, travel);
+      else this.endPipeTravel(actor);
+    }
+  }
+  private beginPipeExit(
+    actor: Actor,
+    travel: NonNullable<Actor["pipeTravel"]>,
+  ) {
+    const target = this.loadRoom(travel.destArea);
+    actor.areaId = target.data.id;
+    const dest = this.pipeOnPage(target, travel.destPage);
+    const vis = this.pipeVisual(actor);
+    const height = actor.body.height;
+    if (!dest) {
+      const x = target.offset + travel.destPage * 512 + 100;
+      target.dropOnto(actor, x);
+      Body.setPosition(actor.body, {
+        x: Math.max(
+          target.offset + vis.w / 2,
+          actor.body.position.x - vis.w,
+        ),
+        y: actor.body.position.y,
+      });
+      actor.facing = 1;
+      actor.pipeTravel = {
+        phase: "exit",
+        dir: "right",
+        remaining: vis.w,
+        destArea: travel.destArea,
+        destPage: travel.destPage,
+      };
+    } else {
+      const left = target.offset + dest.column * 32,
+        top = MAP_TOP + dest.row * 32,
+        clip = this.pipeClip(
+          target,
+          dest,
+          dest.direction === "right" ? "left" : "up",
+        );
+      if (dest.direction === "right") {
+        Body.setPosition(actor.body, {
+          x: left + dest.width * 16,
+          y: top + dest.height * 32 - height / 2,
+        });
+        actor.facing = -1;
+        actor.pipeTravel = {
+          phase: "exit",
+          dir: "left",
+          remaining: dest.width * 16 + vis.w / 2 + 0.5,
+          destArea: travel.destArea,
+          destPage: travel.destPage,
+          clip,
+        };
+      } else {
+        Body.setPosition(actor.body, {
+          x: left + dest.width * 16,
+          y: top + vis.h - height / 2,
+        });
+        actor.pipeTravel = {
+          phase: "exit",
+          dir: "up",
+          remaining: vis.h,
+          destArea: travel.destArea,
+          destPage: travel.destPage,
+          clip,
+        };
+      }
+    }
+    if (actor === this.player) this.events.push("pipe");
+  }
+  private endPipeTravel(actor: Actor) {
+    actor.pipeTravel = undefined;
+    actor.pipeWait = T.pipeCooldown;
+    actor.homeX = actor.body.position.x;
+    actor.grounded = true;
+    Body.setFrozen(actor.body, false);
+    Body.setVelocity(actor.body, { x: 0, y: 0 });
   }
   loadRoom(id: string) {
     let room = this.rooms.get(id);
@@ -745,6 +901,7 @@ export class Simulation {
   kill(a: Actor, bloody = true) {
     if (!a.alive || a.saved || (a === this.player && this.mode !== "playing"))
       return;
+    if (this.inPipe(a)) this.endPipeTravel(a);
     a.alive = false;
     if (bloody) {
       this.burst(a.body.position.x, a.body.position.y, true);
@@ -1011,6 +1168,7 @@ export class Simulation {
         if (
           a.alive &&
           !a.saved &&
+          !this.inPipe(a) &&
           (a !== this.mario || this.marioActive) &&
           Math.abs(a.body.position.x - p.x) < 12 * a.scale + 12 &&
           Math.abs(a.body.position.y - p.y) < 14 * a.scale + 14
@@ -1108,7 +1266,12 @@ export class Simulation {
   }
 
   private autoWarn() {
-    if (this.cooldown > 0 || this.mode !== "playing") return;
+    if (
+      this.cooldown > 0 ||
+      this.mode !== "playing" ||
+      this.inPipe(this.player)
+    )
+      return;
     const playerBottom =
       this.player.body.position.y + 14 * this.player.scale;
     const falling = this.player.body.velocity.y > 0.2;
@@ -1137,7 +1300,8 @@ export class Simulation {
       !playerFalling ||
       !this.player.alive ||
       this.player.saved ||
-      this.mode !== "playing"
+      this.mode !== "playing" ||
+      this.inPipe(this.player)
     )
       return;
     for (const n of this.npcs) {
@@ -1280,7 +1444,7 @@ export class Simulation {
       if (a !== this.mario && a.scale >= T.hugeScale && a.hugeLeft === 0)
         this.setGoombaScale(a, T.giantScale);
       a.exclaimLeft = Math.max(0, a.exclaimLeft - dt);
-      a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
+      if (!this.inPipe(a)) a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
       a.swimRepath = Math.max(0, (a.swimRepath ?? 0) - dt);
       const water = this.roomFor(a).data.type === "water";
@@ -1299,7 +1463,7 @@ export class Simulation {
         this.player,
         ...this.npcs,
         this.mario,
-      ]);
+      ].filter((a) => !this.inPipe(a)));
     for (const c of this.obstacles) c.bounce = Math.max(0, c.bounce - dt);
     const phase =
       this.elapsed >= T.fireballsAt ? 2 : this.elapsed >= T.fasterAt ? 1 : 0;
@@ -1312,7 +1476,8 @@ export class Simulation {
       this.ground(a);
       if (a.grounded) a.jumpHeld = false;
     }
-    if (this.mode === "playing") {
+    this.updatePipeTravel(dt);
+    if (this.mode === "playing" && !this.inPipe(this.player)) {
       const dx = Number(input.right) - Number(input.left);
       const p = this.player.body.position;
       const water = this.activeRoom.data.type === "water";
@@ -1349,7 +1514,7 @@ export class Simulation {
         if (this.saved >= T.required && room.atDoor(this.player)) this.finish();
         else Body.setPosition(this.player.body, { x: room.goalX - 1, y: p.y });
       }
-    }
+    } else if (this.mode === "playing") this.jumped = true;
     this.updateNpcs(dt);
     this.updateCrowd(dt);
     this.doomed = rescueImpossible(this.saved, this.living(), T.required);
@@ -1397,6 +1562,7 @@ export class Simulation {
           (a) =>
             a.alive &&
             !a.saved &&
+            !this.inPipe(a) &&
             Math.abs(a.body.position.x - coin.x) < a.body.width / 2 + 8 &&
             Math.abs(a.body.position.y - coin.y) < a.body.height / 2 + 12,
         );
@@ -1423,7 +1589,8 @@ export class Simulation {
     this.coinPops = this.coinPops.filter((pop) => pop.age < 0.5);
     if (this.marioActive && this.mario.starLeft <= 0) {
       for (const a of [this.player, ...this.npcs]) {
-        if (!a.alive || a.saved) continue;
+        if (!a.alive || a.saved || this.inPipe(a) || this.inPipe(this.mario))
+          continue;
         const overlapX =
           Math.abs(a.body.position.x - this.mario.body.position.x) <
           12 * a.scale + 12;
@@ -1458,7 +1625,8 @@ export class Simulation {
       }
     }
     for (const a of [this.player, ...this.npcs])
-      if (a.alive && !a.saved && a.body.position.y > 640) this.kill(a, false);
+      if (a.alive && !a.saved && !this.inPipe(a) && a.body.position.y > 640)
+        this.kill(a, false);
     this.updateFireballs(dt);
     this.updateFlagpoles(dt);
     this.doomed = rescueImpossible(this.saved, this.living(), T.required);
@@ -1527,7 +1695,7 @@ export class Simulation {
 
   private updateNpcs(dt: number) {
     for (const n of this.npcs) {
-      if (!n.alive || n.saved) continue;
+      if (!n.alive || n.saved || this.inPipe(n)) continue;
       if (n.grounded) n.navVx = undefined;
       if (
         n.navDetourBelow &&
@@ -1798,6 +1966,7 @@ export class Simulation {
       this.brickTarget = null;
       this.marioStun = 0;
     }
+    if (this.inPipe(this.mario)) return;
     this.marioIgnore = Math.max(0, this.marioIgnore - dt);
     this.marioDecision -= dt;
     const pursuing = this.marioChase > 0;
@@ -1852,7 +2021,7 @@ export class Simulation {
       return;
     }
     const candidates = [this.player, ...this.npcs].filter(
-      (a) => a.alive && !a.saved && !this.invincible(a),
+      (a) => a.alive && !a.saved && !this.invincible(a) && !this.inPipe(a),
     );
     const sees = (a: Actor) =>
       Math.abs(a.body.position.x - m.x) < T.marioSight &&
@@ -2052,6 +2221,7 @@ export class Simulation {
       if (f.owner === "player") {
         if (
           this.marioActive &&
+          !this.inPipe(this.mario) &&
           Math.abs(this.mario.body.position.x - f.x) <
             12 * this.mario.scale + radius &&
           Math.abs(this.mario.body.position.y - f.y) <
@@ -2066,6 +2236,7 @@ export class Simulation {
         if (
           a.alive &&
           !a.saved &&
+          !this.inPipe(a) &&
           Math.abs(a.body.position.x - f.x) < 12 * a.scale + radius &&
           Math.abs(a.body.position.y - f.y) < 14 * a.scale + radius
         ) {

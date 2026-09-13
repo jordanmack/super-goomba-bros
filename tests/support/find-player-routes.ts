@@ -205,6 +205,13 @@ function execute(sim: Simulation, start: State, macro: Macro) {
       break;
     if (macro.kind === "drop" && !airborne && frame > 20) break;
   }
+  while (sim.player.pipeTravel) {
+    step(sim, 0);
+    actions.push(0);
+    if (sim.mode === "dead" || sim.player.body.position.y > 630) return null;
+    if (sim.mode === "finishing")
+      return { actions, won: true, state: capture(sim) };
+  }
   return { actions, won: false, state: capture(sim) };
 }
 function push(heap: Node[], node: Node) {
