@@ -206,6 +206,54 @@ test("World 4-3's eight-tile gap stays out of walk-jump reach and is cleared by 
   walk.physics.clear();
 });
 
+test("a small NPC autoJump does not take giant jump speed when a running jump does not plan", () => {
+  const sim = new Simulation(() => 0.5, physics());
+  sim.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
+  sim.reset();
+  sim.marioReturn = 1e6;
+  const runner = sim.npcs[0];
+  for (const npc of sim.npcs.slice(1)) sim.physics.remove(npc.body);
+  sim.npcs = [runner];
+  sim.player.saved = true;
+  Body.setFrozen(sim.player.body, true);
+  runner.warned = true;
+  runner.state = "run";
+  runner.wait = 0;
+  assert.equal(runner.scale, 1);
+  const takeoffs: number[] = [];
+  let lastX = runner.body.position.x,
+    stalled = 0;
+  for (
+    let frame = 0;
+    frame < 60 * 240 && runner.alive && !runner.saved && stalled < 60 * 15;
+    frame++
+  ) {
+    const wasGrounded = runner.grounded;
+    sim.step(1 / 60, emptyInput());
+    if (wasGrounded && !runner.grounded)
+      takeoffs.push(Math.abs(runner.body.velocity.y));
+    if (Math.abs(runner.body.position.x - lastX) > 8) {
+      lastX = runner.body.position.x;
+      stalled = 0;
+    } else stalled++;
+  }
+  assert.ok(takeoffs.length > 0, "NPC jumped");
+  for (const speed of takeoffs)
+    assert.ok(
+      speed <= T.runJumpSpeed + 0.5,
+      `small NPC takeoff ${speed} used giant jump speed`,
+    );
+  assert.ok(
+    runner.saved,
+    JSON.stringify({
+      position: runner.body.position,
+      alive: runner.alive,
+      takeoffs,
+    }),
+  );
+  sim.physics.clear();
+});
+
 test("an NPC running-jump does not exceed its ground run speed", () => {
   const sim = new Simulation(() => 0.5, physics());
   sim.reset();

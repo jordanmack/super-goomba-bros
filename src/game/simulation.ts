@@ -743,12 +743,12 @@ export class Simulation {
       return;
     }
     const pace = this.runSpeedFor(a);
-    let impulse = this.roomFor(a).onSpring(a)
+    const impulse = this.roomFor(a).onSpring(a)
       ? T.springImpulse
       : a.scale > 1
         ? T.giantJumpSpeed
         : T.runJumpSpeed;
-    let launch = planJump(
+    const launch = planJump(
       a.body,
       solids,
       direction,
@@ -757,25 +757,6 @@ export class Simulation {
       undefined,
       this.roomFor(a).data.type === "castle",
     );
-    if (
-      impulse === T.runJumpSpeed &&
-      this.roomFor(a).data.type !== "castle" &&
-      (!launch || (wall && (launch.x - p.x) * direction < 64))
-    ) {
-      const high = planJump(
-        a.body,
-        solids,
-        direction,
-        pace,
-        T.giantJumpSpeed,
-        undefined,
-        this.roomFor(a).data.type === "castle",
-      );
-      if (high && (!launch || high.score > launch.score + 40)) {
-        launch = high;
-        impulse = T.giantJumpSpeed;
-      }
-    }
     if (launch) {
       this.launchJump(a, launch.vx, impulse, launch.delay);
     } else if (inWell) {
