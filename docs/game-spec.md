@@ -66,10 +66,10 @@ pauses. Select does nothing.
 | Action | Keyboard | Touch |
 | --- | --- | --- |
 | Walk | Left/Right or A/D | D-pad Left/Right |
-| Run | Shift or Z | B |
-| Jump or swim upward | Space, Up, or W | A; Compact Up |
+| Run | Shift, Z, or J | B |
+| Jump or swim upward | Space, Up, W, or K | A; Compact Up |
 | Enter pipe | Down or S | D-pad Down |
-| Fire with a flower | Shift or Z (press) | B (press) |
+| Fire with a flower | Shift, Z, or J (press) | B (press) |
 | Pause | Escape | Pause; NES Start |
 
 A header Key bindings button shows this keyboard list in a dialog.

@@ -8,6 +8,7 @@ type ControlState = {
   pulses: Partial<Input>;
   paused: boolean;
   helpOpen: boolean;
+  ignoreEscapeUntilUp: boolean;
   sim: { mode: Mode };
 };
 const KEYS: Record<string, keyof Input> = {
@@ -18,7 +19,9 @@ const KEYS: Record<string, keyof Input> = {
   Space: "jump",
   ArrowUp: "jump",
   KeyW: "jump",
+  KeyK: "jump",
   KeyZ: "run",
+  KeyJ: "run",
   ShiftLeft: "run",
   ShiftRight: "run",
   ArrowDown: "down",
@@ -26,10 +29,10 @@ const KEYS: Record<string, keyof Input> = {
 };
 export const KEY_BINDINGS = [
   { action: "Walk", keys: "Left / Right or A / D" },
-  { action: "Run", keys: "Shift or Z" },
-  { action: "Jump; swim up", keys: "Space, Up, or W" },
+  { action: "Run", keys: "Shift, Z, or J" },
+  { action: "Jump; swim up", keys: "Space, Up, W, or K" },
   { action: "Enter a pipe", keys: "Down or S" },
-  { action: "Shoot with a flower", keys: "Shift or Z (press)" },
+  { action: "Shoot with a flower", keys: "Shift, Z, or J (press)" },
   { action: "Pause", keys: "Escape" },
 ] as const;
 
@@ -93,9 +96,15 @@ export class GameControls {
     event("pointermove", move);
 
     const key = (e: KeyboardEvent, pressed: boolean) => {
-      if (pressed && e.code === "Escape" && !e.repeat) {
-        if (state.helpOpen) {
-          closeHelp();
+      if (e.code === "Escape") {
+        if (!pressed) {
+          state.ignoreEscapeUntilUp = false;
+          return;
+        }
+        if (e.repeat) return;
+        if (state.helpOpen || state.ignoreEscapeUntilUp) {
+          state.ignoreEscapeUntilUp = true;
+          if (state.helpOpen) closeHelp();
           return;
         }
         if (state.sim.mode !== "title") {
@@ -305,6 +314,7 @@ export class GameControls {
   clear() {
     this.held.clear();
     this.startHeld = false;
+    this.state.ignoreEscapeUntilUp = false;
     this.sync();
     this.state.pulses = {};
     for (const pointer of this.input.manager.pointers) pointer.reset();

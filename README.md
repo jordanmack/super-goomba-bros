@@ -27,10 +27,10 @@ starts at World 1-1 and progresses in order.
 | Action | Keyboard | Touch |
 | --- | --- | --- |
 | Walk | Left/Right or A/D | D-pad Left/Right |
-| Run | Shift or Z | B |
-| Jump; swim upward in water | Space, Up, or W | A; Compact Up |
+| Run | Shift, Z, or J | B |
+| Jump; swim upward in water | Space, Up, W, or K | A; Compact Up |
 | Enter a pipe | Down or S; walk into side entrances | D-pad Down |
-| Shoot with a flower | Shift or Z (press) | B (press) |
+| Shoot with a flower | Shift, Z, or J (press) | B (press) |
 | Pause | Escape | Pause; NES Start |
 
 The header Key bindings button shows this keyboard list.

@@ -376,6 +376,12 @@ test("compact pad is the default and maps Up to jump and B to run", async ({
   await page.keyboard.down("KeyZ");
   await input(page, { run: true });
   await page.keyboard.up("KeyZ");
+  await page.keyboard.down("KeyJ");
+  await input(page, { run: true });
+  await page.keyboard.up("KeyJ");
+  await page.keyboard.down("KeyK");
+  await input(page, { jump: true });
+  await page.keyboard.up("KeyK");
   await input(page, {});
 });
 

@@ -8,7 +8,8 @@ test("header key bindings button lists keyboard controls", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Left / Right or A / D");
-  await expect(dialog).toContainText("Space, Up, or W");
+  await expect(dialog).toContainText("Space, Up, W, or K");
+  await expect(dialog).toContainText("Shift, Z, or J");
   await expect(dialog).toContainText("Escape");
   await page.getByRole("button", { name: "CLOSE" }).click();
   await expect(dialog).toHaveCount(0);
@@ -25,6 +26,8 @@ test("key bindings overlay freezes play and ignores walk keys", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.getByRole("button", { name: "Key bindings" }).click();
+  const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
+  await expect(dialog).toBeVisible();
   const startX = await page.evaluate(
     () => (window as any).__game.sim.player.body.position.x,
   );
@@ -37,6 +40,8 @@ test("key bindings overlay freezes play and ignores walk keys", async ({
     )
     .toBe(startX);
   await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "PAUSED" })).toHaveCount(0);
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
     (x) => (window as any).__game.sim.player.body.position.x > x,

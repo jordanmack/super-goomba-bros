@@ -28,6 +28,7 @@ type Runtime = {
   pulses: Partial<Input>;
   paused: boolean;
   helpOpen: boolean;
+  ignoreEscapeUntilUp: boolean;
   clearInput: () => void;
 };
 type Snapshot = {
@@ -128,6 +129,7 @@ export default function App() {
         pulses: {},
         paused: false,
         helpOpen: false,
+        ignoreEscapeUntilUp: false,
         clearInput: () => {},
       };
       runtime.current = game;
@@ -583,14 +585,14 @@ export default function App() {
                         "run",
                         "B",
                         null,
-                        "Run and fire (Shift / Z)",
+                        "Run and fire (Shift / Z / J)",
                         "face-b",
                       )}
                       {actionButton(
                         "jump",
                         "A",
                         null,
-                        "Jump (Space)",
+                        "Jump (Space / K)",
                         "face-a",
                       )}
                     </div>
