@@ -433,7 +433,7 @@ test("blocks bounce and disappear independently; item powers render with touch f
       scale: g.renderer.play.actors.get(s.player.id).displayWidth,
     };
   });
-  expect(blocks).toEqual({ bounced: true, disappeared: true, scale: 96 });
+  expect(blocks).toEqual({ bounced: true, disappeared: true, scale: 64 });
   await expect(page.locator(".power-state")).toContainText("GIANT");
   await expect(page.locator(".danger, .danger-meter")).toHaveCount(0);
   await expect(
@@ -495,7 +495,13 @@ test("question-block items stay upright after fireball sprite reuse", async ({
     );
     const fireballRotation = spinning?.rotation ?? null;
     s.fireballs = [];
-    const kinds = ["mushroom", "flower", "star"] as const;
+    const kinds = [
+      "mushroom",
+      "mushroom3x",
+      "mushroom8x",
+      "flower",
+      "star",
+    ] as const;
     const itemRotations: Record<string, number | null> = {};
     for (const kind of kinds) {
       const box = s.obstacles.find((c: any) => c.question && !c.used);
@@ -532,12 +538,73 @@ test("question-block items stay upright after fireball sprite reuse", async ({
   expect(drawn.fireballRotation).not.toBeNull();
   expect(drawn.itemRotations).toEqual({
     mushroom: 0,
+    mushroom3x: 0,
+    mushroom8x: 0,
     flower: 0,
     star: 0,
   });
   expect(drawn.itemRotationWithFireball).toBe(0);
   expect(drawn.fireballRotationWithItem).not.toBe(0);
   expect(drawn.fireballRotationWithItem).not.toBeNull();
+});
+
+test("mushroom types use distinct colors and the 8x item draws larger", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
+  const drawn = await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    const s = g.sim;
+    const play = g.renderer.play;
+    const textures = g.renderer.game.textures.list;
+    const caps = (name: string) => {
+      const image = textures[name].getSourceImage() as HTMLCanvasElement;
+      const data = image.getContext("2d")!.getImageData(0, 0, 16, 16).data;
+      let red = 0,
+        green = 0,
+        gold = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (!data[i + 3]) continue;
+        const r = data[i],
+          gch = data[i + 1],
+          b = data[i + 2];
+        if (r > 140 && gch < 90 && b < 80) red++;
+        if (gch > r && gch > 100 && b < 80) green++;
+        if (r > 200 && gch > 180 && b < 80) gold++;
+      }
+      return { red, green, gold };
+    };
+    const sizes: Record<string, number | null> = {};
+    for (const kind of ["mushroom", "mushroom3x", "mushroom8x"] as const) {
+      const box = s.obstacles.find((c: any) => c.question && !c.used);
+      s.hitBlock(box, s.player);
+      const item = s.items.at(-1);
+      item.kind = kind;
+      g.renderer.render(s, 0);
+      const sprite = play.effects.find(
+        (entry: any) => entry.visible && entry.texture.key === kind,
+      );
+      sizes[kind] = sprite?.displayWidth ?? null;
+      s.physics.remove(item.body);
+      s.items = [];
+    }
+    return {
+      mushroom: caps("mushroom"),
+      mushroom3x: caps("mushroom3x"),
+      mushroom8x: caps("mushroom8x"),
+      sizes,
+    };
+  });
+  expect(drawn.mushroom.red).toBeGreaterThan(drawn.mushroom.green);
+  expect(drawn.mushroom.red).toBeGreaterThan(drawn.mushroom.gold);
+  expect(drawn.mushroom3x.green).toBeGreaterThan(drawn.mushroom3x.red);
+  expect(drawn.mushroom8x.gold).toBeGreaterThan(drawn.mushroom8x.red);
+  expect(drawn.sizes.mushroom).toBe(32);
+  expect(drawn.sizes.mushroom3x).toBe(32);
+  expect(drawn.sizes.mushroom8x).toBe(48);
 });
 
 for (const viewport of [

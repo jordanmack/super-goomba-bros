@@ -141,8 +141,17 @@ export class Play extends Phaser.Scene {
     for (const coin of room.coins)
       if (!coin.collected)
         image(coin.x, coin.y, 32, 32, "coin", 2).setRotation(0);
-    for (const item of sim.items)
-      image(item.body.position.x, item.body.position.y, 32, 32, item.kind, 4).setRotation(0);
+    for (const item of sim.items) {
+      const size = item.kind === "mushroom8x" ? 48 : 32;
+      image(
+        item.body.position.x,
+        item.body.position.y,
+        size,
+        size,
+        item.kind,
+        4,
+      ).setRotation(0);
+    }
     for (const pop of sim.coinPops)
       image(pop.x, pop.y - 48 * Math.min(1, pop.age / 0.5), 32, 32, "coin", 6).setRotation(0);
     for (const platform of room.platforms)

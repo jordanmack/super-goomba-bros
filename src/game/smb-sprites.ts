@@ -95,6 +95,27 @@ function firePalette(source: HTMLCanvasElement) {
   return canvas;
 }
 
+function mushroomCap(source: HTMLCanvasElement, cap: [number, number, number]) {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext("2d")!;
+  context.drawImage(source, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const r = pixels.data[i],
+      g = pixels.data[i + 1],
+      b = pixels.data[i + 2];
+    if (pixels.data[i + 3] && r > 140 && g < 90 && b < 80) {
+      pixels.data[i] = cap[0];
+      pixels.data[i + 1] = cap[1];
+      pixels.data[i + 2] = cap[2];
+    }
+  }
+  context.putImageData(pixels, 0, 0);
+  return canvas;
+}
+
 function pixelExclaim() {
   const canvas = document.createElement("canvas");
   canvas.width = 8;
@@ -143,6 +164,8 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     coin: crop(items, 0, 80, 16, 16),
     mushroom: crop(items, 0, 0, 16, 16),
     oneUp: crop(items, 16, 0, 16, 16),
+    mushroom3x: crop(items, 16, 0, 16, 16),
+    mushroom8x: mushroomCap(crop(items, 0, 0, 16, 16), [252, 200, 32]),
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
     marioFlag,

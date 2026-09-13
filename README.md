@@ -57,12 +57,13 @@ while the player visits another area. Mario notices running crowds and warnings,
 then pursues, jumps, and fires when powered.
 
 Visible question blocks release random stars, mushrooms, or flowers. Hidden
-coin and 1-up blocks keep their original contents. Mushrooms grow Goombas and
-NPCs; flowers turn them white. A 1-up grants an extra life. Player fireballs
-match the Goomba's size and use the same two-shot cap as Mario. Stars defeat
-Mario. Giant-player stomps and fireballs reduce him through fire, big, and
-small stages. His power can increase on return or through items, with no
-spontaneous upgrade while active.
+coin and 1-up blocks keep their original contents. 2x mushrooms are common;
+3x and timed 8x mushrooms appear less often. Mushrooms set Goomba and NPC
+size to that tier; flowers turn them white. A 1-up grants an extra life.
+2x shots stay small; 3x and 8x shots match those sizes. Player fireballs
+use the same two-shot cap as Mario. Stars defeat Mario. Giant-player stomps
+and fireballs reduce him through fire, big, and small stages. His power can
+increase on return or through items, with no spontaneous upgrade while active.
 
 A campaign starts with three lives. Death spends a life, shows the world intro,
 and restarts the current stage. 0 lives is game over, then the title. The goal

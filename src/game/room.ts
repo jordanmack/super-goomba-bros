@@ -83,6 +83,7 @@ export class Room {
         height,
         true,
       );
+      body.passHuge = "top";
       this.solids.push(body);
       this.obstacles.push({
         id: firstId++,

@@ -18,6 +18,9 @@ export class Body {
   frozen = false;
   headOnly = false;
   gravityScale = 1;
+  ignoreWalls = false;
+  // "top": 8x may stand on the lid; the volume is empty (pipes).
+  passHuge: "volume" | "top" = "volume";
   motion?: {
     x: number;
     y: number;
@@ -112,6 +115,7 @@ export class PhysicsWorld {
   world?: Phaser.Physics.Arcade.World;
   private classes?: ArcadeTypes;
   private order = new WeakMap<object, number>();
+  private byNative = new WeakMap<object, Body>();
   private nextOrder = 0;
 
   bind(world: Phaser.Physics.Arcade.World, classes: ArcadeTypes) {
@@ -155,12 +159,16 @@ export class PhysicsWorld {
     body.native.position.set(body.bounds.min.x, body.bounds.min.y);
     body.native.updateCenter();
     this.order.set(body.native, this.nextOrder++);
+    this.byNative.set(body.native, body);
     this.world.add(body.native);
   }
   step(dt: number) {
     if (!this.world)
       throw new Error("Arcade physics must be bound before the game starts");
-    const dynamic: Phaser.Physics.Arcade.Body[] = [];
+    const movers: {
+      wrapper: Body;
+      native: Phaser.Physics.Arcade.Body;
+    }[] = [];
     for (const body of this.bodies) {
       const native = body.native!;
       if (body.fixed) {
@@ -184,23 +192,52 @@ export class PhysicsWorld {
       moving.gravity.y = TUNING.gravity * (body.gravityScale - 1);
       if (moving.width !== body.width || moving.height !== body.height)
         moving.setSize(body.width, body.height, false);
+      const walls = !body.ignoreWalls;
+      moving.checkCollision.left = walls;
+      moving.checkCollision.right = walls;
+      moving.checkCollision.up = walls;
+      moving.checkCollision.down = true;
       moving.position.set(body.bounds.min.x, body.bounds.min.y);
       moving.velocity.set(body.velocity.x * 60, body.velocity.y * 60);
       moving.updateCenter();
-      dynamic.push(moving);
+      movers.push({ wrapper: body, native: moving });
     }
     this.world.update(0, dt * 1000);
-    for (const body of dynamic) {
-      if (!body.enable) continue;
+    for (const { wrapper, native } of movers) {
+      if (!native.enable) continue;
       const nearby = this.world.staticTree
         .search({
-          minX: Math.min(body.position.x, body.prev.x) - 4,
-          minY: Math.min(body.position.y, body.prev.y) - 4,
-          maxX: Math.max(body.position.x, body.prev.x) + body.width + 4,
-          maxY: Math.max(body.position.y, body.prev.y) + body.height + 4,
+          minX: Math.min(native.position.x, native.prev.x) - 4,
+          minY: Math.min(native.position.y, native.prev.y) - 4,
+          maxX: Math.max(native.position.x, native.prev.x) + native.width + 4,
+          maxY: Math.max(native.position.y, native.prev.y) + native.height + 4,
         })
         .sort((a, b) => this.order.get(a)! - this.order.get(b)!);
-      if (nearby.length) this.world.collide(body, nearby);
+      if (!nearby.length) continue;
+      this.world.collide(native, nearby, undefined, (_actor, solid) => {
+        if (!wrapper.ignoreWalls) return true;
+        const top = (solid as Phaser.Physics.Arcade.StaticBody).y;
+        return (
+          native.velocity.y >= 0 && native.prev.y + native.height <= top + 6
+        );
+      });
+      if (!wrapper.ignoreWalls || native.velocity.y < 0) continue;
+      // Merged stair/hill AABBs have a high top, so the lid test above will
+      // not keep the ground in the same rectangle. Hold only at ground height.
+      const prevFeet = native.prev.y + native.height;
+      if (Math.abs(prevFeet - TUNING.groundY) > 12) continue;
+      const hold = nearby.some((solid) => {
+        const other = this.byNative.get(solid);
+        if (!other || other.headOnly || other.passHuge === "top") return false;
+        const box = solid as Phaser.Physics.Arcade.StaticBody;
+        if (native.x + native.width <= box.x || native.x >= box.x + box.width)
+          return false;
+        return box.y < prevFeet - 6 && box.y + box.height >= prevFeet - 6;
+      });
+      if (hold) {
+        native.position.y = native.prev.y;
+        native.velocity.y = 0;
+      }
     }
     this.world.postUpdate();
     for (const body of this.bodies) {

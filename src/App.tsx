@@ -207,7 +207,11 @@ export default function App() {
               sim.player.starLeft > 0
                 ? `STAR ${Math.ceil(sim.player.starLeft)}s`
                 : "",
-              sim.player.scale > 1 ? "GIANT" : "",
+              sim.player.scale >= T.hugeScale
+                ? `HUGE ${Math.ceil(sim.player.hugeLeft)}s`
+                : sim.player.scale > 1
+                  ? "GIANT"
+                  : "",
               sim.player.flower ? "FIRE: B" : "",
             ]
               .filter(Boolean)

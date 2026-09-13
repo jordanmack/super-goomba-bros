@@ -200,21 +200,30 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
 
 - A star grants temporary immunity. Player and NPC star contact defeats Mario
   unless he also has a star. Mario avoids visible star holders.
-- A mushroom makes Goombas and NPCs three times larger, with larger collision
-  bodies. It grows small Mario to big Mario. Shrink and grow blink between the
-  two sizes. Growth resolves overlap with scenery. Giant NPCs can back up to
-  leave low ceilings. The first damaging stomp or hit on mushroom form shrinks
-  to small instead of killing. A flower can remain on the small form.
+- Mushrooms set Goomba and NPC size to that mushroom's tier, including shrink.
+  Red 2x is the common mushroom. Green 3x and gold 8x appear less often than
+  2x. Star and flower stay in the pool. Any mushroom grows small Mario to big
+  Mario; this size ladder is only for the player Goomba and NPCs. Shrink and
+  grow blink between the two sizes. Growth resolves overlap with scenery.
+  Giant NPCs can back up to leave low ceilings. The first damaging stomp or
+  hit on mushroom form shrinks to small instead of killing. A flower can
+  remain on the small form.
+- 2x keeps player fireballs at 1x. 3x uses the current giant fireball scale.
+  8x fireballs match that size. Existing shots keep their launch size.
+- 8x lasts the star duration, then size becomes 3x. Collecting another
+  mushroom cancels the 8x timer. While 8x, walking smashes breakable bricks
+  and treats unbreakable walls and pipe solids as empty. Floors still hold.
+  Down at a real pipe entrance still enters. The character can still walk.
 - A flower gives the player fireballs and a white palette. NPCs can show the
   flower palette but do not shoot. Mario becomes Fire Mario.
-- Powers can coexist. Mushroom and flower powers last for the stage; stars
-  expire. Restart and a new stage clear them.
+- Powers can coexist. 2x, 3x, and flower powers last for the stage; stars and
+  8x expire. Restart and a new stage clear them.
 
 Mario and a fire-powered player each keep at most two of their own fireballs
 in play. Either may throw again when a slot is free. Size does not change that
-rate. A small player shoots small fireballs; a giant player shoots fireballs
-three times larger. Existing shots keep their launch size. Fireballs bounce on
-surfaces and stop at walls. Only a giant player's fireball breaks an ordinary
+rate. 2x keeps player fireballs at 1x. 3x uses the giant fireball scale. 8x
+fireballs match that size. Existing shots keep their launch size. Fireballs bounce
+on surfaces and stop at walls. Only a 3x or 8x player's fireball breaks an ordinary
 breakable brick on side or bottom contact. Top contact bounces and does not
 break. Question blocks, used blocks, and unbreakable tiles are not broken this
 way. Player fireballs do not harm NPCs. Mario's fireballs kill unprotected

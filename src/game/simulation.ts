@@ -64,6 +64,7 @@ export type Actor = {
   transformLeft: number;
   transformFrom: number;
   starLeft: number;
+  hugeLeft: number;
   exclaimLeft: number;
   flower: boolean;
   blockedFor: number;
@@ -121,7 +122,22 @@ export type Fireball = {
   vy?: number;
   scale?: number;
 };
-export type ItemKind = "star" | "mushroom" | "flower" | "oneUp";
+export type MushroomKind = "mushroom" | "mushroom3x" | "mushroom8x";
+export type ItemKind = "star" | "flower" | "oneUp" | MushroomKind;
+export const isMushroom = (kind: ItemKind): kind is MushroomKind =>
+  kind === "mushroom" || kind === "mushroom3x" || kind === "mushroom8x";
+export const mushroomScale = (kind: MushroomKind) =>
+  kind === "mushroom8x"
+    ? T.hugeScale
+    : kind === "mushroom3x"
+      ? T.giantScale
+      : T.mushroomScale;
+export const fireballScaleFor = (scale: number) =>
+  scale >= T.hugeScale
+    ? T.hugeScale
+    : scale >= T.giantScale
+      ? T.playerFireballScale
+      : 1;
 export type Item = {
   id: number;
   kind: ItemKind;
@@ -381,6 +397,7 @@ export class Simulation {
       transformLeft: 0,
       transformFrom: 1,
       starLeft: 0,
+      hugeLeft: 0,
       exclaimLeft: 0,
       flower: false,
       blockedFor: 0,
@@ -399,14 +416,26 @@ export class Simulation {
   }
   private ground(a: Actor) {
     const bottom = a.body.position.y + (a.kind === "mario" ? 19 : 14) * a.scale;
-    a.grounded =
+    const onLid = this.solids.some(
+      (s) =>
+        !s.headOnly &&
+        a.body.bounds.max.x > s.bounds.min.x + 0.01 &&
+        a.body.bounds.min.x < s.bounds.max.x - 0.01 &&
+        Math.abs(bottom - s.bounds.min.y) < 12,
+    );
+    const inVolume =
+      a.body.ignoreWalls &&
+      Math.abs(bottom - T.groundY) < 12 &&
       this.solids.some(
         (s) =>
           !s.headOnly &&
+          s.passHuge !== "top" &&
           a.body.bounds.max.x > s.bounds.min.x + 0.01 &&
           a.body.bounds.min.x < s.bounds.max.x - 0.01 &&
-          Math.abs(bottom - s.bounds.min.y) < 12,
-      ) && Math.abs(a.body.velocity.y) < 1;
+          s.bounds.min.y < bottom - 6 &&
+          s.bounds.max.y >= bottom - 6,
+      );
+    a.grounded = (onLid || inVolume) && Math.abs(a.body.velocity.y) < 1;
   }
   private move(a: Actor, vx: number) {
     if (
@@ -483,17 +512,24 @@ export class Simulation {
       (s) =>
         ahead > s.bounds.min.x &&
         ahead < s.bounds.max.x &&
-        s.bounds.min.y >= feet - 5 &&
-        s.bounds.min.y <= feet + 32 &&
-        (a === this.mario || !enclosedWell(solids, s.bounds)),
+        ((s.bounds.min.y >= feet - 5 &&
+          s.bounds.min.y <= feet + 32 &&
+          (a === this.mario || !enclosedWell(solids, s.bounds))) ||
+          (a.body.ignoreWalls &&
+            s.passHuge !== "top" &&
+            Math.abs(feet - T.groundY) < 12 &&
+            s.bounds.min.y < feet - 5 &&
+            s.bounds.max.y >= feet - 5)),
     );
-    const wall = solids.some(
-      (s) =>
-        p.x + direction * (half + 30) > s.bounds.min.x &&
-        p.x + direction * (half + 30) < s.bounds.max.x &&
-        feet > s.bounds.min.y + 5 &&
-        a.body.bounds.min.y < s.bounds.max.y,
-    );
+    const wall =
+      !a.body.ignoreWalls &&
+      solids.some(
+        (s) =>
+          p.x + direction * (half + 30) > s.bounds.min.x &&
+          p.x + direction * (half + 30) < s.bounds.max.x &&
+          feet > s.bounds.min.y + 5 &&
+          a.body.bounds.min.y < s.bounds.max.y,
+      );
     if (supported && !wall && (a === this.mario || !inWell)) return;
     if (a === this.mario) {
       this.jump(a);
@@ -590,7 +626,8 @@ export class Simulation {
       } else {
         this.launchJump(a, direction * this.runSpeedFor(a), impulse, 18);
       }
-    } else {
+    } else if (a.body.ignoreWalls) return;
+    else {
       if (!wall && (safeDrop || a.navDetourBelow)) {
         const drop = planJump(
           a.body,
@@ -765,7 +802,7 @@ export class Simulation {
   private hurt(a: Actor) {
     if (!a.alive || a.saved || a.starLeft > 0 || this.shrinking(a)) return false;
     if (a.scale > 1) {
-      this.resize(a, 1, true);
+      this.setGoombaScale(a, 1, true);
       this.events.push("shrink");
       return true;
     }
@@ -805,13 +842,7 @@ export class Simulation {
     this.events.push("bump");
     if (c.question) {
       this.reveal(c);
-      this.spawnItem(
-        c,
-        (["star", "mushroom", "flower"] as const)[
-          Math.min(2, Math.floor(this.random() * 3))
-        ],
-        hitter.facing,
-      );
+      this.spawnItem(c, this.rollItem(), hitter.facing);
     }
   }
 
@@ -848,25 +879,72 @@ export class Simulation {
     if (item.kind === "star") a.starLeft = T.starSeconds;
     if (a === this.mario) {
       if (item.kind === "flower") this.setMarioStage(2, this.marioStage === 0);
-      if (item.kind === "mushroom" && this.marioStage === 0)
+      if (isMushroom(item.kind) && this.marioStage === 0)
         this.setMarioStage(1, true);
     } else if (item.kind === "flower") a.flower = true;
-    if (a !== this.mario && item.kind === "mushroom" && a.scale === 1) {
-      this.resize(a, T.giantScale, true);
-      // Growing below a ceiling must never leave the larger body embedded.
-      for (let i = 0; i < 16; i++) {
-        const hits = overlaps(a.body, this.solids, 0.1);
-        if (!hits.length) break;
-        const top = Math.min(...hits.map((hit) => hit.bounds.min.y));
-        Body.setPosition(a.body, {
-          x: a.body.position.x,
-          y: top - 14 * a.scale - 0.1,
-        });
-      }
-    }
+    if (a !== this.mario && isMushroom(item.kind))
+      this.setGoombaScale(a, mushroomScale(item.kind), true);
     this.physics.remove(item.body);
     this.items = this.items.filter((i) => i !== item);
     this.events.push("power");
+  }
+
+  private rollItem(): ItemKind {
+    const kind = (["star", "mushroom", "flower"] as const)[
+      Math.min(2, Math.floor(this.random() * 3))
+    ];
+    if (kind !== "mushroom") return kind;
+    const roll = this.random();
+    if (roll >= 1 - T.mushroom8xChance) return "mushroom8x";
+    if (roll >= 1 - T.mushroom8xChance - T.mushroom3xChance) return "mushroom3x";
+    return "mushroom";
+  }
+
+  private setGoombaScale(a: Actor, scale: number, blink = false) {
+    this.resize(a, scale, blink);
+    a.body.ignoreWalls = scale >= T.hugeScale;
+    a.hugeLeft = scale >= T.hugeScale ? T.hugeSeconds : 0;
+    if (scale < T.hugeScale) this.fitActor(a);
+    else this.smashHugeBricks(a);
+  }
+
+  private fitActor(a: Actor) {
+    // Growing or shrinking must not leave the body embedded in scenery.
+    for (let i = 0; i < 16; i++) {
+      const hits = overlaps(a.body, this.solids, 0.1);
+      if (!hits.length) return;
+      const top = Math.min(...hits.map((hit) => hit.bounds.min.y));
+      Body.setPosition(a.body, {
+        x: a.body.position.x,
+        y: top - 14 * a.scale - 0.1,
+      });
+    }
+    const originX = a.body.position.x;
+    for (const dir of [1, -1]) {
+      for (let step = 1; step <= 12; step++) {
+        Body.setPosition(a.body, {
+          x: originX + dir * step * 16,
+          y: a.body.position.y,
+        });
+        if (!overlaps(a.body, this.solids, 0.1).length) return;
+      }
+    }
+    Body.setPosition(a.body, { x: originX, y: a.body.position.y });
+  }
+
+  private smashHugeBricks(a: Actor) {
+    if (a.scale < T.hugeScale || !a.alive || a.saved) return;
+    for (const c of [...this.obstacles]) {
+      if (
+        c.kind !== "brick" ||
+        c.question ||
+        c.hidden ||
+        c.broken ||
+        !c.body
+      )
+        continue;
+      if (overlaps(a.body, [c.body], 0.1).length) this.breakBrick(c);
+    }
   }
 
   private updateItems(dt: number) {
@@ -1175,6 +1253,9 @@ export class Simulation {
     for (const a of [this.player, ...this.npcs, this.mario]) {
       a.starLeft = Math.max(0, a.starLeft - dt);
       a.transformLeft = Math.max(0, a.transformLeft - dt);
+      a.hugeLeft = Math.max(0, a.hugeLeft - dt);
+      if (a !== this.mario && a.scale >= T.hugeScale && a.hugeLeft === 0)
+        this.setGoombaScale(a, T.giantScale);
       a.exclaimLeft = Math.max(0, a.exclaimLeft - dt);
       a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
@@ -1228,7 +1309,7 @@ export class Simulation {
           vy: 0,
           age: 0,
           owner: "player",
-          scale: this.player.scale > 1 ? T.playerFireballScale : 1,
+          scale: fireballScaleFor(this.player.scale),
         });
         this.events.push("fire");
       }
@@ -1281,6 +1362,7 @@ export class Simulation {
         Body.setVelocity(n.body, { x: n.navVx, y: n.body.velocity.y });
       n.navHoldX = undefined;
     }
+    for (const a of [this.player, ...this.npcs]) this.smashHugeBricks(a);
     for (const room of this.rooms.values())
       for (const coin of room.coins) {
         if (coin.collected) continue;
@@ -1488,6 +1570,7 @@ export class Simulation {
               (s) => ahead >= s.bounds.min.x && ahead <= s.bounds.max.x,
             );
             if (
+              !n.body.ignoreWalls &&
               below.some(
                 (s) =>
                   s.bounds.min.y < feet - 5 &&
@@ -1496,6 +1579,17 @@ export class Simulation {
             )
               return "blocked";
             if (below.some((s) => Math.abs(s.bounds.min.y - feet) < 6))
+              return "walk";
+            if (
+              n.body.ignoreWalls &&
+              Math.abs(feet - T.groundY) < 12 &&
+              below.some(
+                (s) =>
+                  s.passHuge !== "top" &&
+                  s.bounds.min.y < feet - 5 &&
+                  s.bounds.max.y >= feet - 5,
+              )
+            )
               return "walk";
             if (
               below.some(
@@ -1563,7 +1657,7 @@ export class Simulation {
         } else this.move(n, Math.sign(target.x - p.x) * n.speed);
         continue;
       }
-      if (n.scale > 1) {
+      if (n.scale > 1 && !n.body.ignoreWalls) {
         n.blockedFor = Math.abs(p.x - n.lastX) < 8 ? n.blockedFor + dt : 0;
         n.lastX = p.x;
         if (n.blockedFor > 0.5 && n.grounded) {
@@ -1923,7 +2017,7 @@ export class Simulation {
           f.y = s.bounds.min.y - radius;
           f.vy = -3.8;
         } else if (oldX !== f.x) {
-          if (f.owner === "player" && (f.scale ?? 1) === T.playerFireballScale) {
+          if (f.owner === "player" && (f.scale ?? 1) >= T.playerFireballScale) {
             const brick = this.obstacles.find(
               (c) =>
                 c.body === s &&
