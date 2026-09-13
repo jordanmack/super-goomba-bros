@@ -147,7 +147,7 @@ p {
   justify-content: space-between;
   gap: 20px;
   padding: 25px 32px;
-  z-index: 6;
+  z-index: 12;
 }
 .brand {
   display: flex;
@@ -661,6 +661,37 @@ p {
   pointer-events: none;
   gap: 40px;
 }
+.help-overlay {
+  z-index: 11;
+  gap: 18px;
+  overflow: auto;
+  background: #000;
+  padding: 88px 24px 24px;
+}
+.help-overlay h2 {
+  font-size: 22px;
+}
+.bindings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(480px, 100%);
+  text-align: left;
+}
+.bindings div {
+  display: grid;
+  grid-template-columns: minmax(8em, 1fr) 2fr;
+  gap: 10px 16px;
+  font-size: 8px;
+  line-height: 1.8;
+}
+.bindings dt {
+  color: #f8dd8a;
+}
+.bindings dd {
+  margin: 0;
+  color: #fff5d5;
+}
 .overlay .level-label {
   color: #b9d495;
   margin: 0;
@@ -801,6 +832,13 @@ p {
   }
   .tools {
     gap: 6px;
+  }
+  .bindings div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .bindings {
+    gap: 14px;
   }
   .tools button {
     width: 34px;
@@ -1027,6 +1065,13 @@ p {
   }
   .overlay {
     gap: 15px;
+  }
+  .help-overlay {
+    padding-top: 56px;
+    gap: 10px;
+  }
+  .help-overlay h2 {
+    font-size: 18px;
   }
   .overlay h2 {
     font-size: 26px;

@@ -7,6 +7,7 @@ type ControlState = {
   input: Input;
   pulses: Partial<Input>;
   paused: boolean;
+  helpOpen: boolean;
   sim: { mode: Mode };
 };
 const KEYS: Record<string, keyof Input> = {
@@ -23,6 +24,14 @@ const KEYS: Record<string, keyof Input> = {
   ArrowDown: "down",
   KeyS: "down",
 };
+export const KEY_BINDINGS = [
+  { action: "Walk", keys: "Left / Right or A / D" },
+  { action: "Run", keys: "Shift or Z" },
+  { action: "Jump; swim up", keys: "Space, Up, or W" },
+  { action: "Enter a pipe", keys: "Down or S" },
+  { action: "Shoot with a flower", keys: "Shift or Z (press)" },
+  { action: "Pause", keys: "Escape" },
+] as const;
 
 // Phaser owns pointer and key events. DOM listeners only guard browser gestures,
 // recover interrupted native touches, and capture mouse/pen outside the controls.
@@ -42,6 +51,7 @@ export class GameControls {
     state: ControlState,
     togglePause: () => void,
     interrupt: () => void,
+    closeHelp: () => void,
   ) {
     this.input = input;
     this.root = root;
@@ -83,15 +93,17 @@ export class GameControls {
     event("pointermove", move);
 
     const key = (e: KeyboardEvent, pressed: boolean) => {
-      if (
-        pressed &&
-        e.code === "Escape" &&
-        !e.repeat &&
-        state.sim.mode !== "title"
-      ) {
-        togglePause();
-        return;
+      if (pressed && e.code === "Escape" && !e.repeat) {
+        if (state.helpOpen) {
+          closeHelp();
+          return;
+        }
+        if (state.sim.mode !== "title") {
+          togglePause();
+          return;
+        }
       }
+      if (state.helpOpen) return;
       const action = KEYS[e.code],
         id = `key:${e.code}`;
       if (!action) return;

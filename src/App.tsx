@@ -5,6 +5,7 @@ import {
   ArrowUp,
   ArrowDown,
   DoorOpen,
+  Keyboard,
   Pause,
   Play,
   RotateCcw,
@@ -16,7 +17,7 @@ import type { Input, Mode } from "./game/simulation";
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
-import { GameControls, type PadAction } from "./game/controls";
+import { GameControls, KEY_BINDINGS, type PadAction } from "./game/controls";
 import { CAMPAIGN } from "./game/levels";
 
 type Runtime = {
@@ -26,6 +27,7 @@ type Runtime = {
   input: Input;
   pulses: Partial<Input>;
   paused: boolean;
+  helpOpen: boolean;
   clearInput: () => void;
 };
 type Snapshot = {
@@ -84,6 +86,7 @@ export default function App() {
   const [portrait, setPortrait] = useState("");
   const [ready, setReady] = useState(false);
   const [padLayout, setPadLayout] = useState<"compact" | "nes">("compact");
+  const [helpOpen, setHelpOpen] = useState(false);
   const startAudio = (game: Runtime) => {
     void game.audio.start().catch(() => {
       game.audio.disable();
@@ -124,6 +127,7 @@ export default function App() {
         input: emptyInput(),
         pulses: {},
         paused: false,
+        helpOpen: false,
         clearInput: () => {},
       };
       runtime.current = game;
@@ -151,6 +155,11 @@ export default function App() {
                 audio.pause();
               }
             },
+            () => {
+              game.helpOpen = false;
+              setHelpOpen(false);
+              if (!game.paused && sim.mode === "playing") startAudio(game);
+            },
           );
           game.clearInput = () => controls?.clear();
           setPortrait(renderer.game.registry.get("portrait"));
@@ -172,8 +181,9 @@ export default function App() {
         ticks = 0;
       const update = (now: number, frameDelta: number) => {
         const delta = Math.min(0.1, frameDelta / 1000);
-        renderer.game.anims.globalTimeScale = game.paused ? 0 : 1;
-        if (!game.paused) {
+        const frozen = game.paused || game.helpOpen;
+        renderer.game.anims.globalTimeScale = frozen ? 0 : 1;
+        if (!frozen) {
           accumulator += delta;
           while (accumulator >= 1 / 60) {
             sim.step(1 / 60, { ...game.input, ...game.pulses });
@@ -264,6 +274,8 @@ export default function App() {
     game.clearInput();
     game.paused = false;
     setPaused(false);
+    game.helpOpen = false;
+    setHelpOpen(false);
     startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
   };
@@ -291,6 +303,8 @@ export default function App() {
     game.audio.resetMusic(true);
     game.paused = false;
     setPaused(false);
+    game.helpOpen = false;
+    setHelpOpen(false);
     startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
   };
@@ -298,6 +312,28 @@ export default function App() {
   const mute = () => {
     if (runtime.current) runtime.current.audio.muted = !muted;
     setMuted(!muted);
+  };
+  const closeHelp = () => {
+    setHelpOpen(false);
+    const game = runtime.current;
+    if (!game) return;
+    game.helpOpen = false;
+    if (!game.paused && game.sim.mode === "playing") startAudio(game);
+  };
+  const toggleHelp = () => {
+    if (helpOpen) {
+      closeHelp();
+      (document.activeElement as HTMLElement)?.blur();
+      return;
+    }
+    setHelpOpen(true);
+    const game = runtime.current;
+    if (game) {
+      game.helpOpen = true;
+      game.clearInput();
+      if (!game.paused && game.sim.mode === "playing") game.audio.pause();
+    }
+    (document.activeElement as HTMLElement)?.blur();
   };
   const actionButton = (
     action: PadAction,
@@ -396,6 +432,15 @@ export default function App() {
         )}
         <div className="tools">
           <button
+            onClick={toggleHelp}
+            title="Key bindings"
+            aria-label="Key bindings"
+            aria-expanded={helpOpen}
+            aria-haspopup="dialog"
+          >
+            <Keyboard />
+          </button>
+          <button
             onClick={mute}
             disabled={audioUnavailable}
             title={
@@ -422,7 +467,7 @@ export default function App() {
           )}
         </div>
       </header>
-      {!active && (
+      {!active && !helpOpen && (
         <section className="title-screen" aria-label="Title screen">
           <p className="level-label">A LITTLE COURAGE. A BIG MUSTACHE.</p>
           <h1 aria-label="Super Goomba Bros">
@@ -683,6 +728,28 @@ export default function App() {
               )}
             </>
           )}
+        </section>
+      )}
+      {helpOpen && (
+        <section
+          className="overlay help-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="help-title"
+        >
+          <p className="level-label">KEYBOARD</p>
+          <h2 id="help-title">KEY BINDINGS</h2>
+          <dl className="bindings">
+            {KEY_BINDINGS.map((row) => (
+              <div key={row.action}>
+                <dt>{row.action}</dt>
+                <dd>{row.keys}</dd>
+              </div>
+            ))}
+          </dl>
+          <button className="primary" onClick={closeHelp}>
+            CLOSE
+          </button>
         </section>
       )}
       {error && (

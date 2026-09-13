@@ -72,6 +72,8 @@ pauses. Select does nothing.
 | Fire with a flower | Shift or Z (press) | B (press) |
 | Pause | Escape | Pause; NES Start |
 
+A header Key bindings button shows this keyboard list in a dialog.
+
 A side pipe can also be entered by walking into its opening. There is no Hide
 or manual Warn button.
 
