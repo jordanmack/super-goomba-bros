@@ -87,6 +87,23 @@ export function overlaps(body: Body, solids: Body[], tolerance = 0) {
   });
 }
 
+// 8x volume-hold: ground, or a standable top under this body, not a neighbor.
+export function hugeFloorAt(
+  y: number,
+  x: number,
+  width: number,
+  solids: Iterable<Body>,
+) {
+  if (Math.abs(y - TUNING.groundY) < 12) return true;
+  for (const solid of solids) {
+    if (!solid.fixed || solid.headOnly || solid.passHuge === "top") continue;
+    if (Math.abs(solid.bounds.min.y - y) >= 12) continue;
+    if (x + width <= solid.bounds.min.x || x >= solid.bounds.max.x) continue;
+    return true;
+  }
+  return false;
+}
+
 export function rayBlocked(solids: Body[], start: Point, end: Point) {
   return solids.some((solid) => {
     if (solid.headOnly) return false;
@@ -222,10 +239,10 @@ export class PhysicsWorld {
         );
       });
       if (!wrapper.ignoreWalls || native.velocity.y < 0) continue;
-      // Merged stair/hill AABBs have a high top, so the lid test above will
-      // not keep the ground in the same rectangle. Hold only at ground height.
+      // Merged wall+floor AABBs have a high top, so the lid test above will
+      // not keep the floor in the same rectangle. Hold at every standable floor.
       const prevFeet = native.prev.y + native.height;
-      if (Math.abs(prevFeet - TUNING.groundY) > 12) continue;
+      if (!hugeFloorAt(prevFeet, native.x, native.width, this.bodies)) continue;
       const hold = nearby.some((solid) => {
         const other = this.byNative.get(solid);
         if (!other || other.headOnly || other.passHuge === "top") return false;

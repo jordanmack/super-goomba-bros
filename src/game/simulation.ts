@@ -1,4 +1,10 @@
-import { Body, PhysicsWorld, overlaps, rayBlocked } from "./physics.ts";
+import {
+  Body,
+  PhysicsWorld,
+  hugeFloorAt,
+  overlaps,
+  rayBlocked,
+} from "./physics.ts";
 import { MAP_TOP, PHRASES, TUNING as T } from "./config.ts";
 import { CAMPAIGN } from "./levels.ts";
 import { Room } from "./room.ts";
@@ -591,7 +597,7 @@ export class Simulation {
     );
     const inVolume =
       a.body.ignoreWalls &&
-      Math.abs(bottom - T.groundY) < 12 &&
+      hugeFloorAt(bottom, a.body.bounds.min.x, a.body.width, this.solids) &&
       this.solids.some(
         (s) =>
           !s.headOnly &&
@@ -683,7 +689,7 @@ export class Simulation {
           (a === this.mario || !enclosedWell(solids, s.bounds))) ||
           (a.body.ignoreWalls &&
             s.passHuge !== "top" &&
-            Math.abs(feet - T.groundY) < 12 &&
+            hugeFloorAt(feet, ahead, 1, solids) &&
             s.bounds.min.y < feet - 5 &&
             s.bounds.max.y >= feet - 5)),
     );
@@ -1958,7 +1964,7 @@ export class Simulation {
               return "walk";
             if (
               n.body.ignoreWalls &&
-              Math.abs(feet - T.groundY) < 12 &&
+              hugeFloorAt(feet, ahead, 1, this.solids) &&
               below.some(
                 (s) =>
                   s.passHuge !== "top" &&

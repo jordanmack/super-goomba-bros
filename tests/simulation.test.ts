@@ -2527,6 +2527,174 @@ test("8x walking keeps the floor through merged stair columns", () => {
   assert.equal(s.player.grounded, false);
 });
 
+test("8x volume-hold keeps a body on standable floors above groundY", () => {
+  const cases = [
+    { id: "1-1" },
+    { id: "1-4" },
+    { id: "1-2", area: "40" },
+  ] as const;
+  for (const c of cases) {
+    const s = new Simulation(() => 0.5, physics());
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === c.id);
+    s.reset();
+    s.marioReturn = 1e6;
+    if ("area" in c) s.player.areaId = c.area;
+    parkNpcs(s, []);
+    give(s, s.player, "mushroom8x");
+    const floor = s.roomFor(s.player).solids.find(
+      (sol) =>
+        !sol.headOnly &&
+        sol.passHuge !== "top" &&
+        sol.width >= 64 &&
+        sol.bounds.min.y < T.groundY - 20 &&
+        sol.bounds.min.y > MAP_TOP + 64,
+    );
+    assert.ok(floor, c.id);
+    const floorY = floor.bounds.min.y;
+    at(s, floor.position.x, floorY - 14 * s.player.scale);
+    tick(s, 0.15);
+    const feet = s.player.body.bounds.max.y;
+    assert.equal(s.player.alive, true, c.id);
+    assert.equal(s.player.grounded, true, c.id);
+    assert.ok(
+      Math.abs(feet - floorY) < 16,
+      JSON.stringify({
+        id: c.id,
+        floorY,
+        feet,
+        y: s.player.body.position.y,
+      }),
+    );
+    const heldY = s.player.body.position.y;
+    tick(s, 0.4, { right: true });
+    assert.equal(s.player.alive, true, c.id);
+    assert.equal(s.player.grounded, true, c.id);
+    assert.ok(
+      s.player.body.position.y < heldY + 16,
+      JSON.stringify({
+        id: c.id,
+        heldY,
+        y: s.player.body.position.y,
+      }),
+    );
+    s.physics.clear();
+  }
+});
+
+test("8x does not snag on a distant floor height inside a tall column", () => {
+  const s = new Simulation(() => 0.5, physics());
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+  s.reset();
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const solids = s.activeRoom.solids.filter(
+    (sol) => !sol.headOnly && sol.passHuge !== "top",
+  );
+  const floorYs = [...new Set(solids.map((sol) => sol.bounds.min.y))];
+  const tall = solids.find((sol) => {
+    if (sol.width < 300) return false;
+    return floorYs.some(
+      (y) =>
+        y > sol.bounds.min.y + 20 &&
+        y < T.groundY - 20 &&
+        y < sol.bounds.max.y - 20,
+    );
+  });
+  assert.ok(tall);
+  const ghostY = floorYs.find(
+    (y) =>
+      y > tall.bounds.min.y + 20 &&
+      y < T.groundY - 20 &&
+      y < tall.bounds.max.y - 20,
+  )!;
+  at(s, tall.position.x, ghostY - 14 * s.player.scale);
+  tick(s, 0.2);
+  assert.ok(
+    Math.abs(s.player.body.bounds.max.y - ghostY) > 16,
+    JSON.stringify({
+      ghostY,
+      feet: s.player.body.bounds.max.y,
+      grounded: s.player.grounded,
+    }),
+  );
+  s.physics.clear();
+});
+
+test("8x does not snag on a nearby ledge it does not overlap", () => {
+  const s = new Simulation(() => 0.5, physics());
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+  s.reset();
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const solids = s.activeRoom.solids.filter(
+    (sol) => !sol.headOnly && sol.passHuge !== "top",
+  );
+  const half = s.player.body.width / 2;
+  let placed = false;
+  for (const tall of solids) {
+    if (tall.width < 300) continue;
+    for (const ledge of solids) {
+      const floorY = ledge.bounds.min.y;
+      if (floorY <= tall.bounds.min.y + 20 || floorY >= T.groundY - 20)
+        continue;
+      if (floorY >= tall.bounds.max.y - 20) continue;
+      const gapLeft = ledge.bounds.min.x - tall.bounds.max.x;
+      const gapRight = tall.bounds.min.x - ledge.bounds.max.x;
+      const side =
+        gapLeft >= 0 && gapLeft <= 40
+          ? "right"
+          : gapRight >= 0 && gapRight <= 40
+            ? "left"
+            : null;
+      if (!side) continue;
+      const x =
+        side === "right"
+          ? tall.bounds.max.x - half - 1
+          : tall.bounds.min.x + half + 1;
+      if (x + half > ledge.bounds.min.x && x - half < ledge.bounds.max.x)
+        continue;
+      at(s, x, floorY - 14 * s.player.scale);
+      placed = true;
+      tick(s, 0.2);
+      assert.ok(
+        Math.abs(s.player.body.bounds.max.y - floorY) > 16,
+        JSON.stringify({
+          floorY,
+          feet: s.player.body.bounds.max.y,
+          x,
+          tall: tall.bounds,
+          ledge: ledge.bounds,
+        }),
+      );
+      break;
+    }
+    if (placed) break;
+  }
+  assert.ok(placed, "castle has a tall column beside a higher floor");
+  s.physics.clear();
+});
+
+test("8x still falls through a pipe interior", () => {
+  const s = game();
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
+  const top = pipe.body!.bounds.min.y;
+  at(s, pipe.x, top + 20 - 14 * s.player.scale);
+  const startY = s.player.body.position.y;
+  tick(s, 0.25);
+  assert.ok(
+    s.player.body.position.y > startY + 16,
+    JSON.stringify({
+      startY,
+      y: s.player.body.position.y,
+      grounded: s.player.grounded,
+    }),
+  );
+});
+
 test("8x NPCs keep running and use the same size ladder", () => {
   const s = game();
   const n = s.npcs[0];
