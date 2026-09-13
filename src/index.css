@@ -380,14 +380,122 @@ p {
   touch-action: none;
   display: flex;
   justify-content: space-between;
+  align-items: flex-end;
   gap: 20px;
   max-width: 1000px;
   margin: auto;
 }
-.movement,
-.actions {
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: 48px 48px;
+  grid-template-areas:
+    ". up ."
+    "left down right";
+  gap: 4px;
+}
+.dpad-up {
+  grid-area: up;
+}
+.dpad-left {
+  grid-area: left;
+}
+.dpad-down {
+  grid-area: down;
+}
+.dpad-right {
+  grid-area: right;
+}
+.face-buttons {
   display: flex;
-  gap: 10px;
+  gap: 14px;
+  align-items: center;
+}
+.face-b,
+.face-a {
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+  border-radius: 50%;
+  font-size: 16px;
+}
+.face-a {
+  margin-bottom: 10px;
+}
+.controls.layout-nes {
+  position: relative;
+  width: min(520px, 100%);
+  margin: 0 auto;
+  aspect-ratio: 400 / 168;
+}
+.nes-pad-art {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+.nes-hit {
+  position: absolute;
+  min-width: 0;
+  height: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+}
+.nes-hit:hover,
+.nes-hit[data-pressed] {
+  background: #ffffff33;
+}
+.nes-up {
+  left: 13.5%;
+  top: 32%;
+  width: 11%;
+  height: 18%;
+}
+.nes-down {
+  left: 13.5%;
+  top: 58%;
+  width: 11%;
+  height: 20%;
+}
+.nes-left {
+  left: 8%;
+  top: 45%;
+  width: 11%;
+  height: 18%;
+}
+.nes-right {
+  left: 21%;
+  top: 45%;
+  width: 11%;
+  height: 18%;
+}
+.nes-select {
+  left: 37%;
+  top: 50%;
+  width: 10%;
+  height: 12%;
+}
+.nes-start {
+  left: 48.5%;
+  top: 50%;
+  width: 10%;
+  height: 12%;
+}
+.nes-b {
+  left: 67%;
+  top: 48%;
+  width: 12%;
+  height: 28%;
+  border-radius: 50%;
+}
+.nes-a {
+  left: 81%;
+  top: 34%;
+  width: 12%;
+  height: 28%;
+  border-radius: 50%;
 }
 .control {
   position: relative;
@@ -414,6 +522,83 @@ p {
 }
 .control > * {
   pointer-events: none;
+}
+.controls.layout-nes .nes-hit {
+  position: absolute;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+  padding: 0;
+}
+.controls.layout-nes .nes-hit:hover,
+.controls.layout-nes .nes-hit[data-pressed] {
+  background: #ffffff33;
+  transform: none;
+}
+.controls.layout-nes .nes-up {
+  left: 13.5%;
+  top: 32%;
+  width: 11%;
+  height: 18%;
+}
+.controls.layout-nes .nes-down {
+  left: 13.5%;
+  top: 58%;
+  width: 11%;
+  height: 20%;
+}
+.controls.layout-nes .nes-left {
+  left: 8%;
+  top: 45%;
+  width: 11%;
+  height: 18%;
+}
+.controls.layout-nes .nes-right {
+  left: 21%;
+  top: 45%;
+  width: 11%;
+  height: 18%;
+}
+.controls.layout-nes .nes-select {
+  left: 37%;
+  top: 50%;
+  width: 10%;
+  height: 12%;
+}
+.controls.layout-nes .nes-start {
+  left: 48.5%;
+  top: 50%;
+  width: 10%;
+  height: 12%;
+}
+.controls.layout-nes .nes-b {
+  left: 67%;
+  top: 48%;
+  width: 12%;
+  height: 28%;
+  border-radius: 50%;
+}
+.controls.layout-nes .nes-a {
+  left: 81%;
+  top: 34%;
+  width: 12%;
+  height: 28%;
+  border-radius: 50%;
+}
+.dpad .control {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+}
+.face-buttons .face-b,
+.face-buttons .face-a {
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+  border-radius: 50%;
+  font-size: 16px;
 }
 .control-left,
 .control-right {
@@ -629,9 +814,16 @@ p {
   .controls {
     gap: 6px;
   }
-  .movement,
-  .actions {
-    gap: 4px;
+  .dpad {
+    grid-template-columns: repeat(3, 44px);
+    grid-template-rows: 44px 44px;
+  }
+  .face-b,
+  .face-a {
+    width: 50px;
+    height: 50px;
+    min-width: 50px;
+    font-size: 13px;
   }
   .control {
     height: 52px;
@@ -672,7 +864,7 @@ p {
     font-size: 8px;
   }
   .in-game .world {
-    bottom: 93px;
+    bottom: 128px;
   }
 }
 @media (max-width: 700px) and (max-height: 600px) {
@@ -775,9 +967,23 @@ p {
   .journey {
     display: none;
   }
+  .dpad {
+    grid-template-columns: repeat(3, 40px);
+    grid-template-rows: 36px 36px;
+  }
+  .face-b,
+  .face-a {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    font-size: 11px;
+  }
+  .face-a {
+    margin-bottom: 4px;
+  }
   .control {
     height: 38px;
-    min-width: 56px;
+    min-width: 40px;
     font-size: 7px;
   }
   .overlay {
@@ -791,7 +997,7 @@ p {
     padding: 9px 20px;
   }
   .in-game .world {
-    bottom: 52px;
+    bottom: 88px;
   }
   .final-counts strong {
     font-size: 26px;

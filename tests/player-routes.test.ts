@@ -6,19 +6,11 @@ import { CAMPAIGN } from "../src/game/levels.ts";
 import { TUNING as T } from "../src/game/config.ts";
 import { physics } from "./support/arcade.ts";
 
-// Equal walk/air speed cannot clear original gaps on these stages.
-const UNREACHABLE = new Set(["2-3", "4-3", "7-3", "8-1", "8-2", "8-4"]);
-
 // These runs prove movement with ordinary controls. Separate campaign tests
 // prove NPC rescues; the quota is satisfied here to isolate player traversal.
 for (const [index, level] of CAMPAIGN.entries())
   test(
     `player input replay reaches World ${level.id}'s castle door`,
-    {
-      skip: UNREACHABLE.has(level.id)
-        ? `${level.id} is unreachable at equal walk and jump air speed`
-        : false,
-    },
     () => {
       const sim = new Simulation(() => 0.5, physics());
       sim.levelIndex = index;
@@ -37,6 +29,7 @@ for (const [index, level] of CAMPAIGN.entries())
             right: !!(bits & 2),
             jump: !!(bits & 4),
             down: !!(bits & 8),
+            run: !!(bits & 16),
           });
           // Movement must work without a lucky power-up.
           for (const item of sim.items) sim.physics.remove(item.body);

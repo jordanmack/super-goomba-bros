@@ -105,7 +105,7 @@ test("a short touch on Pipe travels to the bonus area and changes its music", as
     Object.assign(s.player.body.position, { x: 1856, y: 288 });
     Object.assign(s.player.body.velocity, { x: 0, y: 0 });
   });
-  await page.getByRole("button", { name: "Pipe", exact: true }).tap();
+  await page.getByRole("button", { name: "Down", exact: true }).tap();
   await expect
     .poll(() =>
       page.evaluate(() => (window as any).__game.sim.activeRoom.data.id),

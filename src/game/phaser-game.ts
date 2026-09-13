@@ -3,6 +3,7 @@ import { Boot } from "./scenes/Boot";
 import { Play } from "./scenes/Play";
 import type { Simulation } from "./simulation";
 import type { PhysicsWorld } from "./physics";
+import { TUNING } from "./config";
 
 // React owns screens and HUD; Phaser owns the canvas and its update loop.
 export class PhaserGame {
@@ -41,7 +42,7 @@ export class PhaserGame {
       },
       physics: {
         default: "arcade",
-        arcade: { gravity: { x: 0, y: 1500 }, customUpdate: true },
+        arcade: { gravity: { x: 0, y: TUNING.gravity }, customUpdate: true },
       },
       scene: [Boot, Play],
     });

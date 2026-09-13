@@ -46,23 +46,31 @@ Original asset sources and frame details are in the
 
 ## Player and controls
 
-The Goomba walks at one fixed pace. There is no sprint or Shift boost. Normal
-and giant forms use the same standard jump height. Holding Jump adds no height
-and does not cause repeated jumps. Jump horizontal speed matches walk speed
-while a direction is held. Some original gaps are wider than that jump.
-Walking off a ledge keeps the walking pace. Releasing direction stops
-horizontal motion.
+Walk and run use original SMB1 caps scaled to 32-pixel tiles (2x NES). Hold B
+to run. Jump keeps the horizontal speed from the ground (a walk jump or a
+running jump). Hold jump for extra height; a running jump goes farther, so
+original gaps stay reachable. Normal and giant forms use the same jump. Jump
+does not repeat from a held press. Walking off a ledge keeps the last ground
+pace. Releasing direction stops horizontal motion. Player and NPCs both walk,
+run, and running-jump. An NPC does not jump faster than its current ground
+speed.
 
 In water, each Jump press is an upward swim stroke. Gravity is reduced and the
 player stays below the top of the playfield. Pipes have a short re-entry delay.
 
+On-screen layouts switch from the pause menu. Compact is the default and does
+not persist across sessions. Compact Up may also jump. NES D-pad Up does not
+jump. A is jump. B is run (hold) and fire (press, flower required). NES Start
+pauses. Select does nothing.
+
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Walk | Left/Right or A/D | Left/Right |
-| Jump or swim upward | Space, Up, or W | Jump |
-| Enter pipe | Down or S | Pipe |
-| Fire with a flower | Z | Fire |
-| Pause | Escape | Pause |
+| Walk | Left/Right or A/D | D-pad Left/Right |
+| Run | Shift or Z | B |
+| Jump or swim upward | Space, Up, or W | A; Compact Up |
+| Enter pipe | Down or S | D-pad Down |
+| Fire with a flower | Shift or Z (press) | B (press) |
+| Pause | Escape | Pause; NES Start |
 
 A side pipe can also be entered by walking into its opening. There is no Hide
 or manual Warn button.

@@ -2,6 +2,7 @@ import type Phaser from "phaser";
 import { emptyInput } from "./simulation";
 import type { Input, Mode } from "./simulation";
 
+export type PadAction = keyof Input | "start" | "select" | "up";
 type ControlState = {
   input: Input;
   pulses: Partial<Input>;
@@ -16,7 +17,9 @@ const KEYS: Record<string, keyof Input> = {
   Space: "jump",
   ArrowUp: "jump",
   KeyW: "jump",
-  KeyZ: "fire",
+  KeyZ: "run",
+  ShiftLeft: "run",
+  ShiftRight: "run",
   ArrowDown: "down",
   KeyS: "down",
 };
@@ -27,9 +30,11 @@ export class GameControls {
   private input: Phaser.Input.InputPlugin;
   private root: HTMLElement;
   private state: ControlState;
-  private held = new Map<string, keyof Input | null>();
+  private held = new Map<string, PadAction | null>();
   private releases: (() => void)[] = [];
   private captured = new Set<number>();
+  private togglePause: () => void;
+  private startHeld = false;
 
   constructor(
     input: Phaser.Input.InputPlugin,
@@ -41,6 +46,7 @@ export class GameControls {
     this.input = input;
     this.root = root;
     this.state = state;
+    this.togglePause = togglePause;
     const event = (
       name: string,
       fn: (pointer: Phaser.Input.Pointer) => void,
@@ -247,7 +253,7 @@ export class GameControls {
       !!target.closest(".controls")
     );
   }
-  private actionAt(pointer: Phaser.Input.Pointer): keyof Input | null {
+  private actionAt(pointer: Phaser.Input.Pointer): PadAction | null {
     const scale = this.input.scene.scale,
       rect = scale.canvasBounds;
     const x = rect.left + (pointer.x / scale.width) * rect.width;
@@ -256,26 +262,37 @@ export class GameControls {
       .elementFromPoint(x, y)
       ?.closest<HTMLButtonElement>("[data-control]");
     return button && !button.disabled && this.root.contains(button)
-      ? (button.dataset.control as keyof Input)
+      ? (button.dataset.control as PadAction)
       : null;
   }
   private sync() {
     const next = emptyInput();
-    for (const action of this.held.values()) if (action) next[action] = true;
+    const pressed = new Set<PadAction>();
+    for (const action of this.held.values()) if (action) pressed.add(action);
+    for (const action of pressed)
+      if (action in next) next[action as keyof Input] = true;
+    const start = pressed.has("start");
+    if (start && !this.startHeld && this.playing()) {
+      this.togglePause();
+      return;
+    }
+    this.startHeld = [...this.held.values()].some((action) => action === "start");
     for (const action of ["jump", "fire", "down"] as const)
       if (next[action] && !this.state.input[action])
         this.state.pulses[action] = true;
+    if (next.run && !this.state.input.run) this.state.pulses.fire = true;
     Object.assign(this.state.input, next);
     for (const button of this.root.querySelectorAll<HTMLButtonElement>(
       "[data-control]",
     ))
       button.toggleAttribute(
         "data-pressed",
-        next[button.dataset.control as keyof Input],
+        pressed.has(button.dataset.control as PadAction),
       );
   }
   clear() {
     this.held.clear();
+    this.startHeld = false;
     this.sync();
     this.state.pulses = {};
     for (const pointer of this.input.manager.pointers) pointer.reset();

@@ -273,14 +273,12 @@ test("pipe segments and background bushes retain their map pixels", async ({
   expect(mismatches).toEqual([]);
 });
 
-test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue finishes before music resumes", async ({
+test("flower Goombas turn white, Shift runs, and Mario's death cue finishes before music resumes", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
-  await expect(
-    page.getByRole("button", { name: "Run", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "B", exact: true })).toBeVisible();
   await page.waitForFunction(
     () => (window as any).__game.audio.buffers.size === 15,
   );
@@ -288,12 +286,20 @@ test("flower Goombas turn white, Shift gives no sprint, and Mario's death cue fi
   await page.waitForFunction(
     () => (window as any).__game.sim.player.body.velocity.x > 0,
   );
-  await page.keyboard.down("Shift");
   expect(
     await page.evaluate(
       () => (window as any).__game.sim.player.body.velocity.x,
     ),
   ).toBeCloseTo(T.walkSpeed);
+  await page.keyboard.down("Shift");
+  await page.waitForFunction(
+    () => (window as any).__game.sim.player.body.velocity.x > 4,
+  );
+  expect(
+    await page.evaluate(
+      () => (window as any).__game.sim.player.body.velocity.x,
+    ),
+  ).toBeCloseTo(T.runSpeed);
   await page.keyboard.up("Shift");
   await page.keyboard.up("ArrowRight");
   const appearance = await page.evaluate(() => {
@@ -400,6 +406,7 @@ test("blocks bounce and disappear independently; item powers render with touch f
         jump: false,
         down: false,
         fire: false,
+        run: false,
       });
     g.renderer.render(s, 0);
     const mesh = g.renderer.play.obstacles.get(brick.id);
@@ -425,7 +432,7 @@ test("blocks bounce and disappear independently; item powers render with touch f
   await expect(page.locator(".power-state")).toContainText("GIANT");
   await expect(page.locator(".danger, .danger-meter")).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Fire", exact: true }),
+    page.getByRole("button", { name: "B", exact: true }),
   ).toBeVisible();
   for (const button of await page.locator(".controls button").all()) {
     const bounds = (await button.boundingBox())!;
@@ -441,11 +448,11 @@ test("blocks bounce and disappear independently; item powers render with touch f
     (window as any).__game.sim.fireballs.some((f: any) => f.owner === "player"),
   );
   const fire = (await page
-    .getByRole("button", { name: "Fire", exact: true })
+    .getByRole("button", { name: "B", exact: true })
     .boundingBox())!;
   await page.mouse.move(fire.x + fire.width / 2, fire.y + fire.height / 2);
   await page.mouse.down();
-  await page.waitForFunction(() => (window as any).__game.input.fire);
+  await page.waitForFunction(() => (window as any).__game.input.run);
   await page.mouse.up();
 });
 
@@ -637,7 +644,7 @@ test("touch movement supports simultaneous jump and clears on release", async ({
     .getByRole("button", { name: "Right", exact: true })
     .boundingBox())!;
   const jump = (await page
-    .getByRole("button", { name: "Jump", exact: true })
+    .getByRole("button", { name: "A", exact: true })
     .boundingBox())!;
   const points = [
     { x: right.x + right.width / 2, y: right.y + right.height / 2, id: 1 },

@@ -52,46 +52,92 @@ function give(s: Simulation, actor: Actor, kind: ItemKind) {
   s.collect(actor, item);
 }
 
-test("small and giant player jumps stay at standard height even when held", () => {
-  const heights: number[] = [];
-  for (const giant of [false, true]) {
-    for (const held of [false, true]) {
-      const s = game();
-      if (giant) give(s, s.player, "mushroom");
-      at(s, 100, T.groundY - 14 * s.player.scale);
-      tick(s, 0.1);
-      const startY = s.player.body.position.y;
-      let peakY = startY;
-      for (let frame = 0; frame < 100; frame++) {
-        tick(s, dt, { jump: held || frame === 0 });
-        peakY = Math.min(peakY, s.player.body.position.y);
-      }
-      const height = startY - peakY;
-      assert.ok(height > 128 && height < 150, `standard jump: ${height}`);
-      assert.equal(s.events.filter((event) => event === "jump").length, 1);
-      heights.push(height);
-    }
+function peakJump(
+  input: Partial<Input>,
+  giant = false,
+) {
+  const s = game();
+  if (giant) give(s, s.player, "mushroom");
+  at(s, 100, T.groundY - 14 * s.player.scale);
+  tick(s, 0.1, input.run ? { run: true, right: true } : {});
+  const startY = s.player.body.position.y;
+  const startX = s.player.body.position.x;
+  let peakY = startY,
+    peakX = startX;
+  for (let frame = 0; frame < 120; frame++) {
+    tick(s, dt, frame === 0 ? { ...input, jump: true } : input);
+    peakY = Math.min(peakY, s.player.body.position.y);
+    peakX = Math.max(peakX, s.player.body.position.x);
+    if (frame > 4 && s.player.grounded) break;
   }
-  assert.ok(Math.max(...heights) - Math.min(...heights) < 1);
+  return {
+    height: startY - peakY,
+    distance: peakX - startX,
+    jumps: s.events.filter((event) => event === "jump").length,
+  };
+}
+
+test("holding jump adds height, and giant form uses the same jump", () => {
+  const tap = peakJump({ right: true });
+  const hold = peakJump({ right: true, jump: true });
+  const giant = peakJump({ right: true, jump: true }, true);
+  assert.equal(tap.jumps, 1);
+  assert.equal(hold.jumps, 1);
+  assert.ok(tap.height > 50 && tap.height < 95, `tap jump ${tap.height}`);
+  assert.ok(hold.height > 110 && hold.height < 145, `hold jump ${hold.height}`);
+  assert.ok(hold.height - tap.height > 25, "hold jump is extra height");
+  assert.ok(Math.abs(hold.height - giant.height) < 2);
 });
 
-test("jump horizontal speed matches walk speed, and releasing direction still stops in air", () => {
-  assert.equal(T.airSpeed, T.walkSpeed);
+test("running jump keeps run speed and travels farther than a walk jump", () => {
+  const walk = peakJump({ right: true, jump: true });
+  const run = peakJump({ right: true, jump: true, run: true });
   const sim = game();
   tick(sim, 0.2, { right: true });
-  const walkVx = sim.player.body.velocity.x;
-  assert.equal(walkVx, T.walkSpeed);
-  tick(sim, 1 / 60, { right: true, jump: true });
-  tick(sim, 0.15, { right: true });
+  assert.equal(sim.player.body.velocity.x, T.walkSpeed);
+  tick(sim, 0.2, { right: true, run: true });
+  assert.equal(sim.player.body.velocity.x, T.runSpeed);
+  tick(sim, 1 / 60, { right: true, run: true, jump: true });
+  tick(sim, 0.15, { right: true, run: true });
   assert.equal(sim.player.grounded, false);
-  assert.equal(sim.player.body.velocity.x, walkVx);
-  assert.equal(sim.player.body.velocity.x, T.airSpeed);
+  assert.equal(sim.player.body.velocity.x, T.runSpeed);
   tick(sim, 0.1);
   assert.equal(
     sim.player.body.velocity.x,
     0,
     "releasing direction still stops horizontal motion",
   );
+  assert.ok(run.distance > walk.distance + 40, `${run.distance} vs ${walk.distance}`);
+  assert.ok(run.height > walk.height);
+});
+
+test("a delayed NPC launch takes off at ground pace and never speeds up in the air", () => {
+  const s = game();
+  const n = s.npcs[0];
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.speed = T.runSpeed;
+  Body.setPosition(n.body, { x: 400, y: T.groundY - 14 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.navBackoff = { x: 400, vx: T.runSpeed, delay: 8 };
+  let takeoff = 0;
+  let leftGround = false;
+  const air: number[] = [];
+  for (let i = 0; i < 40; i++) {
+    const wasGrounded = n.grounded;
+    s.step(dt, emptyInput());
+    if (wasGrounded && !n.grounded) {
+      leftGround = true;
+      takeoff = Math.abs(n.body.velocity.x);
+    }
+    if (!n.grounded) air.push(Math.abs(n.body.velocity.x));
+  }
+  assert.ok(leftGround, "NPC left the ground");
+  assert.ok(takeoff > 0, `takeoff ${takeoff}`);
+  assert.ok(takeoff <= T.runSpeed + 0.05, `takeoff ${takeoff} above run`);
+  for (const vx of air)
+    assert.ok(vx <= takeoff + 0.05, `air ${vx} > takeoff ${takeoff}`);
 });
 
 test("active Mario collects a star by contact and its immunity expires", () => {
@@ -1658,6 +1704,7 @@ test("a recorded World 1-1 run can win with Mario active and without teleporting
         right: !!(bits & 2),
         jump: !!(bits & 4),
         down: !!(bits & 8),
+        run: !!(bits & 16),
       });
       marioAppeared ||= s.marioActive;
       assert.notEqual(s.mode, "dead");

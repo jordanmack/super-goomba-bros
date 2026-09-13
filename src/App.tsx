@@ -10,14 +10,13 @@ import {
   RotateCcw,
   Volume2,
   VolumeX,
-  Flame,
 } from "lucide-react";
 import { Simulation, emptyInput } from "./game/simulation";
 import type { Input, Mode } from "./game/simulation";
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
-import { GameControls } from "./game/controls";
+import { GameControls, type PadAction } from "./game/controls";
 import { CAMPAIGN } from "./game/levels";
 
 type Runtime = {
@@ -80,6 +79,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [portrait, setPortrait] = useState("");
   const [ready, setReady] = useState(false);
+  const [padLayout, setPadLayout] = useState<"compact" | "nes">("compact");
   const startAudio = (game: Runtime) => {
     void game.audio.start().catch(() => {
       game.audio.disable();
@@ -202,7 +202,7 @@ export default function App() {
                 ? `STAR ${Math.ceil(sim.player.starLeft)}s`
                 : "",
               sim.player.scale > 1 ? "GIANT" : "",
-              sim.player.flower ? "FIRE: Z" : "",
+              sim.player.flower ? "FIRE: B" : "",
             ]
               .filter(Boolean)
               .join(" / "),
@@ -285,14 +285,15 @@ export default function App() {
     setMuted(!muted);
   };
   const actionButton = (
-    action: keyof Input,
+    action: PadAction,
     label: string,
     icon: React.ReactNode,
     tooltip: string,
+    extraClass = "",
   ) => (
     <button
       type="button"
-      className={`control control-${action}`}
+      className={`control control-${action} ${extraClass}`.trim()}
       data-control={action}
       aria-label={label}
       title={tooltip}
@@ -300,9 +301,14 @@ export default function App() {
       onDragStart={(e) => e.preventDefault()}
     >
       {icon}
-      <span>{label}</span>
+      {!extraClass.includes("nes-hit") && label && <span>{label}</span>}
     </button>
   );
+  const switchPad = () => {
+    setPadLayout((layout) => (layout === "compact" ? "nes" : "compact"));
+    runtime.current?.clearInput();
+    (document.activeElement as HTMLElement)?.blur();
+  };
   const active = state.mode !== "title";
   const overlay = paused || state.mode === "won";
   const minutes = Math.floor(state.elapsed / 60)
@@ -455,37 +461,116 @@ export default function App() {
               </div>
               <DoorOpen size={14} />
             </div>
-            <div className="controls">
-              <div className="movement">
-                {actionButton(
-                  "left",
-                  "Left",
-                  <ArrowLeft />,
-                  "Walk left (Left / A)",
-                )}
-                {actionButton(
-                  "right",
-                  "Right",
-                  <ArrowRight />,
-                  "Walk right (Right / D)",
-                )}
-              </div>
-              <div className="actions">
-                {actionButton(
-                  "down",
-                  "Pipe",
-                  <ArrowDown />,
-                  "Enter pipe (Down / S)",
-                )}
-                {state.flower &&
-                  actionButton("fire", "Fire", <Flame />, "Shoot fireball (Z)")}
-                {actionButton(
-                  "jump",
-                  "Jump",
-                  <ArrowUp />,
-                  "Jump (Space / Up / W)",
-                )}
-              </div>
+            <div
+              className={`controls layout-${padLayout}`}
+              aria-label={
+                padLayout === "nes" ? "NES controller" : "Compact controller"
+              }
+            >
+              {padLayout === "compact" ? (
+                <>
+                  <div className="dpad">
+                    {actionButton(
+                      "jump",
+                      "Up",
+                      <ArrowUp />,
+                      "Up / Jump (Up / W)",
+                      "dpad-up",
+                    )}
+                    {actionButton(
+                      "left",
+                      "Left",
+                      <ArrowLeft />,
+                      "Walk left (Left / A)",
+                      "dpad-left",
+                    )}
+                    {actionButton(
+                      "down",
+                      "Down",
+                      <ArrowDown />,
+                      "Enter pipe (Down / S)",
+                      "dpad-down",
+                    )}
+                    {actionButton(
+                      "right",
+                      "Right",
+                      <ArrowRight />,
+                      "Walk right (Right / D)",
+                      "dpad-right",
+                    )}
+                  </div>
+                  <div className="face-buttons">
+                    {actionButton(
+                      "run",
+                      "B",
+                      null,
+                      "Run and fire (Shift / Z)",
+                      "face-b",
+                    )}
+                    {actionButton(
+                      "jump",
+                      "A",
+                      null,
+                      "Jump (Space)",
+                      "face-a",
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <NesPadArt />
+                  {actionButton("up", "Up", null, "Up", "nes-hit nes-up")}
+                  {actionButton(
+                    "left",
+                    "Left",
+                    null,
+                    "Walk left (Left / A)",
+                    "nes-hit nes-left",
+                  )}
+                  {actionButton(
+                    "down",
+                    "Down",
+                    null,
+                    "Enter pipe (Down / S)",
+                    "nes-hit nes-down",
+                  )}
+                  {actionButton(
+                    "right",
+                    "Right",
+                    null,
+                    "Walk right (Right / D)",
+                    "nes-hit nes-right",
+                  )}
+                  {actionButton(
+                    "select",
+                    "Select",
+                    null,
+                    "Select",
+                    "nes-hit nes-select",
+                  )}
+                  {actionButton(
+                    "start",
+                    "Start",
+                    null,
+                    "Pause (Start)",
+                    "nes-hit nes-start",
+                  )}
+                  {actionButton(
+                    "run",
+                    "B",
+                    null,
+                    "Run and fire (Shift / Z)",
+                    "nes-hit nes-b",
+                  )}
+                  {actionButton(
+                    "jump",
+                    "A",
+                    null,
+                    "Jump (Space)",
+                    "nes-hit nes-a",
+                  )}
+                </>
+              )}
             </div>
           </footer>
         </>
@@ -504,6 +589,9 @@ export default function App() {
               </button>
               <button className="secondary" onClick={start}>
                 <RotateCcw size={16} /> RESTART LEVEL
+              </button>
+              <button className="secondary" onClick={switchPad}>
+                CONTROLS: {padLayout === "compact" ? "COMPACT" : "NES"}
               </button>
             </>
           ) : (
@@ -546,5 +634,72 @@ export default function App() {
         </div>
       )}
     </main>
+  );
+}
+
+function NesPadArt() {
+  return (
+    <svg
+      className="nes-pad-art"
+      viewBox="0 0 400 168"
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="8" y="28" width="384" height="124" rx="18" fill="#c8c8c8" />
+      <rect x="12" y="32" width="376" height="116" rx="16" fill="#d8d8d8" />
+      <rect x="12" y="32" width="376" height="18" rx="8" fill="#b0b0b0" />
+      <rect x="22" y="48" width="108" height="88" rx="44" fill="#bcbcbc" />
+      <rect x="56" y="58" width="40" height="68" rx="8" fill="#2a2a2a" />
+      <rect x="36" y="78" width="80" height="28" rx="8" fill="#2a2a2a" />
+      <rect x="64" y="66" width="24" height="52" rx="4" fill="#1a1a1a" />
+      <rect x="48" y="84" width="56" height="16" rx="4" fill="#1a1a1a" />
+      <circle cx="76" cy="92" r="7" fill="#444" />
+      <rect x="150" y="86" width="36" height="14" rx="7" fill="#6a1010" />
+      <rect x="196" y="86" width="36" height="14" rx="7" fill="#6a1010" />
+      <text
+        x="168"
+        y="80"
+        textAnchor="middle"
+        fill="#5a5a5a"
+        fontSize="8"
+        fontFamily="monospace"
+      >
+        SELECT
+      </text>
+      <text
+        x="214"
+        y="80"
+        textAnchor="middle"
+        fill="#5a5a5a"
+        fontSize="8"
+        fontFamily="monospace"
+      >
+        START
+      </text>
+      <circle cx="292" cy="100" r="22" fill="#8a1818" />
+      <circle cx="292" cy="100" r="18" fill="#c42828" />
+      <circle cx="348" cy="78" r="22" fill="#8a1818" />
+      <circle cx="348" cy="78" r="18" fill="#c42828" />
+      <text
+        x="292"
+        y="132"
+        textAnchor="middle"
+        fill="#5a5a5a"
+        fontSize="11"
+        fontFamily="monospace"
+      >
+        B
+      </text>
+      <text
+        x="348"
+        y="110"
+        textAnchor="middle"
+        fill="#5a5a5a"
+        fontSize="11"
+        fontFamily="monospace"
+      >
+        A
+      </text>
+    </svg>
   );
 }

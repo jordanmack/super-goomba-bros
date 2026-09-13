@@ -7,10 +7,7 @@ in `src/assets/smb/README.md`.
 
 `player-routes.json` records ordinary input runs that reach each stage's castle
 door. Each pair is `[buttons, frames]`, with bit1 Left, bit2 Right, bit4 Jump,
-and bit8 Pipe. These files are never included in the game build.
-
-Worlds 2-3, 4-3, 7-3, 8-1, 8-2, and 8-4 have original gaps wider than a jump at
-walk speed, so they have no recorded route and their replay tests are skipped.
+bit8 Pipe, and bit16 Run. These files are never included in the game build.
 
 The player replay tests disable Mario, pre-satisfy the rescue quota, and remove
 emerging power-ups. This isolates movement and proves that no random power-up

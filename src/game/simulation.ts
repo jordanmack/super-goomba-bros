@@ -10,6 +10,7 @@ export type Input = {
   jump: boolean;
   fire: boolean;
   down: boolean;
+  run: boolean;
 };
 export const emptyInput = (): Input => ({
   left: false,
@@ -17,6 +18,7 @@ export const emptyInput = (): Input => ({
   jump: false,
   fire: false,
   down: false,
+  run: false,
 });
 export type Mode = "title" | "playing" | "dead" | "finishing" | "won";
 export type Obstacle = {
@@ -59,15 +61,16 @@ export type Actor = {
   flower: boolean;
   blockedFor: number;
   lastX: number;
-  jumpClear?: { x: number; top: number };
   areaId?: string;
   pipeWait?: number;
   navVx?: number;
   navDelay?: number;
+  navHoldX?: number;
   navRetry?: number;
   navBackoff?: { x: number; vx: number; delay: number };
   navDetourBelow?: number;
   navDrop?: { x: number; vx: number; delay: number };
+  jumpHeld?: boolean;
   swimPath?: { x: number; y: number }[];
   swimSize?: number;
   swimRepath?: number;
@@ -179,9 +182,9 @@ export class Simulation {
     actor.areaId = target.data.id;
     actor.pipeWait = T.pipeCooldown;
     actor.idleDrop = undefined;
-    actor.jumpClear = undefined;
     actor.facing = 1;
     actor.navVx = undefined;
+    actor.navHoldX = undefined;
     actor.navBackoff = undefined;
     actor.swimPath = undefined;
     target.place(actor, target.offset + destination.page * 512 + 100);
@@ -256,7 +259,7 @@ export class Simulation {
   private flagPrevMarioX = 0;
   private nextId = 1;
   private jumped = false;
-  private playerJumping = false;
+  private playerPace = T.walkSpeed as number;
   private bouncedNpcs = new Set<Actor>();
   random: () => number;
 
@@ -328,7 +331,7 @@ export class Simulation {
     this.particles = [];
     this.events = [];
     this.jumped = false;
-    this.playerJumping = false;
+    this.playerPace = T.walkSpeed;
     this.bouncedNpcs.clear();
     this.flagPrevPlayerX = this.player.body.position.x;
     this.flagPrevMarioX = this.mario.body.position.x;
@@ -393,12 +396,21 @@ export class Simulation {
       a !== this.player &&
       a !== this.mario &&
       !a.grounded &&
-      !a.jumpClear &&
       a.navVx !== undefined
-    )
-      vx = (a.navDelay ?? 0) > 0 ? 0 : a.navVx;
+    ) {
+      // Keep the planned launch velocity so a reverse takeoff is not flipped.
+      if ((a.navDelay ?? 0) > 0) vx = 0;
+      else vx = a.navVx;
+    }
     Body.setVelocity(a.body, { x: vx, y: a.body.velocity.y });
     if (vx) a.facing = Math.sign(vx);
+  }
+  private launchJump(a: Actor, vx: number, impulse: number, delay = 0) {
+    this.move(a, vx);
+    this.jump(a, impulse);
+    a.navVx = vx;
+    a.navDelay = delay;
+    if (delay > 0) a.navHoldX = a.body.position.x;
   }
   setMarioStage(stage: 0 | 1 | 2, blink = false) {
     if (!this.mario) {
@@ -409,24 +421,28 @@ export class Simulation {
     this.mario.flower = stage === 2;
     this.marioStage = stage;
   }
-  private jump(a: Actor) {
+  private runSpeedFor(a: Actor) {
+    if (a === this.player || a === this.mario) return T.runSpeed;
+    return T.runSpeed;
+  }
+  private jumpImpulse(a: Actor, vx = a.body.velocity.x) {
+    if (this.roomFor(a).onSpring(a)) return T.springImpulse;
+    return Math.abs(vx) >= (T.walkSpeed + T.runSpeed) / 2
+      ? T.runJumpSpeed
+      : T.jumpSpeed;
+  }
+  private jump(a: Actor, impulse?: number) {
     const water = this.roomFor(a).data.type === "water";
     if (!a.grounded && !water) return;
     Body.setVelocity(a.body, {
       x: a.body.velocity.x,
       y: -(water
         ? T.swimImpulse
-        : this.roomFor(a).onSpring(a)
-          ? T.springImpulse
-          : a !== this.player && a.scale > 1
-            ? 15
-            : T.jumpSpeed),
+        : (impulse ?? this.jumpImpulse(a))),
     });
     a.grounded = false;
-    if (a === this.player) {
-      this.playerJumping = true;
-      this.events.push("jump");
-    }
+    if (!water) a.jumpHeld = true;
+    if (a === this.player) this.events.push("jump");
   }
   private autoJump(a: Actor, direction: number) {
     if (!a.grounded) return;
@@ -485,7 +501,7 @@ export class Simulation {
           probe,
           solids,
           direction,
-          a.speed,
+          this.runSpeedFor(a),
           0,
           (landing) => landing.y > p.y + 16,
           true,
@@ -496,53 +512,76 @@ export class Simulation {
         }
       }
     }
-    if (a.navDetourBelow && !wall && safeDrop && !supported) return;
+    if (
+      (a.navDetourBelow || this.roomFor(a).data.type === "castle") &&
+      !wall &&
+      safeDrop &&
+      !supported
+    )
+      return;
     if ((a.navRetry ?? 0) > 0 && !inWell) {
       if (!supported) this.move(a, 0);
       return;
     }
-    const impulse = this.roomFor(a).onSpring(a)
+    const pace = this.runSpeedFor(a);
+    let impulse = this.roomFor(a).onSpring(a)
       ? T.springImpulse
       : a.scale > 1
-        ? 15
-        : T.jumpSpeed;
-    const launch = planJump(
+        ? T.giantJumpSpeed
+        : T.runJumpSpeed;
+    let launch = planJump(
       a.body,
       solids,
       direction,
-      a.speed,
+      pace,
       impulse,
       undefined,
       this.roomFor(a).data.type === "castle",
     );
+    if (
+      impulse === T.runJumpSpeed &&
+      this.roomFor(a).data.type !== "castle" &&
+      (!launch || (wall && (launch.x - p.x) * direction < 64))
+    ) {
+      const high = planJump(
+        a.body,
+        solids,
+        direction,
+        pace,
+        T.giantJumpSpeed,
+        undefined,
+        this.roomFor(a).data.type === "castle",
+      );
+      if (high && (!launch || high.score > launch.score + 40)) {
+        launch = high;
+        impulse = T.giantJumpSpeed;
+      }
+    }
     if (launch) {
-      this.move(a, launch.delay ? 0 : launch.vx);
-      this.jump(a);
-      a.navVx = launch.vx;
-      a.navDelay = launch.delay;
+      this.launchJump(a, launch.vx, impulse, launch.delay);
     } else if (inWell) {
       const reverse = planJump(
         a.body,
         solids,
         -direction,
-        a.speed,
+        pace,
         impulse,
         (landing) => landing.y < p.y - 24,
       );
       if (reverse) {
-        this.move(a, reverse.delay ? 0 : reverse.vx);
-        this.jump(a);
-        a.navVx = reverse.vx;
-        a.navDelay = reverse.delay;
+        this.launchJump(a, reverse.vx, impulse, reverse.delay);
       } else {
-        this.move(a, 0);
-        this.jump(a);
-        a.navVx = direction * T.npcGapSpeed;
-        a.navDelay = 18;
+        this.launchJump(a, direction * this.runSpeedFor(a), impulse, 18);
       }
     } else {
       if (!wall && (safeDrop || a.navDetourBelow)) {
-        const drop = planJump(a.body, solids, direction, a.speed, 0);
+        const drop = planJump(
+          a.body,
+          solids,
+          direction,
+          this.runSpeedFor(a),
+          0,
+        );
         if (drop) {
           this.move(a, drop.vx);
           a.navVx = drop.vx;
@@ -561,7 +600,17 @@ export class Simulation {
             break;
           const probe = new Body(x, p.y, a.body.width, a.body.height);
           if (overlaps(probe, solids, 0.1).length) continue;
-          const retry = planJump(probe, solids, direction, a.speed, impulse);
+          if (
+            solids.some(
+              (s) =>
+                x + half + 4 > s.bounds.min.x &&
+                x - half - 4 < s.bounds.max.x &&
+                s.bounds.max.y < feet - 2 &&
+                s.bounds.min.y > p.y - 240,
+            )
+          )
+            continue;
+          const retry = planJump(probe, solids, direction, pace, impulse);
           if (
             retry &&
             ((retry.x - p.x) * direction > 24 || retry.y < p.y - 32)
@@ -575,15 +624,12 @@ export class Simulation {
           a.body,
           solids,
           -direction,
-          a.speed,
+          pace,
           impulse,
           (landing) => landing.y < p.y - 24,
         );
         if (reverse) {
-          this.move(a, reverse.delay ? 0 : reverse.vx);
-          this.jump(a);
-          a.navVx = reverse.vx;
-          a.navDelay = reverse.delay;
+          this.launchJump(a, reverse.vx, impulse, reverse.delay);
           return;
         }
         const barrier = solids.find(
@@ -1058,12 +1104,14 @@ export class Simulation {
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
       a.swimRepath = Math.max(0, (a.swimRepath ?? 0) - dt);
       const water = this.roomFor(a).data.type === "water";
-      a.body.gravityScale = water ? (a === this.player ? T.swimGravity : 0) : 1;
-      if (water && a === this.player)
-        a.body.velocity.y = Math.min(T.swimFallSpeed, a.body.velocity.y);
-      if (water && a.body.position.y < MAP_TOP + 64 + a.body.height / 2) {
-        a.body.position.y = MAP_TOP + 64 + a.body.height / 2;
-        a.body.velocity.y = Math.max(0, a.body.velocity.y);
+      if (water) {
+        a.body.gravityScale = a === this.player ? T.swimGravity : 0;
+        if (a === this.player)
+          a.body.velocity.y = Math.min(T.swimFallSpeed, a.body.velocity.y);
+        if (a.body.position.y < MAP_TOP + 64 + a.body.height / 2) {
+          a.body.position.y = MAP_TOP + 64 + a.body.height / 2;
+          a.body.velocity.y = Math.max(0, a.body.velocity.y);
+        }
       }
     }
     for (const room of this.rooms.values())
@@ -1080,17 +1128,20 @@ export class Simulation {
       if (!this.marioActive)
         this.setMarioStage((phase === 0 ? 1 : phase) as 0 | 1 | 2);
     }
-    for (const a of [this.player, ...this.npcs, this.mario]) this.ground(a);
+    for (const a of [this.player, ...this.npcs, this.mario]) {
+      this.ground(a);
+      if (a.grounded) a.jumpHeld = false;
+    }
     if (this.mode === "playing") {
       const dx = Number(input.right) - Number(input.left);
       const p = this.player.body.position;
-      if (this.player.grounded) this.playerJumping = false;
-      const pace =
-        this.playerJumping && this.activeRoom.data.type !== "water"
-          ? T.airSpeed
-          : T.walkSpeed;
-      this.move(this.player, dx * pace);
+      const water = this.activeRoom.data.type === "water";
+      if (water) this.playerPace = T.walkSpeed;
+      else if (this.player.grounded)
+        this.playerPace = input.run ? T.runSpeed : T.walkSpeed;
+      this.move(this.player, dx * this.playerPace);
       if (input.jump && !this.jumped) this.jump(this.player);
+      this.player.jumpHeld = input.jump;
       this.jumped = input.jump;
       if (input.fire && this.player.flower && this.playerFireCooldown === 0) {
         this.playerFireCooldown = T.playerFireCooldown;
@@ -1124,6 +1175,13 @@ export class Simulation {
     this.updateCrowd(dt);
     this.doomed = rescueImpossible(this.saved, this.living(), T.required);
     this.updateMario(dt);
+    for (const a of [this.player, ...this.npcs, this.mario]) {
+      if (this.roomFor(a).data.type === "water") continue;
+      const hold = !!a.jumpHeld && a.body.velocity.y < 0 && !a.grounded;
+      a.body.gravityScale = !a.grounded
+        ? (hold ? T.jumpHoldGravity : T.jumpFallGravity) / T.gravity
+        : 1;
+    }
     const hitters = [
       this.player,
       ...(this.marioActive && this.marioStun === 0 ? [this.mario] : []),
@@ -1140,6 +1198,14 @@ export class Simulation {
     const prevNpcTops = new Map<Actor, number>();
     for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
     this.physics.step(dt);
+    for (const n of this.npcs) {
+      if (n.navHoldX === undefined) continue;
+      // Keep takeoff x so delayed air speed can match ground pace without extra travel.
+      Body.setPosition(n.body, { x: n.navHoldX, y: n.body.position.y });
+      if (n.navVx !== undefined)
+        Body.setVelocity(n.body, { x: n.navVx, y: n.body.velocity.y });
+      n.navHoldX = undefined;
+    }
     for (const room of this.rooms.values())
       for (const coin of room.coins) {
         if (coin.collected) continue;
@@ -1389,10 +1455,10 @@ export class Simulation {
         const drop = n.navDrop,
           dx = drop.x - p.x;
         if (Math.abs(dx) < 0.5) {
-          n.navVx = drop.vx;
-          n.navDelay = drop.delay;
           n.navDrop = undefined;
-          this.move(n, drop.delay ? 0 : drop.vx);
+          this.move(n, drop.vx);
+          n.navVx = drop.vx;
+          n.navDelay = 0;
         } else this.move(n, Math.sign(dx) * Math.min(n.speed, Math.abs(dx)));
         continue;
       }
@@ -1403,20 +1469,19 @@ export class Simulation {
       ) {
         const opening = MAP_TOP + room.data.goal.row * 32;
         if (p.y > opening + 40) {
-          this.move(n, 0);
-          this.jump(n);
-          n.navVx = Math.sign(room.goalX - p.x) * T.npcGapSpeed;
-          n.navDelay = 14;
+          this.launchJump(
+            n,
+            Math.sign(room.goalX - p.x) * this.runSpeedFor(n),
+            T.runJumpSpeed,
+            14,
+          );
           continue;
         }
       }
       if (n.navBackoff) {
         const target = n.navBackoff;
         if (n.grounded && Math.abs(p.x - target.x) <= n.speed) {
-          this.move(n, target.delay ? 0 : target.vx);
-          this.jump(n);
-          n.navVx = target.vx;
-          n.navDelay = target.delay;
+          this.launchJump(n, target.vx, T.runJumpSpeed, target.delay);
           n.navBackoff = undefined;
         } else this.move(n, Math.sign(target.x - p.x) * n.speed);
         continue;
@@ -1424,37 +1489,9 @@ export class Simulation {
       if (n.scale > 1) {
         n.blockedFor = Math.abs(p.x - n.lastX) < 8 ? n.blockedFor + dt : 0;
         n.lastX = p.x;
-        if (n.blockedFor > 0.5 && !n.jumpClear) {
-          const ceiling = this.solids
-            .filter(
-              (s) =>
-                s.bounds.max.x > p.x - 12 * n.scale &&
-                s.bounds.min.x < p.x + 12 * n.scale + 40 &&
-                s.bounds.min.y < p.y + 14 * n.scale - 40,
-            )
-            .sort((a, b) => a.bounds.min.y - b.bounds.min.y)[0];
-          if (ceiling)
-            n.jumpClear = {
-              x: ceiling.bounds.min.x - 12 * n.scale - 4,
-              top: ceiling.bounds.min.y,
-            };
-          else
-            Body.setVelocity(n.body, {
-              x: n.facing * n.speed,
-              y: -15,
-            });
+        if (n.blockedFor > 0.5 && n.grounded) {
+          this.jump(n, T.giantJumpSpeed);
           n.blockedFor = 0;
-        }
-        if (n.jumpClear) {
-          // Back out from under a low ceiling, then jump vertically onto it.
-          if (p.x > n.jumpClear.x + 1) this.move(n, -n.speed);
-          else {
-            this.move(n, 0);
-            this.jump(n);
-            if (p.y + 14 * n.scale < n.jumpClear.top - 1)
-              n.jumpClear = undefined;
-          }
-          if (n.jumpClear) continue;
         }
       }
       const threat =
@@ -1468,7 +1505,7 @@ export class Simulation {
         (room.data.goal?.kind === "pipe" && p.x > room.goalX + 20)
           ? -1
           : 1;
-      this.move(n, direction * n.speed);
+      this.move(n, direction * this.runSpeedFor(n));
       this.autoJump(n, direction);
     }
   }
@@ -1680,7 +1717,10 @@ export class Simulation {
       ) {
         this.marioJumpWait = 0.65 + this.random() * 0.35;
         // Commit toward the predicted landing point, with bounded inaccuracy.
-        const flightFrames = (2 * T.jumpSpeed) / 0.4167;
+        const upG = T.jumpHoldGravity / 3600;
+        const flightFrames =
+          T.jumpSpeed / upG +
+          T.jumpSpeed / Math.sqrt(upG * (T.jumpFallGravity / 3600));
         const launch = Math.max(
           -4,
           Math.min(4, (this.marioAim - m.x) / flightFrames),

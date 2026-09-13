@@ -26,16 +26,19 @@ starts at World 1-1 and progresses in order.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Walk | Left/Right or A/D | Left/Right |
-| Jump; swim upward in water | Space, Up, or W | Jump |
-| Enter a pipe | Down or S; walk into side entrances | Pipe |
-| Shoot with a flower | Z | Fire |
-| Pause | Escape | Pause |
+| Walk | Left/Right or A/D | D-pad Left/Right |
+| Run | Shift or Z | B |
+| Jump; swim upward in water | Space, Up, or W | A; Compact Up |
+| Enter a pipe | Down or S; walk into side entrances | D-pad Down |
+| Shoot with a flower | Shift or Z (press) | B (press) |
+| Pause | Escape | Pause; NES Start |
 
-Normal jumps have a fixed height. Jump horizontal speed matches walk speed.
-Releasing direction stops horizontal movement.
-Springs provide their own stronger bounce. There is no Run or Hide action.
-An unwarned NPC inside warning range automatically hears an urgent shout.
+Hold B to run. Jump keeps that ground speed in the air. Hold jump for extra
+height; running jumps clear original gaps. Compact is the default on-screen
+pad; switch to an NES pad from pause. Compact Up may jump; NES D-pad Up does
+not. Releasing direction stops horizontal movement. Springs provide their own
+stronger bounce. An unwarned NPC inside warning range automatically hears an
+urgent shout.
 
 Each touch, mouse pointer, and key has an independent hold. Sliding changes
 actions; sliding out releases them. Pause, restart, and interruptions clear input.

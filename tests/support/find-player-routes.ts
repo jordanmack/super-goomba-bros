@@ -15,10 +15,10 @@ type State = {
   area: string;
   time: number;
   grounded: boolean;
-  jumping: boolean;
   jumpHeld: boolean;
   pipeWait: number;
   hidden: number[];
+  pace: number;
 };
 type Node = {
   state: State;
@@ -33,6 +33,7 @@ type Macro = {
   frames: number;
   delay: number;
   ratio: number;
+  run: boolean;
 };
 const output = "/tmp/super-goomba-player-routes-debug.json";
 const results: Record<string, [number, number][]> = existsSync(output)
@@ -51,6 +52,7 @@ const input = (bits: number) => ({
   right: !!(bits & 2),
   jump: !!(bits & 4),
   down: !!(bits & 8),
+  run: !!(bits & 16),
 });
 function prepare(index: number) {
   const sim = new Simulation(() => 0.5, physics());
@@ -72,7 +74,10 @@ function step(sim: Simulation, bits: number) {
 }
 function capture(sim: Simulation): State {
   const body = sim.player.body;
-  const flags = sim as unknown as { playerJumping: boolean; jumped: boolean };
+  const flags = sim as unknown as {
+    jumped: boolean;
+    playerPace: number;
+  };
   return {
     x: body.position.x,
     y: body.position.y,
@@ -83,10 +88,10 @@ function capture(sim: Simulation): State {
     grounded:
       sim.player.grounded ||
       !!(body.native as unknown as { blocked: { down: boolean } }).blocked.down,
-    jumping: flags.playerJumping,
     jumpHeld: flags.jumped,
     pipeWait: sim.player.pipeWait ?? 0,
     hidden: sim.obstacles.filter((c) => c.hidden && c.used).map((c) => c.id),
+    pace: flags.playerPace,
   };
 }
 function restore(sim: Simulation, state: State) {
@@ -104,11 +109,12 @@ function restore(sim: Simulation, state: State) {
   Object.assign(sim, {
     mode: "playing",
     elapsed: state.time,
-    playerJumping: state.jumping,
     jumped: state.jumpHeld,
+    playerPace: state.pace,
     marioReturn: 1e6,
     marioActive: false,
   });
+  sim.player.jumpHeld = state.jumpHeld;
   sim.cameraX = sim.activeRoom.offset;
   for (const block of sim.obstacles) {
     block.bounce = 0;
@@ -126,7 +132,8 @@ function macros(sim: Simulation, state: State): Macro[] {
     frames: number,
     delay = 0,
     ratio = 1,
-  ) => actions.push({ kind, direction, frames, delay, ratio });
+    run = false,
+  ) => actions.push({ kind, direction, frames, delay, ratio, run });
   if (sim.activeRoom.data.type === "water") {
     for (const direction of [1, 0, -1]) {
       add("walk", direction, 8);
@@ -136,14 +143,19 @@ function macros(sim: Simulation, state: State): Macro[] {
     for (const direction of [1, -1]) {
       add("walk", direction, 4);
       add("walk", direction, 12);
+      add("walk", direction, 8, 0, 1, true);
+      add("walk", direction, 16, 0, 1, true);
       for (const delay of [0, 8, 16, 24])
-        for (const ratio of [1, 0.5, 0.25])
-          add("jump", direction, 110, delay, ratio);
+        for (const run of [false, true])
+          add("jump", direction, 110, delay, 1, run);
       for (const delay of [0, 12, 24]) add("drop", direction, 100, delay);
     }
     if (sim.activeRoom.platforms.length) add("wait", 0, 30);
   } else {
-    for (const direction of [1, 0, -1]) add("walk", direction, 8);
+    for (const direction of [1, 0, -1]) {
+      add("walk", direction, 8);
+      add("walk", direction, 8, 0, 1, true);
+    }
   }
   if (
     sim.activeRoom.data.pipes.some(
@@ -176,9 +188,10 @@ function execute(sim: Simulation, start: State, macro: Macro) {
     const moving = !delaying && budget >= 1 && macro.direction !== 0;
     if (moving) budget--;
     let bits = moving ? (macro.direction > 0 ? 2 : 1) : 0;
-    if ((macro.kind === "jump" || macro.kind === "swim") && frame === 0)
-      bits |= 4;
+    if (macro.kind === "jump") bits |= 4;
+    else if (macro.kind === "swim" && frame === 0) bits |= 4;
     if (macro.kind === "pipe") bits |= 8;
+    if (macro.run) bits |= 16;
     actions.push(bits);
     step(sim, bits);
     if (sim.mode === "dead" || sim.player.body.position.y > 630) return null;
@@ -249,7 +262,7 @@ function remainingAfterPipe(
     (id === "29" ? { area: sim.level.main, page: 0 } : undefined);
   if (!destination) return 0;
   const next = areaData(destination.area);
-  const pace = next.type === "water" ? T.walkSpeed : T.airSpeed;
+  const pace = next.type === "water" ? T.walkSpeed : T.runSpeed;
   return (
     Math.max(
       0,
@@ -267,7 +280,7 @@ function search(index: number) {
     visited = new Map<string, number>();
   push(queue, { state: initial, cost: 0, priority: 0, inputs: [] });
   let count = 0;
-  while (queue.length && count++ < 12000) {
+  while (queue.length && count++ < 40000) {
     const node = pop(queue);
     restore(sim, node.state);
     for (const macro of macros(sim, node.state)) {
@@ -308,14 +321,14 @@ function search(index: number) {
               2,
           )
         : 0;
-      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Number(state.jumping)}:${phase}:${state.hidden.join(",")}`;
+      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${state.hidden.join(",")}`;
       if ((visited.get(key) ?? Infinity) <= cost) continue;
       visited.set(key, cost);
       const dx =
         room.data.goal?.kind === "pipe"
           ? Math.abs(room.goalX - state.x)
           : Math.max(0, room.goalX - state.x);
-      const pace = room.data.type === "water" ? T.walkSpeed : T.airSpeed;
+      const pace = room.data.type === "water" ? T.walkSpeed : T.runSpeed;
       next.priority =
         cost + (dx / pace + remainingAfterPipe(sim, state.area)) * 1.4;
       push(queue, next);

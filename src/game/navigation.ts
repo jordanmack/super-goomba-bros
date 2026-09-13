@@ -54,16 +54,27 @@ export function planJump(
     y: number;
     score: number;
   }[] = [];
+  const cap = Math.max(0, speed);
+  const paces = [
+    ...new Set(
+      [cap, Math.min(cap, T.walkSpeed), cap * 0.7].filter(
+        (pace) => pace > 0.4 && pace <= cap + 1e-9,
+      ),
+    ),
+  ];
+  const holdG = T.jumpHoldGravity / 3600,
+    fallG = T.jumpFallGravity / 3600;
   for (const delay of [0, 10, 18, 24])
-    for (const pace of [speed, 1.2, 2.6, 3.4, T.npcGapSpeed]) {
+    for (const pace of paces) {
       let x = start.x,
-        y = start.y,
-        vy = -impulse;
+        y = start.y;
+      const lift = impulse <= 0 ? 0 : impulse;
+      let vy = -lift;
       const vx = pace * direction;
-      for (let frame = 0; frame < 100; frame++) {
+      for (let frame = 0; frame < 140; frame++) {
         const oldX = x,
           oldY = y;
-        vy += T.gravity / 3600;
+        vy += vy < 0 ? holdG : fallG;
         if (frame >= delay) x += vx;
         y += vy;
         let landed = false,

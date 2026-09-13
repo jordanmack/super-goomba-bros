@@ -55,18 +55,19 @@ async function touch(
 
 async function input(
   page: Page,
-  expected: Partial<Record<"left" | "right" | "jump" | "fire", boolean>>,
+  expected: Partial<Record<"left" | "right" | "jump" | "fire" | "run", boolean>>,
 ) {
   expect(
     await page.evaluate(() => {
-      const { left, right, jump, fire } = (window as any).__game.input;
-      return { left, right, jump, fire };
+      const { left, right, jump, fire, run } = (window as any).__game.input;
+      return { left, right, jump, fire, run };
     }),
   ).toEqual({
     left: false,
     right: false,
     jump: false,
     fire: false,
+    run: false,
     ...expected,
   });
 }
@@ -124,7 +125,7 @@ test("a held finger slides between directions and outside while another holds Ju
 }) => {
   const right = await point(page, "Right", 1);
   const left = await point(page, "Left", 1);
-  const jump = await point(page, "Jump", 2);
+  const jump = await point(page, "A", 2);
   await touch(page, "touchstart", [right, jump]);
   await input(page, { right: true, jump: true });
   await touch(page, "touchmove", [left, jump], [left]);
@@ -181,7 +182,7 @@ test("touch cancellation and a later live touch list clear abandoned holds", asy
   page,
 }) => {
   const right = await point(page, "Right", 1);
-  const jump = await point(page, "Jump", 2);
+  const jump = await point(page, "A", 2);
   await touch(page, "touchstart", [right, jump]);
   await touch(page, "touchcancel", [jump], [right]);
   await input(page, { jump: true });
@@ -340,9 +341,80 @@ test("Space still jumps after clicking or focusing a gameplay control", async ({
   await page.keyboard.down("Space");
   await input(page, { jump: true });
   await page.keyboard.up("Space");
-  await page.getByRole("button", { name: "Jump", exact: true }).focus();
+  await page.getByRole("button", { name: "A", exact: true }).focus();
   await page.keyboard.down("Space");
   await input(page, { jump: true });
   await page.keyboard.up("Space");
   await input(page, {});
+});
+
+test("compact pad is the default and maps Up to jump and B to run", async ({
+  page,
+}) => {
+  for (const name of ["Up", "Down", "Left", "Right", "B", "A"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(page.locator(".nes-pad-art")).toHaveCount(0);
+  const up = await point(page, "Up", 1);
+  await touch(page, "touchstart", [up]);
+  await input(page, { jump: true });
+  await touch(page, "touchend", [], [up]);
+  const b = await point(page, "B", 1);
+  await touch(page, "touchstart", [b]);
+  await input(page, { run: true });
+  await touch(page, "touchend", [], [b]);
+  await page.keyboard.down("ShiftLeft");
+  await input(page, { run: true });
+  await page.keyboard.up("ShiftLeft");
+  await page.keyboard.down("KeyZ");
+  await input(page, { run: true });
+  await page.keyboard.up("KeyZ");
+  await input(page, {});
+});
+
+test("pause menu switches to the NES pad where Start pauses and Up does not jump", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Pause", exact: true }).tap();
+  await page.getByRole("button", { name: "CONTROLS: COMPACT" }).tap();
+  await page.getByRole("button", { name: "RESUME", exact: true }).tap();
+  await expect(page.locator(".nes-pad-art")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeAttached();
+  await expect(page.getByRole("button", { name: "Select", exact: true })).toBeAttached();
+  const startBox = await page.getByRole("button", { name: "Start", exact: true }).boundingBox();
+  expect(startBox).toBeTruthy();
+  expect(startBox!.width).toBeGreaterThan(8);
+  expect(startBox!.height).toBeGreaterThan(8);
+  const up = await point(page, "Up", 1);
+  await touch(page, "touchstart", [up]);
+  await input(page, {});
+  await touch(page, "touchend", [], [up]);
+  const a = await point(page, "A", 1);
+  await touch(page, "touchstart", [a]);
+  await input(page, { jump: true });
+  await touch(page, "touchend", [], [a]);
+  const select = await point(page, "Select", 1);
+  await touch(page, "touchstart", [select]);
+  await input(page, {});
+  await touch(page, "touchend", [], [select]);
+  const start = await point(page, "Start", 1);
+  await touch(page, "touchstart", [start]);
+  await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
+  await input(page, {});
+});
+
+test("NES Start with other holds still clears input and pulses", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Pause", exact: true }).tap();
+  await page.getByRole("button", { name: "CONTROLS: COMPACT" }).tap();
+  await page.getByRole("button", { name: "RESUME", exact: true }).tap();
+  const right = await point(page, "Right", 1);
+  const b = await point(page, "B", 2);
+  const start = await point(page, "Start", 3);
+  await touch(page, "touchstart", [right, b]);
+  await input(page, { right: true, run: true });
+  await touch(page, "touchstart", [right, b, start], [start]);
+  await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
+  await input(page, {});
+  expect(await page.evaluate(() => (window as any).__game.pulses)).toEqual({});
 });
