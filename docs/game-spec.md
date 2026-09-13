@@ -118,10 +118,11 @@ outside the camera view, including while the player is in another area.
 
 NPCs collect items by contact without seeking them or intentionally attacking
 Mario. A giant NPC still flees. Only the giant player can stomp Mario.
-A falling player that lands on an NPC bounces upward a little. That bounce does
+A falling player that lands on an NPC does not bounce upward. That landing does
 not kill or warn the NPC. Side contact is not a bounce.
-A stomp on a walking Koopa, from the player or Mario, bounces the stomper and
-turns the Koopa into a stationary shell. That is not a death and has no blood.
+A stomp on a walking Koopa, from the player or Mario, turns the Koopa into a
+stationary shell. Mario bounces from that stomp. The player does not hop.
+That is not a death and has no blood.
 A stopped shell is kicked by a side bump or a stomp, in the kicker's direction.
 A moving shell that is stomped stops. Side contact with a moving shell kills
 unprotected characters and uses Mario's existing damage rules, with a short
@@ -129,7 +130,7 @@ grace after the kick. Moving shells use the original shell speed, reverse on
 walls, and fall off ledges. A stopped shell shakes and then walks again on the
 original wake timer, keeping its warned flag. Fireballs, pits, and other moving
 shells still kill. A shelled Koopa is still living and can still be saved.
-Goombas still bounce without a shell.
+Goombas have no shell.
 Saved NPCs stay safe and cannot return to danger.
 
 ## Counters and finish

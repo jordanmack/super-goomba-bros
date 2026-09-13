@@ -1309,10 +1309,6 @@ export class Simulation {
         this.player.body.bounds.max.y >= this.npcTop(n)
       ) {
         this.bouncedNpcs.add(n);
-        Body.setVelocity(this.player.body, {
-          x: this.player.body.velocity.x,
-          y: -T.stompBounce,
-        });
         if (n.kind === "koopa") this.koopaStomp(n, this.player);
       }
     }

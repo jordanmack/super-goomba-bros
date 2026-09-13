@@ -782,7 +782,7 @@ function troopa(s: Simulation) {
   return s.npcs.find((n) => n.kind === "koopa")!;
 }
 
-test("a falling player bounces on an NPC without killing or warning it", () => {
+test("a falling player lands on an NPC without hopping, killing, or warning it", () => {
   const s = game();
   const n = s.npcs[0];
   parkNpcs(s, [n]);
@@ -791,7 +791,8 @@ test("a falling player bounces on an NPC without killing or warning it", () => {
   at(s, 200, 415 - 30);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
-  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.body.velocity.y > 0);
+  assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   tick(s, 0.8);
   assert.ok(s.player.grounded);
   assert.ok(
@@ -807,7 +808,7 @@ test("a falling player bounces on an NPC without killing or warning it", () => {
   assert.equal(s.events.includes("splat"), false);
 });
 
-test("a bounced NPC can be warned after the player leaves range", () => {
+test("a landed-on NPC can be warned after the player leaves range", () => {
   const s = game();
   const n = s.npcs[0];
   const other = s.npcs[1];
@@ -823,7 +824,7 @@ test("a bounced NPC can be warned after the player leaves range", () => {
   at(s, 200, 415 - 30);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
-  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.body.velocity.y > 0);
   tick(s, 0.8);
   assert.equal(n.warned, false);
   assert.ok(s.cooldown > 0);
@@ -840,7 +841,7 @@ test("a bounced NPC can be warned after the player leaves range", () => {
   assert.equal(n.warned, true);
 });
 
-test("falling onto an NPC from above warning range bounces without warning it", () => {
+test("falling onto an NPC from above warning range does not hop or warn it", () => {
   const s = game();
   const n = s.npcs[0];
   parkNpcs(s, [n]);
@@ -852,13 +853,18 @@ test("falling onto an NPC from above warning range bounces without warning it", 
     Math.hypot(0, n.body.position.y - s.player.body.position.y) >
       T.warningRange,
   );
-  let bounced = false;
+  let landed = false;
   for (let i = 0; i < 50; i++) {
+    const playerBottom = s.player.body.position.y + 14 * s.player.scale;
+    const npcTop = n.body.position.y - 14 * n.scale;
     tick(s, dt);
     assert.equal(n.warned, false);
-    if (s.player.body.velocity.y === -T.stompBounce) bounced = true;
+    assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
+    assert.ok(s.player.body.velocity.y >= 0);
+    if (playerBottom <= npcTop && s.player.body.bounds.max.y >= npcTop)
+      landed = true;
   }
-  assert.ok(bounced);
+  assert.ok(landed);
   assert.ok(n.alive);
   assert.equal(s.warned, 0);
 });
@@ -2731,7 +2737,7 @@ test("first damaging stomp shrinks 8x form and cancels the timer", () => {
   assert.ok(s.events.includes("shrink"));
 });
 
-test("stomping a walking Koopa shells it, bounces the stomper, and is not a death", () => {
+test("stomping a walking Koopa shells it without a player hop, and is not a death", () => {
   const s = game();
   const n = troopa(s);
   parkNpcs(s, [n]);
@@ -2742,7 +2748,8 @@ test("stomping a walking Koopa shells it, bounces the stomper, and is not a deat
   at(s, 200, 415 - 30);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
-  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.body.velocity.y > 0);
+  assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.ok(n.alive);
   assert.equal(n.saved, false);
   assert.equal(n.shell, "stopped");
@@ -2752,7 +2759,45 @@ test("stomping a walking Koopa shells it, bounces the stomper, and is not a deat
   assert.equal(s.particles.length, 0);
 });
 
-test("a falling player bounce still leaves a Goomba unshellable", () => {
+test("a falling player shells an unwarned walking Koopa without hopping or warning it", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 200, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.ok(s.player.body.velocity.y > 0);
+  assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(n.alive);
+  assert.equal(n.shell, "stopped");
+  assert.equal(n.warned, false);
+  assert.equal(s.warned, 0);
+  assert.equal(s.events.includes("warn"), false);
+  assert.equal(s.events.includes("splat"), false);
+});
+
+test("Mario stomps a walking Koopa, shells it, and bounces", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 4000);
+  marioStomp(s, n);
+  tick(s, dt);
+  assert.ok(s.mario.body.velocity.y < 0);
+  assert.ok(n.alive);
+  assert.equal(n.shell, "stopped");
+  assert.equal(s.events.includes("splat"), false);
+});
+
+test("a falling player landing still leaves a Goomba unshellable", () => {
   const s = game();
   const n = s.npcs[0];
   assert.equal(n.kind, "goomba");
@@ -2762,7 +2807,8 @@ test("a falling player bounce still leaves a Goomba unshellable", () => {
   at(s, 200, 415 - 30);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
-  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.body.velocity.y > 0);
+  assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.ok(n.alive);
   assert.equal(n.shell, "none");
   assert.equal(s.events.includes("splat"), false);
@@ -2829,7 +2875,8 @@ test("stomping a stopped shell kicks it the kicker's way", () => {
   assert.equal(n.facing, 1);
   assert.equal(n.body.velocity.x, T.shellSpeed);
   assert.equal(s.events.filter((e) => e === "kick").length, kicks + 1);
-  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.body.velocity.y > 0);
+  assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.ok(s.player.alive);
 });
 
@@ -2858,7 +2905,8 @@ test("stomping a moving shell stops it; side contact kills after kick grace", ()
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
   assert.equal(n.shell, "stopped");
-  assert.equal(s.player.body.velocity.y, -T.stompBounce);
+  assert.ok(s.player.body.velocity.y > 0);
+  assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.ok(s.player.alive);
   at(s, 80, 415);
   tick(s, dt);
