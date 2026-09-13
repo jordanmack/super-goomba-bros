@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Simulation, emptyInput } from "../src/game/simulation.ts";
 import { Body, overlaps } from "../src/game/physics.ts";
 import { CAMPAIGN } from "../src/game/levels.ts";
@@ -231,4 +232,23 @@ test("an NPC running-jump does not exceed its ground run speed", () => {
   assert.ok(hops > 0, "NPC jumped");
   assert.ok(T.runSpeed < 6.8);
   sim.physics.clear();
+});
+
+test("campaign tilemap screenshot wait exceeds the 30s Playwright default", () => {
+  const source = readFileSync(
+    new URL("./browser/campaign.spec.ts", import.meta.url),
+    "utf8",
+  );
+  const assigned = source.match(/SCREENSHOT_WAIT_MS = ([\d_]+)/);
+  assert.ok(assigned, "SCREENSHOT_WAIT_MS must be defined");
+  const waitMs = Number(assigned[1].replaceAll("_", ""));
+  assert.ok(waitMs > 30_000, `screenshot wait ${waitMs}ms must exceed 30s`);
+  assert.match(
+    source,
+    /all campaign stages render their tilemap[\s\S]*?test\.setTimeout\(SCREENSHOT_WAIT_MS\)/,
+  );
+  assert.match(
+    source,
+    /waitForFunction\(\s*\(id\) =>[\s\S]*?tilemap\.width[\s\S]*?\{ timeout: SCREENSHOT_WAIT_MS \}/,
+  );
 });

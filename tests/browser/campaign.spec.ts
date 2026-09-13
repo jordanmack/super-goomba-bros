@@ -3,9 +3,13 @@ import campaign from "../../src/assets/levels/campaign.json" with { type: "json"
 import { TUNING as T } from "../../src/game/config";
 import { skipIntro } from "./skip-intro.ts";
 
+// ionice can miss Playwright's 30s waitForFunction and test defaults.
+const SCREENSHOT_WAIT_MS = 90_000;
+
 test("all campaign stages render their tilemap and palette with Arcade bodies", async ({
   page,
 }) => {
+  test.setTimeout(SCREENSHOT_WAIT_MS);
   await page.setViewportSize({ width: 1280, height: 720 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -46,6 +50,7 @@ test("all campaign stages render their tilemap and palette with Arcade bodies", 
           (window as any).__game.renderer.play.tiles.tilemap.width > 0 &&
           document.querySelector(".phase")?.textContent?.includes(id),
         level.id,
+        { timeout: SCREENSHOT_WAIT_MS },
       );
       await page.screenshot({ path: `test-results/campaign-${level.id}.png` });
     }
