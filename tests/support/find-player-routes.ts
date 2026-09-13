@@ -16,6 +16,8 @@ type State = {
   time: number;
   grounded: boolean;
   jumpHeld: boolean;
+  jumpHoldG?: number;
+  jumpFallG?: number;
   pipeWait: number;
   hidden: number[];
   pace: number;
@@ -89,6 +91,8 @@ function capture(sim: Simulation): State {
       sim.player.grounded ||
       !!(body.native as unknown as { blocked: { down: boolean } }).blocked.down,
     jumpHeld: flags.jumped,
+    jumpHoldG: sim.player.jumpHoldG,
+    jumpFallG: sim.player.jumpFallG,
     pipeWait: sim.player.pipeWait ?? 0,
     hidden: sim.obstacles.filter((c) => c.hidden && c.used).map((c) => c.id),
     pace: flags.playerPace,
@@ -115,6 +119,8 @@ function restore(sim: Simulation, state: State) {
     marioActive: false,
   });
   sim.player.jumpHeld = state.jumpHeld;
+  sim.player.jumpHoldG = state.jumpHoldG;
+  sim.player.jumpFallG = state.jumpFallG;
   sim.cameraX = sim.activeRoom.offset;
   for (const block of sim.obstacles) {
     block.bounce = 0;

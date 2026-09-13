@@ -83,10 +83,16 @@ test("holding jump adds height, and giant form uses the same jump", () => {
   const tap = peakJump({ right: true });
   const hold = peakJump({ right: true, jump: true });
   const giant = peakJump({ right: true, jump: true }, true);
+  const stand = peakJump({ jump: true });
+  const run = peakJump({ right: true, jump: true, run: true });
   assert.equal(tap.jumps, 1);
   assert.equal(hold.jumps, 1);
-  assert.ok(tap.height > 50 && tap.height < 95, `tap jump ${tap.height}`);
-  assert.ok(hold.height > 110 && hold.height < 145, `hold jump ${hold.height}`);
+  // SMB1: held walk ~4 tiles, held run ~5 tiles; tap is shorter.
+  assert.ok(tap.height > 30 && tap.height < 80, `tap jump ${tap.height}`);
+  assert.ok(stand.height > 110 && stand.height < 145, `stand jump ${stand.height}`);
+  assert.ok(hold.height > 120 && hold.height < 155, `walk jump ${hold.height}`);
+  assert.ok(run.height > 145 && run.height < 180, `run jump ${run.height}`);
+  assert.ok(run.height - hold.height > 15, "running jump is higher");
   assert.ok(hold.height - tap.height > 25, "hold jump is extra height");
   assert.ok(Math.abs(hold.height - giant.height) < 2);
 });
@@ -2527,8 +2533,7 @@ test("8x walking keeps the floor through merged stair columns", () => {
   at(s, stairsX - 120, T.groundY - 14 * s.player.scale);
   tick(s, 0.1);
   const beforeJump = s.player.body.position.y;
-  tick(s, dt, { jump: true });
-  tick(s, 0.25);
+  tick(s, 0.25, { jump: true });
   assert.ok(s.player.body.position.y < beforeJump - 40);
   assert.equal(s.player.grounded, false);
 });

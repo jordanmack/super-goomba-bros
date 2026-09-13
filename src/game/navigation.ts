@@ -63,7 +63,7 @@ export function planJump(
     ),
   ];
   const holdG = T.jumpHoldGravity / 3600,
-    fallG = T.jumpFallGravity / 3600;
+    fallG = T.npcJumpFallGravity / 3600;
   for (const delay of [0, 10, 18, 24])
     for (const pace of paces) {
       let x = start.x,

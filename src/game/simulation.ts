@@ -5,7 +5,7 @@ import {
   overlaps,
   rayBlocked,
 } from "./physics.ts";
-import { MAP_TOP, PHRASES, TUNING as T } from "./config.ts";
+import { MAP_TOP, PHRASES, TUNING as T, jumpArc } from "./config.ts";
 import { CAMPAIGN } from "./levels.ts";
 import { Room } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
@@ -96,6 +96,8 @@ export type Actor = {
   navDetourBelow?: number;
   navDrop?: { x: number; vx: number; delay: number };
   jumpHeld?: boolean;
+  jumpHoldG?: number;
+  jumpFallG?: number;
   swimPath?: { x: number; y: number }[];
   swimSize?: number;
   swimRepath?: number;
@@ -645,18 +647,24 @@ export class Simulation {
   }
   private jumpImpulse(a: Actor, vx = a.body.velocity.x) {
     if (this.roomFor(a).onSpring(a)) return T.springImpulse;
-    return Math.abs(vx) >= (T.walkSpeed + T.runSpeed) / 2
-      ? T.runJumpSpeed
-      : T.jumpSpeed;
+    return jumpArc(vx).impulse;
   }
   private jump(a: Actor, impulse?: number) {
     const water = this.roomFor(a).data.type === "water";
     if (!a.grounded && !water) return;
+    const arc = jumpArc(a.body.velocity.x);
+    if (a === this.player || a === this.mario) {
+      a.jumpHoldG = arc.hold;
+      a.jumpFallG = arc.fall;
+    } else {
+      a.jumpHoldG = T.jumpHoldGravity;
+      a.jumpFallG = T.npcJumpFallGravity;
+    }
     Body.setVelocity(a.body, {
       x: a.body.velocity.x,
       y: -(water
         ? T.swimImpulse
-        : (impulse ?? this.jumpImpulse(a))),
+        : (impulse ?? arc.impulse)),
     });
     a.grounded = false;
     if (!water) a.jumpHeld = true;
@@ -1337,6 +1345,8 @@ export class Simulation {
     n.navHoldX = undefined;
     n.idleDrop = undefined;
     n.jumpHeld = false;
+    n.jumpHoldG = undefined;
+    n.jumpFallG = undefined;
     n.navBackoff = undefined;
     n.navDrop = undefined;
     n.swimPath = undefined;
@@ -1652,7 +1662,11 @@ export class Simulation {
     }
     for (const a of [this.player, ...this.npcs, this.mario]) {
       this.ground(a);
-      if (a.grounded) a.jumpHeld = false;
+      if (a.grounded) {
+        a.jumpHeld = false;
+        a.jumpHoldG = undefined;
+        a.jumpFallG = undefined;
+      }
     }
     this.updatePipeTravel(dt);
     if (this.mode === "playing" && !this.inPipe(this.player)) {
@@ -1700,8 +1714,14 @@ export class Simulation {
     for (const a of [this.player, ...this.npcs, this.mario]) {
       if (this.roomFor(a).data.type === "water") continue;
       const hold = !!a.jumpHeld && a.body.velocity.y < 0 && !a.grounded;
+      const holdG = a.jumpHoldG ?? T.jumpHoldGravity;
+      const fallG =
+        a.jumpFallG ??
+        (a === this.player || a === this.mario
+          ? T.jumpFallGravity
+          : T.npcJumpFallGravity);
       a.body.gravityScale = !a.grounded
-        ? (hold ? T.jumpHoldGravity : T.jumpFallGravity) / T.gravity
+        ? (hold ? holdG : fallG) / T.gravity
         : 1;
     }
     const hitters = [
@@ -2267,10 +2287,11 @@ export class Simulation {
       ) {
         this.marioJumpWait = 0.65 + this.random() * 0.35;
         // Commit toward the predicted landing point, with bounded inaccuracy.
-        const upG = T.jumpHoldGravity / 3600;
+        const arc = jumpArc(this.mario.body.velocity.x);
+        const upG = arc.hold / 3600;
         const flightFrames =
-          T.jumpSpeed / upG +
-          T.jumpSpeed / Math.sqrt(upG * (T.jumpFallGravity / 3600));
+          arc.impulse / upG +
+          arc.impulse / Math.sqrt(upG * (arc.fall / 3600));
         const launch = Math.max(
           -4,
           Math.min(4, (this.marioAim - m.x) / flightFrames),

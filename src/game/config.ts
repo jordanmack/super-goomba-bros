@@ -7,11 +7,19 @@ export const TUNING = {
   // 2x NES SMB1: 16 px tiles and 16 subpixels/px scale to 32 px tiles.
   walkSpeed: 3,
   runSpeed: 5,
+  // SMB1 PlayerYSpdData / JumpMForceData / FallMForceData at 2x tiles.
+  // Small and Super Mario share these; only the body is taller.
   jumpSpeed: 8,
   runJumpSpeed: 10,
   giantJumpSpeed: 15,
   jumpHoldGravity: 900,
-  jumpFallGravity: 1500,
+  jumpFallGravity: 3150,
+  walkJumpHoldGravity: 843.75,
+  walkJumpFallGravity: 2700,
+  runJumpHoldGravity: 1125,
+  runJumpFallGravity: 4050,
+  // NPC rescue routes still use the older hang; they do not match SMB1.
+  npcJumpFallGravity: 1500,
   stompBounce: 8,
   // NES kicked-shell X speed $30 = 3 px/frame, at this game's 2x tile scale.
   shellSpeed: 6,
@@ -73,6 +81,28 @@ export const TUNING = {
   bloodBurst: 64,
   brickBurst: 12,
 } as const;
+
+// NES X-speed byte is our 2x px/frame * 8. Cutoffs 16 and 25 match SMB1.
+export function jumpArc(vx: number) {
+  const nes = Math.abs(vx) * 8;
+  if (nes >= 25)
+    return {
+      impulse: TUNING.runJumpSpeed,
+      hold: TUNING.runJumpHoldGravity,
+      fall: TUNING.runJumpFallGravity,
+    };
+  if (nes >= 16)
+    return {
+      impulse: TUNING.jumpSpeed,
+      hold: TUNING.walkJumpHoldGravity,
+      fall: TUNING.walkJumpFallGravity,
+    };
+  return {
+    impulse: TUNING.jumpSpeed,
+    hold: TUNING.jumpHoldGravity,
+    fall: TUNING.jumpFallGravity,
+  };
+}
 
 export const PHRASES = [
   "Run! Mario is coming!",
