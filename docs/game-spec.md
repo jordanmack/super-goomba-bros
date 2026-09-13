@@ -134,8 +134,8 @@ Saved NPCs stay safe and cannot return to danger.
 
 ## Counters and finish
 
-Display separate Warned and Saved counters plus rescue progress against the
-configured requirement. Display collected coins and remaining lives at the top
+Display separate Warned, Saved, and Died counters plus rescue progress against
+the configured requirement. Display collected coins and remaining lives at the top
 of the screen.
 
 Warned increases on the first warning heard by an NPC. A later death does not

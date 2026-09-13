@@ -51,7 +51,7 @@ Gameplay remains available. Reloading retries sound initialization.
 
 ## Rules
 
-Warned and Saved are separate counters. NPCs only count as saved at a castle
+Warned, Saved, and Died are separate counters. NPCs only count as saved at a castle
 door, including after leaving an underground or water area. They keep moving
 while the player visits another area. Mario notices running crowds and warnings,
 then pursues, jumps, and fires when powered.
