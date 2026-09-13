@@ -302,6 +302,8 @@ test("pause, restart, and automatic death reset require fresh presses", async ({
   await page.waitForFunction(
     () => (window as any).__game.sim.mode === "playing",
   );
+  await expect(page.locator(".play-footer")).toBeVisible();
+  right = await point(page, "Right", 1);
   await touch(page, "touchmove", [right]);
   await input(page, {});
   await touch(page, "touchend", [], [right]);
@@ -361,24 +363,27 @@ test("header pad button cycles compact, NES, and hidden without covering the wor
 }) => {
   const world = page.locator(".world");
   const footer = page.locator(".play-footer");
-  const worldBox = (await world.boundingBox())!;
-  const footerBox = (await footer.boundingBox())!;
-  expect(footerBox.y).toBeGreaterThanOrEqual(worldBox.y + worldBox.height - 1);
+  const belowWorld = async () => {
+    const worldBox = await world.boundingBox();
+    const footerBox = await footer.boundingBox();
+    if (!worldBox || !footerBox) return false;
+    return footerBox.y >= worldBox.y + worldBox.height - 1;
+  };
+  await expect.poll(belowWorld).toBe(true);
+  const compactHeight = (await world.boundingBox())!.height;
   await page.getByRole("button", { name: "Pause", exact: true }).tap();
   await expect(page.getByRole("button", { name: /CONTROLS:/ })).toHaveCount(0);
   await page.getByRole("button", { name: "RESUME", exact: true }).tap();
   await page.getByRole("button", { name: "Compact pad" }).tap();
   await expect(page.locator(".nes-pad-art")).toBeVisible();
-  const nesWorld = (await world.boundingBox())!;
-  const nesFooter = (await footer.boundingBox())!;
-  expect(nesFooter.y).toBeGreaterThanOrEqual(nesWorld.y + nesWorld.height - 1);
+  await expect.poll(belowWorld).toBe(true);
   await page.getByRole("button", { name: "NES pad" }).tap();
   await expect(footer).toHaveCount(0);
   await expect(page.getByRole("button", { name: "A", exact: true })).toHaveCount(
     0,
   );
   const hiddenWorld = (await world.boundingBox())!;
-  expect(hiddenWorld.height).toBeGreaterThan(worldBox.height);
+  expect(hiddenWorld.height).toBeGreaterThan(compactHeight);
   await page.getByRole("button", { name: "Pad hidden" }).tap();
   await expect(page.getByRole("button", { name: "Compact pad" })).toBeVisible();
   await expect(footer).toBeVisible();

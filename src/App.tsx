@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -98,6 +98,14 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [padLayout, setPadLayout] = useState<PadLayout>("compact");
   const [helpOpen, setHelpOpen] = useState(false);
+  const helpButton = useRef<HTMLButtonElement>(null);
+  const helpCloseButton = useRef<HTMLButtonElement>(null);
+  const helpWasOpen = useRef(false);
+  useLayoutEffect(() => {
+    if (helpOpen) helpCloseButton.current?.focus({ preventScroll: true });
+    else if (helpWasOpen.current) helpButton.current?.focus();
+    helpWasOpen.current = helpOpen;
+  }, [helpOpen]);
   const startAudio = (game: Runtime) => {
     void game.audio.start().catch(() => {
       game.audio.disable();
@@ -328,14 +336,14 @@ export default function App() {
   const closeHelp = () => {
     setHelpOpen(false);
     const game = runtime.current;
-    if (!game) return;
-    game.helpOpen = false;
-    if (!game.paused && game.sim.mode === "playing") startAudio(game);
+    if (game) {
+      game.helpOpen = false;
+      if (!game.paused && game.sim.mode === "playing") startAudio(game);
+    }
   };
   const toggleHelp = () => {
     if (helpOpen) {
       closeHelp();
-      (document.activeElement as HTMLElement)?.blur();
       return;
     }
     setHelpOpen(true);
@@ -397,7 +405,7 @@ export default function App() {
       onSelect={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
     >
-      <div className="playfield">
+      <div className="playfield" inert={helpOpen || undefined}>
       <div ref={host} className="world" />
       <div className="scanlines" />
       <header className="topbar">
@@ -447,6 +455,7 @@ export default function App() {
         )}
         <div className="tools">
           <button
+            ref={helpButton}
             onClick={toggleHelp}
             title="Key bindings"
             aria-label="Key bindings"
@@ -563,7 +572,7 @@ export default function App() {
       )}
       </div>
       {playing && padLayout !== "hidden" && (
-            <footer className="play-footer">
+            <footer className="play-footer" inert={helpOpen || undefined}>
               <div className="journey">
                 <span>THE GREAT ESCAPE</span>
                 <div>
@@ -702,7 +711,7 @@ export default function App() {
           )}
         </section>
       )}
-      {overlay && (
+      {overlay && !helpOpen && (
         <section
           className="overlay"
           aria-label={paused ? "Paused" : "Result"}
@@ -773,7 +782,11 @@ export default function App() {
               </div>
             ))}
           </dl>
-          <button className="primary" onClick={closeHelp}>
+          <button
+            ref={helpCloseButton}
+            className="primary"
+            onClick={closeHelp}
+          >
             CLOSE
           </button>
         </section>

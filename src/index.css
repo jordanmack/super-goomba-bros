@@ -108,8 +108,9 @@ p {
 }
 .playfield {
   position: relative;
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
+  overflow: hidden;
 }
 .game,
 .game * {
@@ -121,8 +122,10 @@ p {
   -webkit-user-drag: none;
 }
 .world {
-  position: absolute;
-  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .world canvas {
   width: 100%;
@@ -152,6 +155,7 @@ p {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 20px;
   padding: 25px 32px;
   z-index: 12;
@@ -171,6 +175,7 @@ p {
 }
 .tools {
   display: flex;
+  flex-shrink: 0;
   gap: 10px;
 }
 .tools button {
@@ -456,7 +461,7 @@ p {
 }
 .controls.layout-nes {
   position: relative;
-  width: min(520px, 100%);
+  width: min(520px, 100%, calc(28dvh * 400 / 168));
   margin: 0 auto;
   aspect-ratio: 400 / 168;
 }
@@ -667,13 +672,14 @@ p {
   gap: 40px;
 }
 .help-overlay {
-  z-index: 11;
+  z-index: 13;
   gap: 18px;
   overflow: auto;
   background: #000;
-  padding: 88px 24px 24px;
+  padding: 24px;
+  justify-content: flex-start;
 }
-.help-overlay h2 {
+.overlay.help-overlay h2 {
   font-size: 22px;
 }
 .bindings {
@@ -861,6 +867,17 @@ p {
   }
   .in-game .topbar {
     padding: 14px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    justify-content: flex-end;
+  }
+  .in-game .counters {
+    flex: 1 1 100%;
+    order: 2;
+    justify-content: space-between;
+  }
+  .in-game .tools {
+    order: 1;
   }
   .counters {
     gap: 12px;
@@ -934,6 +951,9 @@ p {
   }
   .overlay h2 {
     font-size: 25px;
+  }
+  .overlay.help-overlay h2 {
+    font-size: 18px;
   }
   .primary {
     font-size: 10px;
@@ -1072,10 +1092,10 @@ p {
     gap: 15px;
   }
   .help-overlay {
-    padding-top: 56px;
+    padding: 16px;
     gap: 10px;
   }
-  .help-overlay h2 {
+  .overlay.help-overlay h2 {
     font-size: 18px;
   }
   .overlay h2 {
@@ -1090,6 +1110,17 @@ p {
   }
   .final-counts strong {
     font-size: 26px;
+  }
+}
+@media (max-height: 540px) {
+  .journey {
+    display: none;
+  }
+}
+@media (max-height: 400px) {
+  .help-overlay {
+    padding: 16px;
+    gap: 10px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
