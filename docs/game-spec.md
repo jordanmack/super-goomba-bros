@@ -58,10 +58,11 @@ speed.
 In water, each Jump press is an upward swim stroke. Gravity is reduced and the
 player stays below the top of the playfield. Pipes have a short re-entry delay.
 
-On-screen layouts switch from the pause menu. Compact is the default and does
-not persist across sessions. Compact Up may also jump. NES D-pad Up does not
+On-screen layouts switch from a header button: Compact, NES, or hidden.
+Compact is the default and does not persist across sessions. Compact Up may also jump. NES D-pad Up does not
 jump. A is jump. B is run (hold) and fire (press, flower required). NES Start
-pauses. Select does nothing.
+pauses. Select does nothing. Hidden removes the on-screen pad and gives that
+space to the playfield. The pad must sit below the game, not over it.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |

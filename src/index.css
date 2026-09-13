@@ -103,6 +103,13 @@ p {
   position: relative;
   overflow: hidden;
   isolation: isolate;
+  display: flex;
+  flex-direction: column;
+}
+.playfield {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 .game,
 .game * {
@@ -375,10 +382,8 @@ p {
   transform: translateX(-50%);
 }
 .play-footer {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  flex-shrink: 0;
   z-index: 5;
   background: #183e34e8;
   border-top: 3px solid #7db76a;
@@ -840,15 +845,18 @@ p {
   .bindings {
     gap: 14px;
   }
+  .tools {
+    flex-shrink: 0;
+  }
   .tools button {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
   }
   .tools svg {
     width: 18px;
     height: 18px;
   }
-  .in-game .brand span {
+  .in-game .brand {
     display: none;
   }
   .in-game .topbar {
@@ -939,9 +947,6 @@ p {
   }
   .goal-message {
     font-size: 8px;
-  }
-  .in-game .world {
-    bottom: 128px;
   }
 }
 @media (max-width: 700px) and (max-height: 600px) {
@@ -1080,8 +1085,8 @@ p {
     min-height: 44px;
     padding: 9px 20px;
   }
-  .in-game .world {
-    bottom: 88px;
+  .controls.layout-nes {
+    width: min(380px, 100%);
   }
   .final-counts strong {
     font-size: 26px;

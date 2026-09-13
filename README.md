@@ -37,7 +37,7 @@ The header Key bindings button shows this keyboard list.
 
 Hold B to run. Jump keeps that ground speed in the air. Hold jump for extra
 height; running jumps clear original gaps. Compact is the default on-screen
-pad; switch to an NES pad from pause. Compact Up may jump; NES D-pad Up does
+pad. A header button cycles Compact, NES, and hidden. Compact Up may jump; NES D-pad Up does
 not. Releasing direction stops horizontal movement. Springs provide their own
 stronger bounce. An unwarned NPC inside warning range automatically hears an
 urgent shout.

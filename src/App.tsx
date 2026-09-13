@@ -4,7 +4,10 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowDown,
+  Ban,
   DoorOpen,
+  Gamepad,
+  Gamepad2,
   Keyboard,
   Pause,
   Play,
@@ -19,6 +22,13 @@ import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
 import { GameControls, KEY_BINDINGS, type PadAction } from "./game/controls";
 import { CAMPAIGN } from "./game/levels";
+
+type PadLayout = "compact" | "nes" | "hidden";
+const PAD_LABEL: Record<PadLayout, string> = {
+  compact: "Compact pad",
+  nes: "NES pad",
+  hidden: "Pad hidden",
+};
 
 type Runtime = {
   sim: Simulation;
@@ -86,7 +96,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [portrait, setPortrait] = useState("");
   const [ready, setReady] = useState(false);
-  const [padLayout, setPadLayout] = useState<"compact" | "nes">("compact");
+  const [padLayout, setPadLayout] = useState<PadLayout>("compact");
   const [helpOpen, setHelpOpen] = useState(false);
   const startAudio = (game: Runtime) => {
     void game.audio.start().catch(() => {
@@ -357,8 +367,10 @@ export default function App() {
       {!extraClass.includes("nes-hit") && label && <span>{label}</span>}
     </button>
   );
-  const switchPad = () => {
-    setPadLayout((layout) => (layout === "compact" ? "nes" : "compact"));
+  const cyclePad = () => {
+    setPadLayout((layout) =>
+      layout === "compact" ? "nes" : layout === "nes" ? "hidden" : "compact",
+    );
     runtime.current?.clearInput();
     (document.activeElement as HTMLElement)?.blur();
   };
@@ -385,6 +397,7 @@ export default function App() {
       onSelect={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
     >
+      <div className="playfield">
       <div ref={host} className="world" />
       <div className="scanlines" />
       <header className="topbar">
@@ -441,6 +454,19 @@ export default function App() {
             aria-haspopup="dialog"
           >
             <Keyboard />
+          </button>
+          <button
+            onClick={cyclePad}
+            title={PAD_LABEL[padLayout]}
+            aria-label={PAD_LABEL[padLayout]}
+          >
+            {padLayout === "hidden" ? (
+              <Ban />
+            ) : padLayout === "nes" ? (
+              <Gamepad />
+            ) : (
+              <Gamepad2 />
+            )}
           </button>
           <button
             onClick={mute}
@@ -533,7 +559,10 @@ export default function App() {
               <span>LAST RESCUES: {Math.ceil(state.finishLeft)}</span>
             </div>
           )}
-          {playing && (
+        </>
+      )}
+      </div>
+      {playing && padLayout !== "hidden" && (
             <footer className="play-footer">
               <div className="journey">
                 <span>THE GREAT ESCAPE</span>
@@ -640,22 +669,20 @@ export default function App() {
                       "run",
                       "B",
                       null,
-                      "Run and fire (Shift / Z)",
+                      "Run and fire (Shift / Z / J)",
                       "nes-hit nes-b",
                     )}
                     {actionButton(
                       "jump",
                       "A",
                       null,
-                      "Jump (Space)",
+                      "Jump (Space / K)",
                       "nes-hit nes-a",
                     )}
                   </>
                 )}
               </div>
             </footer>
-          )}
-        </>
       )}
       {interstitial && !paused && (
         <section
@@ -689,9 +716,6 @@ export default function App() {
               </button>
               <button className="secondary" onClick={restartLevel}>
                 <RotateCcw size={16} /> RESTART LEVEL
-              </button>
-              <button className="secondary" onClick={switchPad}>
-                CONTROLS: {padLayout === "compact" ? "COMPACT" : "NES"}
               </button>
             </>
           ) : (

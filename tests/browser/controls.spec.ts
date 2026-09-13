@@ -356,6 +356,34 @@ test("Space still jumps after clicking or focusing a gameplay control", async ({
   await input(page, {});
 });
 
+test("header pad button cycles compact, NES, and hidden without covering the world", async ({
+  page,
+}) => {
+  const world = page.locator(".world");
+  const footer = page.locator(".play-footer");
+  const worldBox = (await world.boundingBox())!;
+  const footerBox = (await footer.boundingBox())!;
+  expect(footerBox.y).toBeGreaterThanOrEqual(worldBox.y + worldBox.height - 1);
+  await page.getByRole("button", { name: "Pause", exact: true }).tap();
+  await expect(page.getByRole("button", { name: /CONTROLS:/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "RESUME", exact: true }).tap();
+  await page.getByRole("button", { name: "Compact pad" }).tap();
+  await expect(page.locator(".nes-pad-art")).toBeVisible();
+  const nesWorld = (await world.boundingBox())!;
+  const nesFooter = (await footer.boundingBox())!;
+  expect(nesFooter.y).toBeGreaterThanOrEqual(nesWorld.y + nesWorld.height - 1);
+  await page.getByRole("button", { name: "NES pad" }).tap();
+  await expect(footer).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "A", exact: true })).toHaveCount(
+    0,
+  );
+  const hiddenWorld = (await world.boundingBox())!;
+  expect(hiddenWorld.height).toBeGreaterThan(worldBox.height);
+  await page.getByRole("button", { name: "Pad hidden" }).tap();
+  await expect(page.getByRole("button", { name: "Compact pad" })).toBeVisible();
+  await expect(footer).toBeVisible();
+});
+
 test("compact pad is the default and maps Up to jump and B to run", async ({
   page,
 }) => {
@@ -385,12 +413,10 @@ test("compact pad is the default and maps Up to jump and B to run", async ({
   await input(page, {});
 });
 
-test("pause menu switches to the NES pad where Start pauses and Up does not jump", async ({
+test("header pad button switches to the NES pad where Start pauses and Up does not jump", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Pause", exact: true }).tap();
-  await page.getByRole("button", { name: "CONTROLS: COMPACT" }).tap();
-  await page.getByRole("button", { name: "RESUME", exact: true }).tap();
+  await page.getByRole("button", { name: "Compact pad" }).tap();
   await expect(page.locator(".nes-pad-art")).toBeVisible();
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeAttached();
   await expect(page.getByRole("button", { name: "Select", exact: true })).toBeAttached();
@@ -419,9 +445,7 @@ test("pause menu switches to the NES pad where Start pauses and Up does not jump
 test("NES Start with other holds still clears input and pulses", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Pause", exact: true }).tap();
-  await page.getByRole("button", { name: "CONTROLS: COMPACT" }).tap();
-  await page.getByRole("button", { name: "RESUME", exact: true }).tap();
+  await page.getByRole("button", { name: "Compact pad" }).tap();
   const right = await point(page, "Right", 1);
   const b = await point(page, "B", 2);
   const start = await point(page, "Start", 3);
