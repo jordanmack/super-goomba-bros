@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipIntro } from "./skip-intro.ts";
 
 const surfaces = [
   ["tagline", ".title-screen .level-label"],
@@ -6,7 +7,6 @@ const surfaces = [
   ["title-super", ".title-screen h1 span:first-child"],
   ["title-bros", ".title-screen h1 span:last-child"],
   ["start", ".title-screen .primary"],
-  ["edition", ".title-screen .edition"],
 ] as const;
 
 const viewports = [
@@ -55,6 +55,13 @@ async function assertTitleType(page: Page) {
     expect(metrics.bottom, name).toBeLessThanOrEqual(viewport.height);
     expect(metrics.right, name).toBeLessThanOrEqual(viewport.width);
   }
+  await expect(screen.getByText("A LITTLE COURAGE. A BIG MUSTACHE.")).toBeVisible();
+  await expect(screen.getByRole("heading", { name: "Super Goomba Bros" })).toBeVisible();
+  await expect(screen.getByRole("button", { name: "START GAME" })).toBeVisible();
+  await expect(screen).not.toContainText("WORLD 1");
+  await expect(screen).not.toContainText("THE GREAT ESCAPE");
+  await expect(screen).not.toContainText("WORLD 1 / THE GREAT ESCAPE");
+  await expect(page.getByText("WORLD 1 / THE GREAT ESCAPE")).toHaveCount(0);
 }
 
 for (const viewport of viewports) {
@@ -68,3 +75,20 @@ for (const viewport of viewports) {
     await assertTitleType(page);
   });
 }
+
+test("play keeps the journey label and world intro after the title omits them", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/");
+  const screen = page.getByRole("region", { name: "Title screen" });
+  await expect(screen).toBeVisible();
+  await expect(screen).not.toContainText("THE GREAT ESCAPE");
+  await expect(screen).not.toContainText("WORLD 1");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  const intro = page.getByRole("region", { name: "World intro" });
+  await expect(intro.getByText("WORLD 1-1")).toBeVisible();
+  await skipIntro(page);
+  await expect(page.locator(".journey")).toContainText("THE GREAT ESCAPE");
+  await expect(page.locator(".phase")).toContainText("WORLD 1-1");
+});

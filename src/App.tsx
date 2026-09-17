@@ -520,9 +520,6 @@ export default function App() {
             <Play size={20} fill="currentColor" />{" "}
             {ready ? "START GAME" : "LOADING..."}
           </button>
-          <p className="edition">
-            WORLD 1 <span>/</span> THE GREAT ESCAPE
-          </p>
         </section>
       )}
       {active && (
