@@ -8,6 +8,12 @@ import { physics } from "./support/arcade.ts";
 import { TUNING as T } from "../src/game/config.ts";
 import { MAP_TOP } from "../src/game/config.ts";
 
+function finishPipeIntro(sim: Simulation) {
+  for (let frame = 0; frame < 60 * 20 && sim.pipeIntro; frame++)
+    sim.step(1 / 60, emptyInput());
+  assert.equal(sim.pipeIntro, false);
+}
+
 for (const [index, level] of CAMPAIGN.entries()) {
   test(
     `World ${level.id} loads and its NPC can reach a rescue door`,
@@ -29,6 +35,7 @@ for (const [index, level] of CAMPAIGN.entries()) {
         0,
         "safe starting position",
       );
+    finishPipeIntro(sim);
     const runner = sim.npcs[0];
     for (const npc of sim.npcs.slice(1)) sim.physics.remove(npc.body);
     sim.npcs = [runner];
@@ -74,6 +81,7 @@ test("every campaign stage can meet its rescue quota from the full starting popu
     sim.levelIndex = index;
     sim.reset();
     sim.marioReturn = 1e6;
+    finishPipeIntro(sim);
     sim.player.saved = true;
     Body.setFrozen(sim.player.body, true);
     for (const npc of sim.npcs) {
@@ -211,6 +219,7 @@ test("a small NPC autoJump does not take giant jump speed when a running jump do
   sim.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
   sim.reset();
   sim.marioReturn = 1e6;
+  finishPipeIntro(sim);
   const runner = sim.npcs[0];
   for (const npc of sim.npcs.slice(1)) sim.physics.remove(npc.body);
   sim.npcs = [runner];

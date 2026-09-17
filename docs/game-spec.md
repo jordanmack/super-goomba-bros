@@ -30,6 +30,13 @@ settings unless a rule below explicitly fixes their relationship.
   entrances work when approached at their opening. Decorative pipes stay solid.
 - Pipe travel preserves elapsed time, powers, NPC states, broken blocks, items,
   and counters within the stage. It does not itself rescue a character.
+- Stages whose route starts off the main area (1-2, 2-2, 4-2, 7-2) play that
+  overworld pipe strip as a script on first arrival. After the WORLD n-n intro,
+  walk, jump, and pipe input are ignored. The player auto-walks into the pipe
+  and emerges at the start of main, then gets control. Pause and Mute still
+  work. TIME does not run, and Mario does not spawn or hunt, until control on
+  main. The script is not a death. Death with lives left, Pause Restart, and
+  other retries of that stage skip the strip and spawn at the start of main.
 - Preserve source warp/vine commands in the data. Campaign progression remains
   sequential; the custom power-up system does not recreate the original vine
   and world-skip rules.
@@ -280,7 +287,8 @@ still kill 2x and 3x characters who are not star-protected. Stars grant full
 immunity. Falling out of the level also kills, including 8x. Death spends a life. If lives remain, the original-style
 black intro shows WORLD n-n and the player Goomba × remaining lives, then the
 current stage restarts with cleared counters, powers, items, speech, used
-blocks, and pursuit state. The intro is silent; area music starts with play.
+blocks, and pursuit state. Pipe-intro stages skip the overworld strip and
+spawn on main. The intro is silent; area music starts with play.
 Start Game, Next Level, and Pause Restart Level go through that intro when
 lives remain. The title screen stays the title screen. When lives reach 0, the
 death cue still finishes, then GAME OVER appears on that same black screen

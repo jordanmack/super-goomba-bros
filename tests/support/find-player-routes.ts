@@ -64,6 +64,8 @@ function prepare(index: number) {
   sim.npcs = [];
   sim.saved = T.required;
   sim.marioReturn = 1e6;
+  for (let frame = 0; frame < 60 * 20 && sim.pipeIntro; frame++)
+    step(sim, 0);
   return sim;
 }
 function step(sim: Simulation, bits: number) {

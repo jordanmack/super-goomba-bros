@@ -96,6 +96,81 @@ test("next stage resets counters and preserves the complete clear cue", async ({
     .toBe(true);
 });
 
+test("Pause and Mute still work during the 1-2 scripted pipe strip", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.sim.marioReturn = 1e6;
+    g.sim.nextLevel();
+  });
+  await skipIntro(page);
+  await page.waitForFunction(() => {
+    const s = (window as any).__game?.sim;
+    return s?.level?.id === "1-2" && s.mode === "playing" && s.pipeIntro;
+  });
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mute", exact: true }),
+  ).toBeVisible();
+  const before = await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    return {
+      area: s.player.areaId,
+      x: s.player.body.position.x,
+      elapsed: s.elapsed,
+    };
+  });
+  expect(before.area).toBe("29");
+  expect(before.elapsed).toBe(0);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.paused))
+    .toBe(true);
+  const pausedX = await page.evaluate(
+    () => (window as any).__game.sim.player.body.position.x,
+  );
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 250)));
+  expect(
+    await page.evaluate(() => (window as any).__game.sim.player.body.position.x),
+  ).toBe(pausedX);
+  await page.getByRole("button", { name: "Mute", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.audio.muted))
+    .toBe(true);
+  await expect(
+    page.getByRole("button", { name: "Unmute", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Unmute", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.audio.muted))
+    .toBe(false);
+  const during = await page.evaluate(() => {
+    const g = (window as any).__game;
+    const s = g.sim;
+    return {
+      paused: g.paused,
+      pipeIntro: s.pipeIntro,
+      elapsed: s.elapsed,
+      area: s.player.areaId,
+      x: s.player.body.position.x,
+    };
+  });
+  expect(during.paused).toBe(true);
+  expect(during.pipeIntro).toBe(true);
+  expect(during.elapsed).toBe(0);
+  expect(during.area).toBe("29");
+  expect(during.x).toBe(pausedX);
+  await page.getByRole("button", { name: "RESUME", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "PAUSED" })).toBeHidden();
+});
+
 test("a short touch on Pipe travels to the bonus area and changes its music", async ({
   browser,
 }) => {

@@ -397,6 +397,13 @@ export class Simulation {
     actor.grounded = true;
     Body.setFrozen(actor.body, false);
     Body.setVelocity(actor.body, { x: 0, y: 0 });
+    if (actor === this.player && actor.areaId === this.level.main)
+      this.endPipeIntro();
+  }
+  private endPipeIntro() {
+    if (!this.pipeIntro) return;
+    this.pipeIntro = false;
+    for (const npc of this.npcs) Body.setFrozen(npc.body, false);
   }
   loadRoom(id: string) {
     let room = this.rooms.get(id);
@@ -469,6 +476,9 @@ export class Simulation {
   introLeft = 0;
   gameoverLeft = 0;
   coinPops: CoinPop[] = [];
+  pipeIntro = false;
+  private spawnedLevelIndex = -1;
+  private retrySpawn = false;
   private nextId = 1;
   private jumped = false;
   private playerPace = T.walkSpeed as number;
@@ -489,9 +499,20 @@ export class Simulation {
     this.obstacles = [];
     this.rooms.clear();
     this.terrainId = 0;
+    const retry =
+      mode !== "title" &&
+      this.retrySpawn &&
+      this.spawnedLevelIndex === this.levelIndex;
+    const hasStrip = this.level.route[0] !== this.level.main;
+    const skipStrip = retry && hasStrip;
+    this.pipeIntro = hasStrip && !skipStrip && mode !== "title";
+    this.spawnedLevelIndex = this.levelIndex;
+    this.retrySpawn = mode !== "title";
     const main = this.loadRoom(this.level.main);
     this.player = this.actor(100, "goomba");
-    const entry = this.loadRoom(this.level.route[0]);
+    const entry = this.loadRoom(
+      skipStrip ? this.level.main : this.level.route[0],
+    );
     this.player.areaId = entry.data.id;
     entry.place(this.player, entry.offset + 100);
     const occupied = new Set<string>();
@@ -519,6 +540,8 @@ export class Simulation {
     for (const actor of this.npcs) {
       if (!actor.grounded) main.place(actor, actor.homeX, "low", occupied);
     }
+    if (this.pipeIntro)
+      for (const npc of this.npcs) Body.setFrozen(npc.body, true);
     this.mario = this.actor(entry.offset - 200, "mario");
     this.mario.areaId = entry.data.id;
     this.setMarioStage(1);
@@ -1812,7 +1835,14 @@ export class Simulation {
     }
     if (this.mode !== "playing" && this.mode !== "finishing") return;
     this.updateParticles(dt);
-    this.elapsed += dt;
+    if (
+      this.pipeIntro &&
+      this.player.areaId === this.level.main &&
+      !this.inPipe(this.player)
+    )
+      this.endPipeIntro();
+    const scripted = this.pipeIntro;
+    if (!scripted) this.elapsed += dt;
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.audible = Math.max(0, this.audible - dt);
     for (const shout of this.shouts) shout.left = Math.max(0, shout.left - dt);
@@ -1838,12 +1868,13 @@ export class Simulation {
         }
       }
     }
-    for (const room of this.rooms.values())
-      room.updatePlatforms(this.elapsed, [
-        this.player,
-        ...this.npcs,
-        this.mario,
-      ].filter((a) => !this.inPipe(a)));
+    if (!scripted)
+      for (const room of this.rooms.values())
+        room.updatePlatforms(this.elapsed, [
+          this.player,
+          ...this.npcs,
+          this.mario,
+        ].filter((a) => !this.inPipe(a)));
     for (const c of this.obstacles) c.bounce = Math.max(0, c.bounce - dt);
     const phase =
       this.elapsed >= T.fireballsAt ? 2 : this.elapsed >= T.fasterAt ? 1 : 0;
@@ -1862,17 +1893,20 @@ export class Simulation {
     }
     this.updatePipeTravel(dt);
     if (this.mode === "playing" && !this.inPipe(this.player)) {
-      const dx = Number(input.right) - Number(input.left);
+      const play = this.pipeIntro
+        ? { ...emptyInput(), right: true }
+        : input;
+      const dx = Number(play.right) - Number(play.left);
       const p = this.player.body.position;
       const water = this.activeRoom.data.type === "water";
       if (water) this.playerPace = T.walkSpeed;
       else if (this.player.grounded)
-        this.playerPace = input.run ? T.runSpeed : T.walkSpeed;
+        this.playerPace = play.run ? T.runSpeed : T.walkSpeed;
       this.move(this.player, dx * this.playerPace);
-      if (input.jump && !this.jumped) this.jump(this.player);
-      this.player.jumpHeld = input.jump;
-      this.jumped = input.jump;
-      if (input.fire && this.player.flower && this.canThrowFireball("player")) {
+      if (play.jump && !this.jumped) this.jump(this.player);
+      this.player.jumpHeld = play.jump;
+      this.jumped = play.jump;
+      if (play.fire && this.player.flower && this.canThrowFireball("player")) {
         this.fireballs.push({
           id: this.nextId++,
           x: p.x + this.player.facing * (this.player.body.width / 2 + 10),
@@ -1888,7 +1922,7 @@ export class Simulation {
       const room = this.activeRoom;
       if (p.x < room.offset + 20)
         Body.setPosition(this.player.body, { x: room.offset + 20, y: p.y });
-      const traveled = this.tryPipe(this.player, input.down, input.right);
+      const traveled = this.tryPipe(this.player, play.down, play.right);
       if (
         !traveled &&
         room.data.goal &&
@@ -1899,10 +1933,12 @@ export class Simulation {
         else Body.setPosition(this.player.body, { x: room.goalX - 1, y: p.y });
       }
     } else if (this.mode === "playing") this.jumped = true;
-    this.updateNpcs(dt);
-    this.updateCrowd(dt);
+    if (!scripted) {
+      this.updateNpcs(dt);
+      this.updateCrowd(dt);
+    }
     this.doomed = rescueImpossible(this.saved, this.living(), T.required);
-    this.updateMario(dt);
+    if (!scripted) this.updateMario(dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
       if (this.roomFor(a).data.type === "water") continue;
       const hold = !!a.jumpHeld && a.body.velocity.y < 0 && !a.grounded;
@@ -1982,7 +2018,13 @@ export class Simulation {
     this.coinPops = this.coinPops.filter((pop) => pop.age < 0.5);
     this.resolveMarioContact(playerBottom, playerFalling);
     for (const a of [this.player, ...this.npcs])
-      if (a.alive && !a.saved && !this.inPipe(a) && a.body.position.y > 640)
+      if (
+        a.alive &&
+        !a.saved &&
+        !this.inPipe(a) &&
+        a.body.position.y > 640 &&
+        !(a === this.player && this.pipeIntro)
+      )
         this.kill(a, false);
     this.updateFireballs(dt);
     this.updateFlagpoles(dt);

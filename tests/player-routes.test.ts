@@ -19,6 +19,10 @@ for (const [index, level] of CAMPAIGN.entries())
       for (const npc of sim.npcs) sim.physics.remove(npc.body);
       sim.npcs = [];
       sim.saved = T.required;
+      for (let frame = 0; frame < 60 * 20 && sim.pipeIntro; frame++)
+        sim.step(1 / 60, emptyInput());
+      assert.equal(sim.pipeIntro, false);
+      assert.equal(sim.player.areaId, sim.level.main);
       const route = routes[level.id as keyof typeof routes];
       assert.ok(route, "a recorded route exists for this stage");
       for (const [bits, frames] of route)

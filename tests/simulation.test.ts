@@ -35,6 +35,16 @@ function tick(s: Simulation, seconds: number, input: Partial<Input> = {}) {
   for (let i = 0; i < Math.round(seconds * 60); i++)
     s.step(dt, { ...emptyInput(), ...input });
 }
+function finishPipeIntro(s: Simulation, input: Partial<Input> = {}) {
+  for (
+    let frame = 0;
+    frame < 60 * 20 && (s.mode === "intro" || s.pipeIntro);
+    frame++
+  )
+    s.step(dt, { ...emptyInput(), ...input });
+  assert.equal(s.pipeIntro, false);
+  assert.equal(s.mode, "playing");
+}
 function at(s: Simulation, x: number, y = 415) {
   Body.setPosition(s.player.body, { x, y });
   Body.setVelocity(s.player.body, { x: 0, y: 0 });
@@ -3043,6 +3053,141 @@ test("an intro pipe emerges at the dest page without a nearby-floor search", () 
   );
 });
 
+test("1-2 after nextLevel from 1-1 goes through 29 without applying input", () => {
+  const s = game();
+  s.nextLevel();
+  assert.equal(s.level.id, "1-2");
+  assert.equal(s.mode, "intro");
+  assert.equal(s.player.areaId, "29");
+  assert.equal(s.pipeIntro, true);
+  tick(s, T.introSeconds + dt);
+  assert.equal(s.mode, "playing");
+  assert.equal(s.player.areaId, "29");
+  assert.equal(s.elapsed, 0);
+  assert.equal(s.marioActive, false);
+  const startX = s.player.body.position.x;
+  const lives = s.lives;
+  tick(s, 0.25, { left: true, jump: true, down: true, run: true, fire: true });
+  assert.ok(s.player.body.position.x > startX);
+  assert.equal(s.player.grounded, true);
+  assert.equal(s.elapsed, 0);
+  assert.equal(s.marioActive, false);
+  assert.notEqual(s.mode, "dead");
+  let sawExit = false;
+  for (
+    let frame = 0;
+    frame < 60 * 20 && (s.mode === "intro" || s.pipeIntro);
+    frame++
+  ) {
+    s.step(dt, {
+      ...emptyInput(),
+      left: true,
+      jump: true,
+      down: true,
+    });
+    if (s.player.areaId === "40" && s.player.pipeTravel?.phase === "exit") {
+      sawExit = true;
+      assert.equal(s.elapsed, 0);
+      assert.equal(s.marioActive, false);
+      assert.equal(s.pipeIntro, true);
+    }
+    assert.notEqual(s.mode, "dead");
+  }
+  assert.equal(s.pipeIntro, false);
+  assert.equal(s.mode, "playing");
+  assert.equal(sawExit, true);
+  assert.equal(s.lives, lives);
+  assert.equal(s.player.areaId, "40");
+  assert.equal(s.player.pipeTravel, undefined);
+  assert.equal(s.elapsed, 0);
+  assert.notEqual(s.mode, "dead");
+  const mainX = s.player.body.position.x;
+  tick(s, 0.2, { right: true });
+  assert.ok(s.player.body.position.x > mainX);
+  assert.ok(s.elapsed > 0);
+  s.marioReturn = 0;
+  tick(s, dt);
+  assert.equal(s.marioActive, true);
+});
+
+test("1-2 death retry skips area 29 and spawns on main 40", () => {
+  const s = game();
+  s.nextLevel();
+  tick(s, T.introSeconds + dt);
+  assert.equal(s.player.areaId, "29");
+  s.kill(s.player);
+  tick(s, T.deathSequenceSeconds + dt);
+  assert.equal(s.mode, "intro");
+  assert.equal(s.player.areaId, "40");
+  assert.equal(s.pipeIntro, false);
+  tick(s, T.introSeconds + dt);
+  assert.equal(s.mode, "playing");
+  assert.equal(s.player.areaId, "40");
+  assert.equal(s.pipeIntro, false);
+  const x = s.player.body.position.x;
+  tick(s, dt, { right: true });
+  assert.ok(s.player.body.position.x > x);
+  assert.ok(s.elapsed > 0);
+  s.reset("intro");
+  assert.equal(s.player.areaId, "40");
+  assert.equal(s.pipeIntro, false);
+});
+
+test("Pause Restart during the 1-2 strip skips to main 40", () => {
+  const s = game();
+  s.nextLevel();
+  tick(s, T.introSeconds + dt);
+  assert.equal(s.player.areaId, "29");
+  assert.equal(s.pipeIntro, true);
+  const lives = s.lives;
+  s.reset("intro");
+  assert.equal(s.mode, "intro");
+  assert.equal(s.player.areaId, "40");
+  assert.equal(s.pipeIntro, false);
+  assert.equal(s.lives, lives);
+  tick(s, T.introSeconds + 2 * dt);
+  assert.equal(s.mode, "playing");
+  assert.equal(s.player.areaId, "40");
+  assert.ok(s.elapsed > 0);
+});
+
+test("pipe-intro stages script the shared strip once, then retry on main", () => {
+  const cases = [
+    { from: "1-1", id: "1-2", strip: "29", main: "40" },
+    { from: "2-1", id: "2-2", strip: "29", main: "01" },
+    { from: "4-1", id: "4-2", strip: "29", main: "41" },
+    { from: "7-1", id: "7-2", strip: "29", main: "01" },
+  ];
+  for (const c of cases) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === c.from);
+    s.reset();
+    s.marioReturn = 1e6;
+    s.nextLevel();
+    assert.equal(s.level.id, c.id);
+    tick(s, T.introSeconds + dt);
+    assert.equal(s.player.areaId, c.strip, c.id);
+    assert.equal(s.pipeIntro, true, c.id);
+    assert.equal(s.elapsed, 0, c.id);
+    assert.equal(s.marioActive, false, c.id);
+    const lives = s.lives;
+    finishPipeIntro(s, { left: true, jump: true });
+    assert.equal(s.player.areaId, c.main, c.id);
+    assert.equal(s.mode, "playing", c.id);
+    assert.equal(s.lives, lives, c.id);
+    s.kill(s.player);
+    tick(s, T.deathSequenceSeconds + dt);
+    assert.equal(s.mode, "intro", c.id);
+    assert.equal(s.player.areaId, c.main, c.id);
+    tick(s, T.introSeconds + 2 * dt);
+    assert.equal(s.mode, "playing", c.id);
+    assert.equal(s.player.areaId, c.main, c.id);
+    assert.equal(s.pipeIntro, false, c.id);
+    assert.ok(s.elapsed > 0, c.id);
+    s.physics.clear();
+  }
+});
+
 test("dest-page spawn uses the pipe nearest the dest page, not the first listed", () => {
   const s = new Simulation(() => 0.5);
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "6-2");
@@ -4323,6 +4468,7 @@ test("a stopped water shell does not keep leftover swim speed", () => {
   s.levelIndex = 5;
   s.reset();
   s.marioReturn = 1e6;
+  finishPipeIntro(s);
   const n = troopa(s);
   assert.equal(s.roomFor(n).data.type, "water");
   parkNpcs(s, [n]);
