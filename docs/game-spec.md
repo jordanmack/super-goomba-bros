@@ -278,10 +278,20 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
 - 2x keeps player fireballs at 1x. 3x uses the current giant fireball scale.
   8x fireballs match that size. Existing shots keep their launch size.
 - 8x lasts the star duration, then size becomes 3x. A same-size or smaller
-  mushroom does not reset that timer. While 8x, walking smashes breakable bricks
-  and treats unbreakable walls and pipe solids as empty. Floors still hold.
-  Down at a real pipe entrance still enters. The character can still walk.
-  Mario's stomp, side contact, fireball, and moving shell do nothing to 8x.
+  mushroom does not reset that timer. While 8x, overlap destroys breakable
+  bricks, question and content blocks, pipes, and unbreakable wall tiles that
+  are not floors. Destroyed solids play the brick-break burst and lose
+  collision. A question or content block yields its prize first, then breaks.
+  Coin contents add to the coin count. An 8x smash on a multi-coin brick claims
+  all remaining coins at once, then the brick is gone. An item spawns already
+  free (`emerge` 0, not frozen) and flies out; it does not use the emerge rise
+  or the appear cue. Unrevealed hidden blocks stay hidden. Floors, stairs you
+  stand on, moving platforms, the flagpole, the goal door, a goal pipe, castle
+  bridges, the axe, and springs stay. 8x no longer passes through an intact
+  pipe: contact destroys it, and that mouth cannot be entered after it is gone.
+  Down still enters a remaining goal pipe. Player and 8x NPCs use the same
+  smash rule. The character can still walk. Mario's stomp, side contact,
+  fireball, and moving shell do nothing to 8x.
 - A flower gives the player fireballs and a white palette. NPCs can show the
   flower palette but do not shoot. Mario becomes Fire Mario.
 - Powers can coexist. 2x, 3x, and flower powers last for the stage; stars and

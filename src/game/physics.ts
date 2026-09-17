@@ -19,7 +19,7 @@ export class Body {
   headOnly = false;
   gravityScale = 1;
   ignoreWalls = false;
-  // "top": 8x may stand on the lid; the volume is empty (pipes).
+  // "top": 8x may stand on the lid; the volume is empty until smash (pipes).
   passHuge: "volume" | "top" = "volume";
   motion?: {
     x: number;

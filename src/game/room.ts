@@ -20,6 +20,7 @@ export class Room {
   offset: number;
   obstacles: Obstacle[] = [];
   solids: Body[] = [];
+  smashedTiles = new Set<string>();
   gaps: [number, number][];
   goalX: number;
   flagpole?: Flagpole;
@@ -113,6 +114,7 @@ export class Room {
         question: block.kind === "question",
         hidden: block.hidden,
         content: block.content ?? undefined,
+        coinsLeft: block.content === "coins" ? T.multiCoinCount : undefined,
         broken: false,
         used: false,
         bounce: 0,

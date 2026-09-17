@@ -6,7 +6,13 @@ import {
   rayBlocked,
 } from "./physics.ts";
 import { MAP_TOP, PHRASES, TUNING as T, blockDrawY, jumpArc } from "./config.ts";
-import { CAMPAIGN, stageTimer } from "./levels.ts";
+import {
+  CAMPAIGN,
+  isSmashExemptTile,
+  isSolidTile,
+  stageTimer,
+  terrainRects,
+} from "./levels.ts";
 import { Room } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
 
@@ -47,6 +53,7 @@ export type Obstacle = {
   used: boolean;
   bounce: number;
   content?: string | null;
+  coinsLeft?: number;
 };
 export type Actor = {
   id: number;
@@ -191,6 +198,8 @@ export type Item = {
   age: number;
   block?: Obstacle;
   clip?: { x: number; y: number; w: number; h: number };
+  smash?: boolean;
+  ignoreActor?: Actor;
 };
 export type CoinPop = { x: number; y: number; age: number };
 const TALLY_LINES: Exclude<TallyPhase, "" | "time" | "ending">[] = [
@@ -284,6 +293,16 @@ export class Simulation {
       );
     });
     if (!pipe) return false;
+    const mouthX = room.offset + (pipe.column + pipe.width / 2) * 32;
+    const mouth = room.obstacles.find(
+      (c) => c.kind === "pipe" && Math.abs(c.x - mouthX) < 1,
+    );
+    if (mouth?.broken) return false;
+    if (
+      actor.scale >= T.hugeScale &&
+      !(mouth && this.isGoalPipe(room, mouth))
+    )
+      return false;
     const destination =
       pipe.destinations.find((d) => d.world === this.level.world) ??
       (room.data.id === "29" ? { area: this.level.main, page: 0 } : undefined);
@@ -1147,21 +1166,33 @@ export class Simulation {
     if (c.body) c.body.headOnly = false;
   }
 
-  private spawnItem(c: Obstacle, kind: ItemKind, facing: number) {
+  private spawnItem(
+    c: Obstacle,
+    kind: ItemKind,
+    facing: number,
+    instant = false,
+  ) {
     const body = this.physics.rectangle(c.x, c.y, 24, 28, false);
-    Body.setFrozen(body, true);
+    Body.setFrozen(body, !instant);
     const item: Item = {
       id: this.nextId++,
       kind,
       body,
-      emerge: 0.45,
+      emerge: instant ? 0 : 0.45,
       originY: c.y,
-      direction: facing,
+      direction: facing || 1,
       age: 0,
       block: c,
+      smash: instant,
     };
-    this.setEmergeClip(item);
+    if (instant)
+      Body.setVelocity(body, {
+        x: item.direction * (kind === "star" ? 2.8 : 1.8),
+        y: -8,
+      });
+    else this.setEmergeClip(item);
     this.items.push(item);
+    return item;
   }
 
   private setEmergeClip(item: Item) {
@@ -1191,6 +1222,12 @@ export class Simulation {
       this.lives++;
       this.events.push("oneUp");
     }
+  }
+
+  private claimSmashCoin(hitter: Actor, c: Obstacle) {
+    if (hitter === this.player) this.addPlayerCoin();
+    else this.events.push("coin");
+    this.coinPops.push({ x: c.x, y: c.y, age: 0 });
   }
 
   private collectCoin(coin: { collected: boolean }, collector: Actor) {
@@ -1288,7 +1325,7 @@ export class Simulation {
     a.body.ignoreWalls = scale >= T.hugeScale;
     a.hugeLeft = scale >= T.hugeScale ? T.hugeSeconds : 0;
     if (scale < T.hugeScale) this.fitActor(a);
-    else this.smashHugeBricks(a);
+    else this.smashHuge(a);
   }
 
   private fitActor(a: Actor) {
@@ -1315,19 +1352,170 @@ export class Simulation {
     Body.setPosition(a.body, { x: originX, y: a.body.position.y });
   }
 
-  private smashHugeBricks(a: Actor) {
-    if (a.scale < T.hugeScale || !a.alive || a.saved) return;
+  private smashHuge(a: Actor) {
+    if (a.scale < T.hugeScale || !a.alive || a.saved || this.inPipe(a)) return;
+    const room = this.roomFor(a);
     for (const c of [...this.obstacles]) {
-      if (
-        c.kind !== "brick" ||
-        c.question ||
-        c.hidden ||
-        c.broken ||
-        !c.body
-      )
-        continue;
-      if (overlaps(a.body, [c.body], 0.1).length) this.breakBrick(c);
+      if (c.broken || !c.body) continue;
+      if (c.hidden && !c.used) continue;
+      if (this.isGoalPipe(room, c)) continue;
+      if (!this.smashContact(a, c)) continue;
+      this.yieldSmashPrize(c, a);
+      this.breakSolid(c);
     }
+    this.smashHugeTerrain(a, room);
+  }
+
+  private smashContact(a: Actor, c: Obstacle) {
+    if (!c.body) return false;
+    if (overlaps(a.body, [c.body], 0.1).length) return true;
+    if (c.kind !== "pipe") return false;
+    const top = c.body.bounds.min.y;
+    return (
+      Math.abs(a.body.bounds.max.y - top) < 12 &&
+      a.body.bounds.max.x > c.body.bounds.min.x + 0.01 &&
+      a.body.bounds.min.x < c.body.bounds.max.x - 0.01
+    );
+  }
+
+  private isGoalPipe(room: Room, c: Obstacle) {
+    const goal = room.data.goal;
+    if (c.kind !== "pipe" || goal?.kind !== "pipe") return false;
+    const pipe = room.data.pipes.find(
+      (p) => p.column === goal.column && p.row === goal.row,
+    );
+    if (!pipe) return false;
+    const x = room.offset + (pipe.column + pipe.width / 2) * 32;
+    return Math.abs(c.x - x) < 1;
+  }
+
+  private yieldSmashPrize(c: Obstacle, hitter: Actor) {
+    if (c.kind !== "brick" || c.used || c.broken) return;
+    this.collectCoinsOnBlock(c, hitter);
+    if (c.content === "coins") {
+      const n = c.coinsLeft ?? T.multiCoinCount;
+      for (let i = 0; i < n; i++) this.claimSmashCoin(hitter, c);
+      c.coinsLeft = 0;
+      c.used = true;
+      return;
+    }
+    if (c.content === "1-up") {
+      this.reveal(c);
+      this.spawnItem(c, "oneUp", hitter.facing, true).ignoreActor = hitter;
+      return;
+    }
+    if (c.content === "star") {
+      this.reveal(c);
+      this.spawnItem(c, "star", hitter.facing, true).ignoreActor = hitter;
+      return;
+    }
+    if (c.content === "coin") {
+      this.reveal(c);
+      this.claimSmashCoin(hitter, c);
+      return;
+    }
+    if (c.question || c.content === "power-up") {
+      this.reveal(c);
+      this.spawnItem(c, this.rollItem(), hitter.facing, true).ignoreActor =
+        hitter;
+    }
+  }
+
+  private smashHugeTerrain(a: Actor, room: Room) {
+    const keep = this.keptSolids(room);
+    if (!overlaps(a.body, room.solids.filter((s) => !keep.has(s)), 0.1).length)
+      return;
+    const feet = a.body.bounds.max.y;
+    const box = a.body.bounds;
+    const smashed: string[] = [];
+    const col0 = Math.floor((box.min.x - room.offset) / 32);
+    const col1 = Math.floor((box.max.x - room.offset - 0.01) / 32);
+    const row0 = Math.floor((box.min.y - MAP_TOP) / 32);
+    const row1 = Math.floor((box.max.y - MAP_TOP - 0.01) / 32);
+    for (let column = col0; column <= col1; column++) {
+      if (column < 0 || column >= room.data.width) continue;
+      for (let row = row0; row <= row1; row++) {
+        if (row < 2 || row > 14) continue;
+        const key = `${column},${row}`;
+        if (
+          room.smashedTiles.has(key) ||
+          !this.smashableTerrain(room, column, row, feet)
+        )
+          continue;
+        const x = room.offset + column * 32 + 16;
+        const y = MAP_TOP + row * 32 + 16;
+        if (
+          box.max.x <= x - 16 + 0.1 ||
+          box.min.x >= x + 16 - 0.1 ||
+          box.max.y <= y - 16 + 0.1 ||
+          box.min.y >= y + 16 - 0.1
+        )
+          continue;
+        smashed.push(key);
+        this.burst(x, y, false);
+      }
+    }
+    if (!smashed.length) return;
+    for (const key of smashed) room.smashedTiles.add(key);
+    this.rebuildTerrain(room);
+    this.events.push("break");
+  }
+
+  private smashableTerrain(
+    room: Room,
+    column: number,
+    row: number,
+    feet: number,
+  ) {
+    if (row >= 13) return false;
+    const tile = room.data.tiles[row]?.[column] ?? 0;
+    if (!isSolidTile(tile) || isSmashExemptTile(tile)) return false;
+    if (room.data.blocks.some((b) => b.column === column && b.row === row))
+      return false;
+    if (
+      room.data.pipes.some(
+        (p) =>
+          column >= p.column &&
+          column < p.column + p.width &&
+          row >= p.row &&
+          row < p.row + p.height,
+      )
+    )
+      return false;
+    if (room.data.objects.some((o) => o.opcode === 35 && o.column === column))
+      return false;
+    const top = MAP_TOP + row * 32;
+    const above = room.data.tiles[row - 1]?.[column] ?? 0;
+    const standableTop = row === 0 || !isSolidTile(above);
+    if (Math.abs(feet - top) < 12 && standableTop) return false;
+    return true;
+  }
+
+  private keptSolids(room: Room) {
+    const keep = new Set<Body>();
+    for (const o of room.obstacles) if (o.body && !o.broken) keep.add(o.body);
+    for (const p of room.platforms) keep.add(p.body);
+    return keep;
+  }
+
+  private rebuildTerrain(room: Room) {
+    const keep = this.keptSolids(room);
+    const removed = room.solids.filter((s) => !keep.has(s));
+    for (const s of removed) this.physics.remove(s);
+    room.solids = room.solids.filter((s) => keep.has(s));
+    this.solids = this.solids.filter((s) => !removed.includes(s));
+    for (const rect of terrainRects(room.data, room.offset, room.smashedTiles)) {
+      const body = this.physics.rectangle(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        rect.height,
+        true,
+      );
+      room.solids.push(body);
+      this.solids.push(body);
+    }
+    room.clearNavigation();
   }
 
   private updateItems(dt: number) {
@@ -1363,7 +1551,7 @@ export class Simulation {
       if (wall) item.direction *= -1;
       Body.setVelocity(item.body, {
         x:
-          item.kind === "flower"
+          item.kind === "flower" && (!item.smash || floor)
             ? 0
             : item.direction * (item.kind === "star" ? 2.8 : 1.8),
         y:
@@ -1373,16 +1561,22 @@ export class Simulation {
       });
       for (const a of [this.player, ...this.npcs, this.mario]) {
         if (
-          a.alive &&
-          !a.saved &&
-          !this.inPipe(a) &&
-          (a !== this.mario || this.marioActive) &&
-          this.overlapBody(a.body, item.body)
-        ) {
-          this.collect(a, item);
-          break;
-        }
+          !a.alive ||
+          a.saved ||
+          this.inPipe(a) ||
+          (a === this.mario && !this.marioActive) ||
+          !this.overlapBody(a.body, item.body)
+        )
+          continue;
+        if (item.ignoreActor === a) continue;
+        this.collect(a, item);
+        break;
       }
+      if (
+        item.ignoreActor &&
+        !this.overlapBody(item.ignoreActor.body, item.body)
+      )
+        item.ignoreActor = undefined;
       if (p.y > 640 || item.age > 40) {
         this.physics.remove(item.body);
         this.items = this.items.filter((i) => i !== item);
@@ -1799,7 +1993,11 @@ export class Simulation {
       this.particles.splice(0, this.particles.length - 1200);
   }
   breakBrick(c: Obstacle) {
-    if (c.kind !== "brick" || c.broken) return;
+    if (c.kind !== "brick") return;
+    this.breakSolid(c);
+  }
+  private breakSolid(c: Obstacle) {
+    if (c.broken || (c.kind !== "brick" && c.kind !== "pipe")) return;
     c.broken = true;
     if (c.body) {
       this.physics.remove(c.body);
@@ -1809,8 +2007,24 @@ export class Simulation {
         room.clearNavigation();
       }
     }
+    if (c.kind === "pipe") this.smashPipeTiles(c);
     this.burst(c.x, c.y, false);
     this.events.push("break");
+  }
+  private smashPipeTiles(c: Obstacle) {
+    if (!c.body) return;
+    let host: Room | undefined;
+    for (const room of this.rooms.values())
+      if (room.obstacles.includes(c)) host = room;
+    if (!host) return;
+    const col0 = Math.round((c.body.bounds.min.x - host.offset) / 32);
+    const row0 = Math.round((c.body.bounds.min.y - MAP_TOP) / 32);
+    const cols = Math.max(1, Math.round(c.body.width / 32));
+    const rows = Math.max(1, Math.round(c.body.height / 32));
+    for (let column = col0; column < col0 + cols; column++)
+      for (let row = row0; row < row0 + rows; row++)
+        host.smashedTiles.add(`${column},${row}`);
+    this.rebuildTerrain(host);
   }
   private updateParticles(dt: number) {
     for (const p of this.particles) {
@@ -2150,7 +2364,7 @@ export class Simulation {
         Body.setVelocity(n.body, { x: n.navVx, y: n.body.velocity.y });
       n.navHoldX = undefined;
     }
-    for (const a of [this.player, ...this.npcs]) this.smashHugeBricks(a);
+    for (const a of [this.player, ...this.npcs]) this.smashHuge(a);
     for (const room of this.rooms.values())
       for (const coin of room.coins) {
         if (coin.collected) continue;

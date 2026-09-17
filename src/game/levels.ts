@@ -16,6 +16,10 @@ export function stageTimer(area: Area) {
 export function isFlagpoleTile(id: number) {
   return id === 36 || id === 37;
 }
+export function isSmashExemptTile(id: number) {
+  // Springs 103-104 and castle bridge 137 stay solid for 8x.
+  return id === 103 || id === 104 || id === 137 || isFlagpoleTile(id);
+}
 export function isSolidTile(id: number) {
   if (isFlagpoleTile(id)) return false;
   return (
@@ -34,7 +38,11 @@ export function themeFor(area: Area) {
 }
 
 export type LevelRect = { x: number; y: number; width: number; height: number };
-export function terrainRects(area: Area, offset = 0): LevelRect[] {
+export function terrainRects(
+  area: Area,
+  offset = 0,
+  smashed?: ReadonlySet<string>,
+): LevelRect[] {
   const interactive = new Set(area.blocks.map((b) => `${b.column},${b.row}`));
   for (const pipe of area.pipes)
     for (let y = pipe.row; y < pipe.row + pipe.height; y++)
@@ -44,11 +52,16 @@ export function terrainRects(area: Area, offset = 0): LevelRect[] {
   for (let x = 0; x < area.width; x++) {
     let top = -1;
     for (let y = 2; y <= 18; y++) {
+      const row = y < 15 ? y : 14;
       const tile = y < 15 ? area.tiles[y][x] : area.tiles[14][x];
+      const key = `${x},${row}`;
+      const smashedHere = !!smashed?.has(key);
+      const keepFloor = smashedHere && row >= 13;
       const solid =
         y < 18 &&
         isSolidTile(tile) &&
-        !(y < 15 && interactive.has(`${x},${y}`));
+        (keepFloor ||
+          (!(y < 15 && interactive.has(`${x},${y}`)) && !smashedHere));
       if (solid && top < 0) top = y;
       if (!solid && top >= 0) {
         columns.push({

@@ -107,6 +107,11 @@ export class Play extends Phaser.Scene {
     );
     sim.viewWidth = width;
     this.cameras.main.setScroll(sim.cameraX, 0);
+    for (const key of room.smashedTiles) {
+      const [column, row] = key.split(",").map(Number);
+      if (row >= 13) continue;
+      this.tiles.removeTileAt(column, row);
+    }
     for (const sprite of this.obstacles.values()) sprite.setVisible(false);
     const palette = atlas.themes.indexOf(themeFor(room.data)) * 256;
     for (const c of room.obstacles) {

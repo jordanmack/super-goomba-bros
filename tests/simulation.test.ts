@@ -3561,36 +3561,396 @@ test("Mario still uses original small and big from any mushroom", () => {
   assert.equal(s.score, 1000);
 });
 
-test("8x walking smashes bricks, passes pipes, and still enters a pipe", () => {
+function cellSolid(s: Simulation, column: number, row: number) {
+  const room = s.activeRoom;
+  const x = room.offset + column * 32 + 16;
+  const y = MAP_TOP + row * 32 + 16;
+  return s.solids.some(
+    (sol) =>
+      !sol.headOnly &&
+      sol.bounds.min.x < x &&
+      sol.bounds.max.x > x &&
+      sol.bounds.min.y < y &&
+      sol.bounds.max.y > y,
+  );
+}
+
+test("8x walking smashes bricks, questions, pipes, and walls; items fly out", () => {
   const s = game();
+  parkNpcs(s, []);
   const brick = s.obstacles.find(
-    (c) => c.kind === "brick" && !c.question && !c.hidden && c.y > 300,
+    (c) =>
+      c.kind === "brick" &&
+      !c.question &&
+      !c.hidden &&
+      !c.content &&
+      c.y > 300,
   )!;
+  const star = s.obstacles.find((c) => c.content === "star")!;
   const question = s.obstacles.find(
-    (c) => c.question && !c.used && c.y > 300,
+    (c) =>
+      c.question &&
+      !c.used &&
+      !c.hidden &&
+      c.content === "power-up" &&
+      c.y > 300 &&
+      Math.abs(c.x - star.x) > 400 &&
+      Math.abs(c.x - brick.x) > 400,
   )!;
+  const hidden = s.obstacles.find((c) => c.hidden && !c.used)!;
+  s.random = () => 0;
+  at(s, star.x, T.groundY - 14);
   give(s, s.player, "mushroom8x");
+  assert.equal(star.broken, true);
+  assert.ok(!s.solids.includes(star.body!));
+  const prize = s.items.find((item) => item.kind === "star")!;
+  assert.equal(prize.emerge, 0);
+  assert.equal(prize.body.frozen, false);
+  assert.equal(prize.smash, true);
+  assert.ok(prize.body.velocity.y < 0 || Math.abs(prize.body.velocity.x) > 0);
+  assert.equal(
+    s.events.filter((event) => event === "appear").length,
+    1,
+    "smash must not emit appear; give already used one question",
+  );
+  const origin = { x: prize.body.position.x, y: prize.body.position.y };
+  tick(s, 0.2);
+  const flown = s.items.find((item) => item.kind === "star");
+  assert.ok(flown, "smasher must not collect the prize while overlapping");
+  assert.equal(flown.emerge, 0);
+  assert.equal(flown.body.frozen, false);
+  assert.ok(
+    Math.abs(flown.body.position.x - origin.x) > 1 ||
+      Math.abs(flown.body.position.y - origin.y) > 1,
+  );
+
   at(s, brick.x, T.groundY - 14 * s.player.scale);
   tick(s, dt);
   assert.equal(brick.broken, true);
+  assert.ok(s.events.includes("break"));
   at(s, question.x, T.groundY - 14 * s.player.scale);
+  const beforeItems = s.items.length;
   tick(s, dt);
-  assert.equal(question.broken, false);
-  assert.ok(s.solids.includes(question.body!));
+  assert.equal(question.broken, true);
+  assert.ok(!s.solids.includes(question.body!));
+  assert.ok(
+    s.items.length > beforeItems || s.player.starLeft > 0 || s.player.flower,
+  );
+
+  at(s, hidden.x, T.groundY - 14 * s.player.scale);
+  tick(s, dt);
+  assert.equal(hidden.broken, false);
+  assert.equal(hidden.used, false);
+  assert.equal(hidden.body!.headOnly, true);
+
+  const coinBox = s.obstacles.find(
+    (c) =>
+      c.question &&
+      c.content === "coin" &&
+      !c.hidden &&
+      !c.used &&
+      !c.broken &&
+      c.y > 300,
+  )!;
+  const coinsBefore = s.coins;
+  at(s, coinBox.x, T.groundY - 14 * s.player.scale);
+  tick(s, dt);
+  assert.equal(coinBox.broken, true);
+  assert.equal(s.coins, coinsBefore + 1);
+  assert.ok(!s.solids.includes(coinBox.body!));
+
   const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
   at(s, pipe.x - 150, T.groundY - 14 * s.player.scale);
   tick(s, 0.15);
   tick(s, 2.4, { right: true });
+  assert.equal(pipe.broken, true);
+  assert.ok(!s.solids.includes(pipe.body!));
   assert.ok(s.player.body.position.x > pipe.x);
   assert.equal(s.player.grounded, true);
-  const room = s.activeRoom;
-  const down = room.data.pipes.find((p) => p.direction === "down")!;
-  const mouthX = room.offset + (down.column + down.width / 2) * 32;
-  const mouthTop = MAP_TOP + down.row * 32;
-  at(s, mouthX, mouthTop - 14 * s.player.scale);
-  tick(s, 0.1);
-  ridePipe(s, { down: true }, down.destinations[0]!.area);
-  assert.ok(s.events.includes("pipe"));
+  assert.equal(s.player.alive, true);
+
+  const intact = s.obstacles.find((c) => c.kind === "pipe" && !c.broken)!;
+  const lid = intact.body!.bounds.min.y;
+  at(s, intact.x, lid - 14 * s.player.scale);
+  tick(s, 0.1, { down: true });
+  assert.equal(intact.broken, true);
+  assert.ok(!s.solids.includes(intact.body!));
+  assert.equal(s.player.pipeTravel, undefined);
+});
+
+test("8x smash launches each item kind on a real step without emerge", () => {
+  const cases: {
+    id?: string;
+    area?: string;
+    kind: ItemKind;
+    roll: number;
+    pick: (s: Simulation) => (typeof s.obstacles)[number];
+  }[] = [
+    {
+      kind: "star",
+      roll: 0,
+      pick: (s) => s.obstacles.find((c) => c.content === "star")!,
+    },
+    {
+      id: "1-2",
+      area: "40",
+      kind: "oneUp",
+      roll: 0,
+      pick: (s) =>
+        s.obstacles.find((c) => c.content === "1-up" && !c.hidden)!,
+    },
+    {
+      kind: "flower",
+      roll: 0.99,
+      pick: (s) =>
+        s.obstacles.find(
+          (c) =>
+            c.question &&
+            !c.used &&
+            !c.hidden &&
+            c.content === "power-up" &&
+            c.y > 300,
+        )!,
+    },
+  ];
+  for (const c of cases) {
+    const s = new Simulation(() => 0.5);
+    if (c.id)
+      s.levelIndex = CAMPAIGN.findIndex((level) => level.id === c.id);
+    s.reset();
+    s.marioReturn = 1e6;
+    if (c.area) s.player.areaId = c.area;
+    parkNpcs(s, []);
+    s.random = () => c.roll;
+    const block = c.pick(s);
+    give(s, s.player, "mushroom8x");
+    at(s, block.x, block.y);
+    tick(s, dt);
+    const item = s.items.find((i) => i.kind === c.kind);
+    assert.ok(item, c.kind);
+    assert.equal(item.emerge, 0, c.kind);
+    assert.equal(item.body.frozen, false, c.kind);
+    assert.equal(item.smash, true, c.kind);
+    const origin = { x: item.body.position.x, y: item.body.position.y };
+    tick(s, 0.15);
+    const live = s.items.find((i) => i.id === item.id);
+    assert.ok(live, `${c.kind} still in play`);
+    assert.equal(live.emerge, 0, c.kind);
+    assert.ok(
+      Math.abs(live.body.position.x - origin.x) > 1 ||
+        Math.abs(live.body.position.y - origin.y) > 1,
+      c.kind,
+    );
+    s.physics.clear();
+  }
+});
+
+test("8x smash claims all remaining multi-coins and NPCs use the same rule", () => {
+  const s = game();
+  parkNpcs(s, []);
+  const multi = s.obstacles.find((c) => c.content === "coins")!;
+  const coins = s.coins;
+  at(s, multi.x, T.groundY - 14);
+  give(s, s.player, "mushroom8x");
+  assert.equal(multi.broken, true);
+  assert.equal(s.coins, coins + T.multiCoinCount);
+  assert.ok(!s.solids.includes(multi.body!));
+
+  const s2 = game();
+  const n = s2.npcs[0];
+  parkNpcs(s2, [n]);
+  const brick = s2.obstacles.find(
+    (c) =>
+      c.kind === "brick" &&
+      !c.question &&
+      !c.hidden &&
+      !c.content &&
+      c.y > 300,
+  )!;
+  const box = s2.obstacles.find(
+    (c) =>
+      c.question &&
+      !c.used &&
+      !c.hidden &&
+      c.content !== "1-up" &&
+      c.y > 300,
+  )!;
+  Body.setPosition(n.body, { x: brick.x, y: T.groundY - 14 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  give(s2, n, "mushroom8x");
+  assert.equal(brick.broken, true);
+  Body.setPosition(n.body, {
+    x: box.x,
+    y: T.groundY - 14 * n.scale,
+  });
+  tick(s2, dt);
+  assert.equal(box.broken, true);
+});
+
+test("8x does not smash floors, flagpole, goal pipe, springs, or castle bridges", () => {
+  const s = game();
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const pole = poleOf(s);
+  const poleCol = Math.floor((pole.x - s.activeRoom.offset) / 32);
+  at(s, pole.x, T.groundY - 14 * s.player.scale);
+  tick(s, dt);
+  assert.ok(s.activeRoom.flagpole);
+  assert.equal(s.activeRoom.smashedTiles.has(`${poleCol},12`), false);
+  assert.equal(cellSolid(s, 4, 13), true);
+
+  let smashedStairFill = false;
+  for (let column = 0; column < s.activeRoom.data.width; column++) {
+    for (let row = 6; row <= 11; row++) {
+      const tile = s.activeRoom.data.tiles[row][column];
+      if (tile !== 97 || s.activeRoom.data.tiles[row - 1][column] !== 97)
+        continue;
+      if (
+        s.activeRoom.data.objects.some(
+          (o) => o.opcode === 35 && o.column === column,
+        )
+      )
+        continue;
+      at(
+        s,
+        s.activeRoom.offset + column * 32 + 16,
+        T.groundY - 14 * s.player.scale,
+      );
+      tick(s, dt);
+      assert.equal(s.activeRoom.smashedTiles.has(`${column},${row}`), true);
+      assert.equal(cellSolid(s, column, 13), true);
+      smashedStairFill = true;
+      column = s.activeRoom.data.width;
+      break;
+    }
+  }
+  assert.equal(smashedStairFill, true);
+
+  const castle = new Simulation(() => 0.5);
+  castle.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+  castle.reset();
+  castle.marioReturn = 1e6;
+  parkNpcs(castle, []);
+  give(castle, castle.player, "mushroom8x");
+  const area = castle.activeRoom.data;
+  let bridgeCol = -1;
+  for (let column = 0; column < area.width; column++)
+    for (let row = 0; row < area.height; row++)
+      if (area.tiles[row][column] === 137) {
+        bridgeCol = column;
+        at(
+          castle,
+          castle.activeRoom.offset + column * 32 + 16,
+          MAP_TOP + row * 32 - 14 * castle.player.scale,
+        );
+        tick(castle, 0.15);
+        assert.equal(castle.player.alive, true);
+        assert.equal(castle.activeRoom.smashedTiles.has(`${column},${row}`), false);
+        assert.equal(cellSolid(castle, column, row), true);
+        column = area.width;
+        break;
+      }
+  assert.ok(bridgeCol >= 0);
+  castle.physics.clear();
+
+  const underground = new Simulation(() => 0.5);
+  underground.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  underground.reset();
+  underground.marioReturn = 1e6;
+  parkNpcs(underground, []);
+  underground.player.areaId = "40";
+  const sub = underground.loadRoom("40");
+  give(underground, underground.player, "mushroom8x");
+  const goal = sub.data.goal!;
+  assert.equal(goal.kind, "pipe");
+  const goalData = sub.data.pipes.find(
+    (p) => p.column === goal.column && p.row === goal.row,
+  )!;
+  const goalPipe = underground.obstacles.find((c) => {
+    const x = sub.offset + (goalData.column + goalData.width / 2) * 32;
+    return c.kind === "pipe" && Math.abs(c.x - x) < 1;
+  })!;
+  at(
+    underground,
+    goalPipe.x,
+    T.groundY - 14 * underground.player.scale,
+  );
+  tick(underground, dt);
+  assert.equal(goalPipe.broken, false);
+  assert.ok(underground.solids.includes(goalPipe.body!));
+  tick(underground, 0.1, { right: true, down: true });
+  assert.ok(
+    underground.player.pipeTravel || underground.events.includes("pipe"),
+  );
+  underground.physics.clear();
+
+  const springLevel = new Simulation(() => 0.5);
+  springLevel.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
+  springLevel.reset();
+  springLevel.marioReturn = 1e6;
+  parkNpcs(springLevel, []);
+  give(springLevel, springLevel.player, "mushroom8x");
+  const spring = springLevel.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+  const springCol = spring.column;
+  const springRow = spring.row;
+  at(
+    springLevel,
+    springLevel.activeRoom.offset + springCol * 32 + 16,
+    T.groundY - 14 * springLevel.player.scale,
+  );
+  tick(springLevel, dt);
+  assert.equal(
+    springLevel.activeRoom.smashedTiles.has(`${springCol},${springRow}`),
+    false,
+  );
+  assert.equal(
+    springLevel.activeRoom.smashedTiles.has(`${springCol},${springRow + 1}`),
+    false,
+  );
+  springLevel.physics.clear();
+
+  const usedFloor = new Simulation(() => 0.5);
+  usedFloor.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-4");
+  usedFloor.reset();
+  usedFloor.marioReturn = 1e6;
+  parkNpcs(usedFloor, []);
+  give(usedFloor, usedFloor.player, "mushroom8x");
+  const floorCol = 43;
+  at(
+    usedFloor,
+    usedFloor.activeRoom.offset + floorCol * 32 + 16,
+    T.groundY - 14 * usedFloor.player.scale,
+  );
+  tick(usedFloor, 0.2, { jump: true });
+  assert.equal(usedFloor.activeRoom.smashedTiles.has(`${floorCol},13`), false);
+  assert.equal(cellSolid(usedFloor, floorCol, 13), true);
+  usedFloor.physics.clear();
+});
+
+test("8x smash of a ground pipe keeps the floor in that column", () => {
+  const s = game();
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const room = s.loadRoom("65");
+  s.player.areaId = "65";
+  const data = room.data.pipes.find(
+    (p) => p.row + p.height > 13 && p.direction !== "right",
+  )!;
+  const pipe = s.obstacles.find((c) => {
+    const x = room.offset + (data.column + data.width / 2) * 32;
+    return c.kind === "pipe" && Math.abs(c.x - x) < 1;
+  })!;
+  at(s, pipe.x, T.groundY - 14 * s.player.scale);
+  tick(s, dt);
+  assert.equal(pipe.broken, true);
+  assert.ok(!s.solids.includes(pipe.body!));
+  at(s, pipe.x, T.groundY - 14 * s.player.scale);
+  tick(s, 0.15);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.grounded, true);
+  assert.ok(Math.abs(s.player.body.bounds.max.y - T.groundY) < 16);
+  assert.equal(cellSolid(s, data.column, 13), true);
+  s.physics.clear();
 });
 
 test("8x walking keeps the floor through merged stair columns", () => {
@@ -3772,6 +4132,7 @@ test("8x still falls through a pipe interior", () => {
   at(s, pipe.x, top + 20 - 14 * s.player.scale);
   const startY = s.player.body.position.y;
   tick(s, 0.25);
+  assert.equal(pipe.broken, true);
   assert.ok(
     s.player.body.position.y > startY + 16,
     JSON.stringify({

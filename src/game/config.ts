@@ -95,6 +95,7 @@ export const TUNING = {
   pipeWidth: 64,
   pipeHeight: 64,
   brickSize: 32,
+  multiCoinCount: 10,
   flagRaiseSeconds: 1,
   groundY: 430,
   bloodBurst: 64,
