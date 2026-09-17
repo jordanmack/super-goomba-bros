@@ -14,7 +14,7 @@ test("Starman music follows only player and Mario stars and respects death cues"
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 20,
+    () => (window as any).__game.audio.buffers.size === 22,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -96,7 +96,7 @@ test("area music resumes after Mario death from the saved seek", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 20,
+    () => (window as any).__game.audio.buffers.size === 22,
   );
   await page.evaluate(() => {
     const g = (window as any).__game;
@@ -284,7 +284,7 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
   await skipIntro(page);
   await expect(page.getByRole("button", { name: "B", exact: true })).toBeVisible();
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 20,
+    () => (window as any).__game.audio.buffers.size === 22,
   );
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -866,7 +866,8 @@ for (const viewport of [
     expect(colors).toBeGreaterThan(30);
     await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
-    await expect(page.getByTestId("saved")).toContainText("00");
+    await expect(page.getByTestId("score")).toHaveText("000000");
+    await expect(page.getByTestId("world")).toHaveText("1-1");
     const before = await page.evaluate(
       () => (window as any).__game.sim.player.body.position.x,
     );
@@ -897,8 +898,8 @@ for (const viewport of [
     });
     await expect(page.locator(".speech")).toBeVisible();
     await expect
-      .poll(() => page.getByTestId("warned").textContent())
-      .toMatch(/0[1-9]|[1-9][0-9]/);
+      .poll(() => page.evaluate(() => (window as any).__game.sim.warned))
+      .toBeGreaterThan(0);
     await page.screenshot({ path: `test-results/game-${viewport.width}.png` });
     await page.getByRole("button", { name: "Pause", exact: true }).click();
     await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
@@ -1112,14 +1113,14 @@ test("player bubble is 8-bit and warned NPCs flash a brief exclamation", async (
   expect(tops[0]).not.toBe(tops[1]);
 });
 
-test("death restart, impossible quota, finish window, and final score screens", async ({
+test("death restart, open castle door, tally, and no finish banner", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 20,
+    () => (window as any).__game.audio.buffers.size === 22,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -1144,54 +1145,47 @@ test("death restart, impossible quota, finish window, and final score screens", 
     return mode === "intro" || mode === "playing";
   });
   await skipIntro(page);
-  await expect(page.getByTestId("warned")).toContainText("00");
-  await page.evaluate(() => {
-    const s = (window as any).__game.sim;
-    s.npcs.slice(0, s.npcs.length - 4).forEach((n: any) => s.kill(n));
-  });
-  await expect(
-    page.getByText("TOO MANY LOST. THE GOAL IS LOCKED."),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "TRY AGAIN" })).toHaveCount(0);
+  await expect(page.getByTestId("score")).toHaveText("000000");
+  await expect(page.getByText("TOO MANY LOST. THE GOAL IS LOCKED.")).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.getByRole("button", { name: "RESTART LEVEL" }).click();
   await skipIntro(page);
-  await page.evaluate((required) => {
+  await page.evaluate(() => {
     const s = (window as any).__game.sim;
-    s.npcs.slice(0, required).forEach((n: any) => s.save(n));
+    s.timeLeft = 0;
     s.finish();
-  }, T.required);
-  await expect(page.locator(".finish-banner")).toBeVisible();
-  await expect(page.getByRole("button", { name: "PLAY AGAIN" })).toBeVisible({
-    timeout: 8000,
   });
-  await expect(page.locator(".final-counts")).toContainText(String(T.required));
+  await expect(page.locator(".finish-banner")).toHaveCount(0);
+  await expect(page.getByText("CASTLE REACHED")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "NEXT LEVEL" })).toHaveCount(0);
+  await expect(page.locator(".tally")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Key bindings" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "PAUSED" })).toHaveCount(0);
   await page.screenshot({ path: "test-results/victory.png" });
-  await page.getByRole("button", { name: "PLAY AGAIN" }).click();
-  await expect(page.getByTestId("saved")).toContainText("00");
   await page.getByRole("button", { name: "Mute", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Unmute", exact: true }),
   ).toBeVisible();
 });
 
-test("HUD coin counter increases on collection and resets on restart and next level", async ({
+test("HUD coin counter increases on collection and persists across restart and next stage", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   const coins = page.getByTestId("coins");
-  const warned = page.getByTestId("warned");
-  const saved = page.getByTestId("saved");
-  const died = page.getByTestId("died");
+  const score = page.getByTestId("score");
   await expect(coins).toHaveText("00");
-  await expect(page.getByTestId("lives")).toHaveText("03");
-  await expect(warned).toContainText("00");
-  await expect(saved).toContainText("00");
-  await expect(died).toHaveText("00");
-  await expect(warned).toContainText(`/ ${T.population}`);
-  await expect(saved).toContainText(`/ ${T.required}`);
+  await expect(score).toHaveText("000000");
+  await expect(page.getByTestId("world")).toHaveText("1-1");
+  await expect(page.getByTestId("time")).toBeVisible();
+  await expect(page.locator(".smb-hud")).toContainText("GOOMBA");
+  await expect(page.locator(".phase")).toHaveCount(0);
+  await expect(page.getByTestId("lives")).toHaveCount(0);
   const box = (await coins.boundingBox())!;
   expect(box.y).toBeLessThan(80);
   const collect = () =>
@@ -1207,57 +1201,48 @@ test("HUD coin counter increases on collection and resets on restart and next le
     });
   await collect();
   await expect.poll(() => coins.textContent()).toBe("01");
-  await expect(warned).toContainText("00");
-  await expect(saved).toContainText("00");
-  await expect(died).toHaveText("00");
-  await expect(warned).toContainText(`/ ${T.population}`);
-  await expect(saved).toContainText(`/ ${T.required}`);
+  await expect.poll(() => score.textContent()).toBe("000200");
   expect(
     await page.evaluate(() => {
       const s = (window as any).__game.sim;
       return {
         coins: s.coins,
+        score: s.score,
         warned: s.warned,
         saved: s.saved,
         died: s.died(),
       };
     }),
-  ).toEqual({ coins: 1, warned: 0, saved: 0, died: 0 });
+  ).toEqual({ coins: 1, score: 200, warned: 0, saved: 0, died: 0 });
   await collect();
   await expect.poll(() => coins.textContent()).toBe("02");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.getByRole("button", { name: "RESTART LEVEL" }).click();
   await skipIntro(page);
-  await expect(coins).toHaveText("00");
-  await expect(died).toHaveText("00");
+  await expect(coins).toHaveText("02");
   await collect();
-  await expect.poll(() => coins.textContent()).toBe("01");
-  await page.evaluate((required) => {
+  await expect.poll(() => coins.textContent()).toBe("03");
+  await page.evaluate(() => {
     const g = (window as any).__game;
-    g.sim.npcs.slice(0, required).forEach((npc: any) => g.sim.save(npc));
+    g.sim.timeLeft = 0;
     g.sim.finish();
-    g.sim.finishLeft = 0.15;
-  }, T.required);
-  await page.getByRole("button", { name: "NEXT LEVEL" }).click();
-  await expect(page.getByTestId("coins")).toHaveText("00");
-  await expect(page.getByTestId("saved")).toContainText("00");
-  await expect(page.getByTestId("died")).toHaveText("00");
-  await expect(page.getByTestId("warned")).toContainText(`/ ${T.population}`);
-  await expect(page.getByTestId("saved")).toContainText(`/ ${T.required}`);
+  });
+  await expect(page.getByRole("button", { name: "NEXT LEVEL" })).toHaveCount(0);
+  await page.waitForFunction(() => {
+    const s = (window as any).__game.sim;
+    if (s.mode === "finishing") s.tallyHold = 0;
+    return s.level.id === "1-2";
+  });
+  await expect(page.getByTestId("coins")).toHaveText("03");
+  await expect(page.getByTestId("world")).toHaveText("1-2");
 });
 
-test("HUD and result Died counter tracks NPC deaths only and resets with other counters", async ({
+test("castle tally Died line tracks NPC deaths only and resets on the next stage", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
-  const died = page.getByTestId("died");
-  const warned = page.getByTestId("warned");
-  const saved = page.getByTestId("saved");
-  await expect(died).toHaveText("00");
-  await expect(warned).toContainText("00");
-  await expect(saved).toContainText("00");
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
     s.npcs[0].warned = true;
@@ -1267,41 +1252,49 @@ test("HUD and result Died counter tracks NPC deaths only and resets with other c
     s.kill(s.npcs[2]);
     s.save(s.npcs[3]);
   });
-  await expect.poll(() => died.textContent()).toBe("03");
-  await expect(warned).toContainText("01");
-  await expect(saved).toContainText("01");
+  expect(
+    await page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      return { died: s.died(), warned: s.warned, saved: s.saved };
+    }),
+  ).toEqual({ died: 3, warned: 1, saved: 1 });
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
     s.kill(s.player);
   });
   await expect(page.getByRole("heading", { name: "STOMPED!" })).toHaveCount(0);
-  await expect.poll(() => died.textContent()).toBe("03");
   await page.waitForFunction(() => {
     const mode = (window as any).__game.sim.mode;
     return mode === "intro" || mode === "playing";
   });
   await skipIntro(page);
-  await expect(died).toHaveText("00");
-  await expect(warned).toContainText("00");
-  await expect(saved).toContainText("00");
-  await page.evaluate((required) => {
+  expect(
+    await page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      return { died: s.died(), warned: s.warned, saved: s.saved };
+    }),
+  ).toEqual({ died: 0, warned: 0, saved: 0 });
+  await page.evaluate(() => {
     const s = (window as any).__game.sim;
     s.kill(s.npcs[0]);
     s.kill(s.npcs[1]);
-    s.npcs.slice(2, 2 + required).forEach((n: any) => s.save(n));
+    s.save(s.npcs[2]);
+    s.timeLeft = 0;
     s.finish();
-    s.finishLeft = 0.15;
-  }, T.required);
-  await expect.poll(() => died.textContent()).toBe("02");
-  await expect(page.getByRole("button", { name: "NEXT LEVEL" })).toBeVisible({
-    timeout: 8000,
   });
-  await expect(page.getByTestId("result-died")).toHaveText("2");
-  await expect(page.locator(".final-counts")).toContainText("DIED");
-  await page.getByRole("button", { name: "NEXT LEVEL" }).click();
-  await expect(died).toHaveText("00");
-  await expect(saved).toContainText("00");
-  await expect(warned).toContainText("00");
+  await expect(page.getByTestId("tally-died")).toContainText("02");
+  await expect(page.getByRole("button", { name: "NEXT LEVEL" })).toHaveCount(0);
+  await page.waitForFunction(() => {
+    const s = (window as any).__game.sim;
+    if (s.mode === "finishing") s.tallyHold = 0;
+    return s.level.id === "1-2";
+  });
+  expect(
+    await page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      return { died: s.died(), saved: s.saved, warned: s.warned };
+    }),
+  ).toEqual({ died: 0, saved: 0, warned: 0 });
 });
 
 test("standalone production HTML runs without a server or external assets", async ({
@@ -1315,7 +1308,7 @@ test("standalone production HTML runs without a server or external assets", asyn
   });
   await page.goto(pathToFileURL(resolve("dist/index.html")).href);
   await page.getByRole("button", { name: "START GAME" }).click();
-  await expect(page.getByTestId("saved")).toContainText("00");
+  await expect(page.getByTestId("score")).toHaveText("000000");
   expect(await page.evaluate(() => "__game" in window)).toBe(false);
   expect(errors).toEqual([]);
   expect(network).toEqual([]);
@@ -1401,7 +1394,7 @@ test("original recordings decode and play as effects, with level clear replacing
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 20,
+    () => (window as any).__game.audio.buffers.size === 22,
   );
   const playback = await page.evaluate(() => {
     const a = (window as any).__game.audio;

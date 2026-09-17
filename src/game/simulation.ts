@@ -6,7 +6,7 @@ import {
   rayBlocked,
 } from "./physics.ts";
 import { MAP_TOP, PHRASES, TUNING as T, blockDrawY, jumpArc } from "./config.ts";
-import { CAMPAIGN } from "./levels.ts";
+import { CAMPAIGN, stageTimer } from "./levels.ts";
 import { Room } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
 
@@ -76,6 +76,7 @@ export type Actor = {
   shell: "none" | "stopped" | "moving";
   wakeLeft: number;
   kickIgnore: number;
+  shellKicker: number;
   blockedFor: number;
   lastX: number;
   areaId?: string;
@@ -109,6 +110,15 @@ export type Shout = {
   x: number;
   y: number;
 };
+export type TallyPhase =
+  | ""
+  | "time"
+  | "warned"
+  | "saved"
+  | "died"
+  | "flag"
+  | "mario"
+  | "ending";
 export type GameEvent =
   | "jump"
   | "bump"
@@ -127,7 +137,10 @@ export type GameEvent =
   | "win"
   | "oneUp"
   | "gameover"
-  | "appear";
+  | "appear"
+  | "tally"
+  | "hurry"
+  | "ending";
 export type Particle = {
   x: number;
   y: number;
@@ -180,11 +193,13 @@ export type Item = {
   clip?: { x: number; y: number; w: number; h: number };
 };
 export type CoinPop = { x: number; y: number; age: number };
-export const rescueImpossible = (
-  saved: number,
-  living: number,
-  required: number,
-) => saved + living < required;
+const TALLY_LINES: Exclude<TallyPhase, "" | "time" | "ending">[] = [
+  "warned",
+  "saved",
+  "died",
+  "flag",
+  "mario",
+];
 
 export class Simulation {
   physics: PhysicsWorld;
@@ -439,13 +454,18 @@ export class Simulation {
   cooldown = 0;
   audible = 0;
   shouts: Shout[] = [];
-  finishLeft = 0;
   get bubble() {
     return this.shouts.at(-1)?.text ?? "";
   }
   get bubbleLeft() {
     return this.shouts.at(-1)?.left ?? 0;
   }
+  timeLeft = 0;
+  hurry = false;
+  marioKills = 0;
+  tallyPhase: TallyPhase = "";
+  tallyHold = 0;
+  private finishElapsed = 0;
   deadLeft = 0;
   marioActive = false;
   marioReturn = T.firstMarioAt as number;
@@ -466,7 +486,6 @@ export class Simulation {
   marioDeath: { x: number; y: number; vy: number; age: number } | null = null;
   playerDeath: { x: number; y: number; vy: number; age: number } | null = null;
   marioStage: 0 | 1 | 2 = 0;
-  doomed = false;
   brickTarget: number | null = null;
   cameraX = 0;
   viewWidth = 960;
@@ -484,6 +503,9 @@ export class Simulation {
   private playerPace = T.walkSpeed as number;
   private bouncedNpcs = new Set<Actor>();
   private shellStomps = new Set<Actor>();
+  private timerAcc = 0;
+  private timerStarted = false;
+  private awarded = { warned: 0, saved: 0, died: 0, flag: false, mario: 0 };
   random: () => number;
 
   constructor(random = Math.random, physics = new PhysicsWorld()) {
@@ -493,6 +515,10 @@ export class Simulation {
   }
 
   reset(mode: Mode = "playing") {
+    const keepCampaign =
+      mode === "intro" && this.mode !== "title" && this.mode !== "gameover";
+    const score = keepCampaign ? this.score : 0;
+    const coins = keepCampaign ? this.coins : 0;
     this.physics.clear();
     this.nextId = 1;
     this.solids = [];
@@ -550,14 +576,23 @@ export class Simulation {
     this.elapsed =
       this.warned =
       this.saved =
-      this.coins =
-      this.score =
       this.phase =
       this.cooldown =
       this.audible =
         0;
     this.shouts = [];
-    this.finishLeft = this.deadLeft = 0;
+    this.score = score;
+    this.coins = coins;
+    this.deadLeft = 0;
+    this.timeLeft = stageTimer(main.data);
+    this.timerAcc = 0;
+    this.timerStarted = false;
+    this.hurry = false;
+    this.marioKills = 0;
+    this.tallyPhase = "";
+    this.tallyHold = 0;
+    this.finishElapsed = 0;
+    this.awarded = { warned: 0, saved: 0, died: 0, flag: false, mario: 0 };
     this.introLeft = mode === "intro" ? T.introSeconds : 0;
     this.gameoverLeft = 0;
     this.marioActive = false;
@@ -569,7 +604,6 @@ export class Simulation {
     this.marioStun = 0;
     this.marioDeath = this.playerDeath = null;
     this.marioStage = 1;
-    this.doomed = false;
     this.marioTarget = null;
     this.marioAim =
       this.marioReaction =
@@ -628,6 +662,7 @@ export class Simulation {
       shell: "none",
       wakeLeft: 0,
       kickIgnore: 0,
+      shellKicker: 0,
       blockedFor: 0,
       lastX: x,
     };
@@ -1088,8 +1123,8 @@ export class Simulation {
     }
     if (c.hidden && c.content === "coin") {
       this.reveal(c);
-      this.coins++;
-      this.events.push("coin");
+      if (hitter === this.player) this.addPlayerCoin();
+      else this.events.push("coin");
       this.coinPops.push({ x: c.x, y: c.y, age: 0 });
       return;
     }
@@ -1147,13 +1182,21 @@ export class Simulation {
     };
   }
 
+  private addPlayerCoin() {
+    this.score += T.coinScore;
+    this.coins++;
+    this.events.push("coin");
+    if (this.coins >= T.coinsForLife) {
+      this.coins -= T.coinsForLife;
+      this.lives++;
+      this.events.push("oneUp");
+    }
+  }
+
   private collectCoin(coin: { collected: boolean }, collector: Actor) {
     if (coin.collected || !collector.alive || collector.saved) return;
     coin.collected = true;
-    if (collector === this.player) {
-      this.coins++;
-      this.events.push("coin");
-    }
+    if (collector === this.player) this.addPlayerCoin();
   }
 
   private collectCoinsOnBlock(block: Obstacle, collector: Actor) {
@@ -1216,13 +1259,13 @@ export class Simulation {
       if (item.kind === "flower") this.setMarioStage(2, this.marioStage === 0);
       if (isMushroom(item.kind)) {
         if (this.marioStage === 0) this.setMarioStage(1, true);
-        else this.score += 1000;
+        else this.score += T.mushroomScore;
       }
     } else if (item.kind === "flower") a.flower = true;
     if (a !== this.mario && isMushroom(item.kind)) {
       const next = mushroomScale(item.kind);
       if (next > a.scale) this.setGoombaScale(a, next, true);
-      else if (a === this.player) this.score += 1000;
+      else if (a === this.player) this.score += T.mushroomScore;
     }
     this.physics.remove(item.body);
     this.items = this.items.filter((i) => i !== item);
@@ -1358,8 +1401,9 @@ export class Simulation {
     }
   }
 
-  private defeatMario() {
+  private defeatMario(byPlayer = false) {
     if (!this.marioActive) return;
+    if (byPlayer) this.marioKills++;
     this.burst(this.mario.body.position.x, this.mario.body.position.y, true);
     this.events.push("marioDeath");
     this.marioDeath = {
@@ -1381,7 +1425,7 @@ export class Simulation {
     this.fireballs = this.fireballs.filter((f) => f.owner === "player");
   }
 
-  private hitMarioByFireball() {
+  private hitMarioByFireball(byPlayer = true) {
     if (!this.marioActive || this.mario.starLeft > 0) return;
     if (this.marioStage === 2) {
       this.setMarioStage(1, true);
@@ -1391,7 +1435,7 @@ export class Simulation {
       this.setMarioStage(0, true);
       this.marioStun = T.marioStunSeconds;
       this.events.push("shrink");
-    } else this.defeatMario();
+    } else this.defeatMario(byPlayer);
   }
 
   private withinWarningRange(n: Actor) {
@@ -1519,7 +1563,7 @@ export class Simulation {
       if (!this.overlapActors(a, this.mario)) continue;
       if (a.starLeft > 0) {
         if (this.mario.starLeft <= 0) {
-          this.defeatMario();
+          this.defeatMario(a === this.player);
           return;
         }
         continue;
@@ -1552,6 +1596,7 @@ export class Simulation {
     n.shell = "stopped";
     n.wakeLeft = T.shellWake;
     n.kickIgnore = stomper?.id ?? 0;
+    n.shellKicker = 0;
     n.navVx = undefined;
     n.navHoldX = undefined;
     n.idleDrop = undefined;
@@ -1568,6 +1613,7 @@ export class Simulation {
     n.shell = "stopped";
     n.wakeLeft = T.shellWake;
     n.kickIgnore = stomper?.id ?? 0;
+    n.shellKicker = 0;
     n.swimPath = undefined;
     Body.setVelocity(n.body, { x: 0, y: this.shellFallSpeed(n) });
   }
@@ -1581,6 +1627,7 @@ export class Simulation {
     n.facing = dir;
     n.wakeLeft = 0;
     n.kickIgnore = kicker.id;
+    n.shellKicker = kicker.id;
     n.swimPath = undefined;
     Body.setVelocity(n.body, {
       x: dir * T.shellSpeed,
@@ -1593,6 +1640,7 @@ export class Simulation {
     n.shell = "none";
     n.wakeLeft = 0;
     n.kickIgnore = 0;
+    n.shellKicker = 0;
     if (n.warned) {
       n.state = "run";
       n.wait = -0.01;
@@ -1638,11 +1686,11 @@ export class Simulation {
       Body.setVelocity(n.body, { x: n.facing * T.shellSpeed, y: 0 });
   }
 
-  private shellHits(victim: Actor) {
+  private shellHits(victim: Actor, shell?: Actor) {
     if (!victim.alive || victim.saved || this.inPipe(victim)) return;
     if (victim === this.mario) {
       if (this.marioStun > 0) return;
-      this.hitMarioByFireball();
+      this.hitMarioByFireball(shell?.shellKicker === this.player.id);
       return;
     }
     this.hurt(victim);
@@ -1677,7 +1725,7 @@ export class Simulation {
         n.kickIgnore !== a.id;
       if (side(this.player)) {
         if (n.shell === "stopped") this.kickShell(n, this.player);
-        else this.shellHits(this.player);
+        else this.shellHits(this.player, n);
       }
       if (
         this.marioActive &&
@@ -1703,7 +1751,7 @@ export class Simulation {
           }
         } else if (n.shell === "stopped") {
           if (!this.immuneToMario(n)) this.kickShell(n, this.mario);
-        } else this.shellHits(this.mario);
+        } else this.shellHits(this.mario, n);
       }
       if (n.shell === "moving") {
         for (const other of this.npcs) {
@@ -1715,7 +1763,7 @@ export class Simulation {
             !this.overlapActors(n, other)
           )
             continue;
-          this.shellHits(other);
+          this.shellHits(other, n);
         }
       }
     }
@@ -1797,12 +1845,132 @@ export class Simulation {
     this.events.push("saved");
   }
   finish() {
-    if (this.mode !== "playing" || this.saved < T.required) return;
+    if (this.mode !== "playing") return;
     this.mode = "finishing";
-    this.finishLeft = T.finishWindow;
     this.player.saved = true;
     Body.setFrozen(this.player.body, true);
     this.events.push("win");
+    this.timerAcc = 0;
+    this.finishElapsed = 0;
+    this.tallyPhase = this.timeLeft > 0 ? "time" : "warned";
+    this.tallyHold = this.timeLeft > 0 ? 0 : T.tallyLineSeconds;
+    this.applyTallyDeltas();
+  }
+
+  playerClaimedFlag() {
+    for (const room of this.rooms.values())
+      if (room.flagpole?.claim === "goomba") return true;
+    return false;
+  }
+
+  private onMainControl() {
+    return this.player.areaId === this.level.main && !this.inPipe(this.player);
+  }
+
+  private tickTimer(dt: number) {
+    this.timerAcc += dt * 60;
+    while (this.timeLeft > 0 && this.timerAcc >= T.timerTickFrames) {
+      this.timerAcc -= T.timerTickFrames;
+      this.timeLeft -= 1;
+      if (this.timeLeft <= T.hurryAt && !this.hurry) {
+        this.hurry = true;
+        this.events.push("hurry");
+      }
+      if (this.timeLeft <= 0) {
+        this.timeLeft = 0;
+        this.kill(this.player, false);
+        break;
+      }
+    }
+  }
+
+  private tallyReached(line: (typeof TALLY_LINES)[number]) {
+    if (this.tallyPhase === "ending") return true;
+    const shown = TALLY_LINES.indexOf(this.tallyPhase as (typeof TALLY_LINES)[number]);
+    const want = TALLY_LINES.indexOf(line);
+    return shown >= 0 && want >= 0 && shown >= want;
+  }
+
+  private applyTallyDeltas() {
+    if (this.tallyReached("warned")) {
+      const extra = this.warned - this.awarded.warned;
+      if (extra) {
+        this.score += extra * T.warnedScore;
+        this.awarded.warned = this.warned;
+      }
+    }
+    if (this.tallyReached("saved")) {
+      const extra = this.saved - this.awarded.saved;
+      if (extra) {
+        this.score += extra * T.savedScore;
+        this.awarded.saved = this.saved;
+      }
+    }
+    if (this.tallyReached("died")) {
+      const extra = this.died() - this.awarded.died;
+      if (extra) {
+        this.score += extra * T.diedScore;
+        this.awarded.died = this.died();
+      }
+    }
+    if (this.tallyReached("flag") && !this.awarded.flag) {
+      this.awarded.flag = true;
+      if (this.playerClaimedFlag()) this.score += T.flagScore;
+    }
+    if (this.tallyReached("mario")) {
+      const extra = this.marioKills - this.awarded.mario;
+      if (extra) {
+        this.score += extra * T.marioScore;
+        this.awarded.mario = this.marioKills;
+      }
+    }
+  }
+
+  private stepTally(dt: number) {
+    this.finishElapsed += dt;
+    if (this.tallyPhase === "ending") {
+      this.tallyHold -= dt;
+      if (this.tallyHold <= 0) {
+        this.levelIndex = 0;
+        this.lives = T.startingLives;
+        this.reset("title");
+      }
+      return;
+    }
+    if (this.tallyPhase === "time") {
+      this.timerAcc += dt * 60;
+      while (this.timeLeft > 0 && this.timerAcc >= T.timerTallyFrames) {
+        this.timerAcc -= T.timerTallyFrames;
+        this.timeLeft -= 1;
+        this.score += T.timeScore;
+        this.events.push("tally");
+      }
+      if (this.timeLeft > 0) return;
+      this.timeLeft = 0;
+      this.tallyPhase = "warned";
+      this.tallyHold = T.tallyLineSeconds;
+    }
+    this.applyTallyDeltas();
+    this.tallyHold -= dt;
+    if (this.tallyHold > 0) return;
+    if (this.tallyPhase === "mario") {
+      if (this.levelIndex >= CAMPAIGN.length - 1) {
+        this.tallyPhase = "ending";
+        const clearLeft = Math.max(0, T.clearSeconds - this.finishElapsed);
+        this.tallyHold =
+          T.endingSeconds + clearLeft + T.deathSequenceSeconds;
+        this.events.push("ending");
+      } else this.nextLevel();
+      return;
+    }
+    const index = TALLY_LINES.indexOf(
+      this.tallyPhase as (typeof TALLY_LINES)[number],
+    );
+    const next = TALLY_LINES[index + 1] ?? "mario";
+    this.tallyPhase = next;
+    this.tallyHold =
+      next === "mario" ? T.tallyLineSeconds + T.tallyEndHold : T.tallyLineSeconds;
+    this.applyTallyDeltas();
   }
 
   step(dt: number, input: Input) {
@@ -1813,6 +1981,7 @@ export class Simulation {
       if (this.deadLeft <= 0) {
         if (this.lives <= 0) {
           this.mode = "gameover";
+          this.score = 0;
           this.gameoverLeft = T.gameoverSeconds;
           this.events.push("gameover");
         } else this.reset("intro");
@@ -1843,6 +2012,10 @@ export class Simulation {
       this.endPipeIntro();
     const scripted = this.pipeIntro;
     if (!scripted) this.elapsed += dt;
+    if (this.mode === "playing") {
+      if (!this.timerStarted && this.onMainControl()) this.timerStarted = true;
+      if (this.timerStarted) this.tickTimer(dt);
+    }
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.audible = Math.max(0, this.audible - dt);
     for (const shout of this.shouts) shout.left = Math.max(0, shout.left - dt);
@@ -1929,7 +2102,7 @@ export class Simulation {
         room.data.goal.kind !== "pipe" &&
         p.x >= room.goalX
       ) {
-        if (this.saved >= T.required && room.atDoor(this.player)) this.finish();
+        if (room.atDoor(this.player)) this.finish();
         else Body.setPosition(this.player.body, { x: room.goalX - 1, y: p.y });
       }
     } else if (this.mode === "playing") this.jumped = true;
@@ -1937,7 +2110,6 @@ export class Simulation {
       this.updateNpcs(dt);
       this.updateCrowd(dt);
     }
-    this.doomed = rescueImpossible(this.saved, this.living(), T.required);
     if (!scripted) this.updateMario(dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
       if (this.roomFor(a).data.type === "water") continue;
@@ -2028,14 +2200,7 @@ export class Simulation {
         this.kill(a, false);
     this.updateFireballs(dt);
     this.updateFlagpoles(dt);
-    this.doomed = rescueImpossible(this.saved, this.living(), T.required);
-    if (this.mode === "finishing") {
-      this.finishLeft -= dt;
-      if (this.finishLeft <= 0) {
-        this.finishLeft = 0;
-        this.mode = "won";
-      }
-    }
+    if (this.mode === "finishing") this.stepTally(dt);
   }
 
   private updateFlagpoles(dt: number) {
@@ -2386,7 +2551,7 @@ export class Simulation {
     this.marioDecision -= dt;
     const pursuing = this.marioChase > 0;
     this.marioChase = Math.max(0, this.marioChase - dt);
-    const aggression = 1 + this.marioPressure * 1.2 + (this.doomed ? 0.5 : 0);
+    const aggression = 1 + this.marioPressure * 1.2;
     this.marioReaction = Math.max(0, this.marioReaction - dt * aggression);
     this.marioJumpWait -= dt * aggression;
     this.marioLook -= dt * aggression;
@@ -2470,10 +2635,8 @@ export class Simulation {
           .sort(
             (a, b) =>
               Math.abs(a.body.position.x - m.x) *
-                (this.doomed && a === this.player ? 0.15 : 1) *
                 (runners.has(a.id) ? 1 - this.marioPressure * 0.5 : 1) -
               Math.abs(b.body.position.x - m.x) *
-                (this.doomed && b === this.player ? 0.15 : 1) *
                 (runners.has(b.id) ? 1 - this.marioPressure * 0.5 : 1),
           )[0];
         if (noticed)
@@ -2557,8 +2720,7 @@ export class Simulation {
     }
     const speed =
       (this.marioRunning ? 5.2 + this.marioPressure * 0.8 : 2.8) +
-      this.marioPressure * T.marioCrowdSpeedBonus +
-      (this.doomed ? 0.8 : 0);
+      this.marioPressure * T.marioCrowdSpeedBonus;
     const desired =
       this.marioReaction > 0 ||
       (this.marioPause > 0 && !this.wallAhead(this.mario, direction))

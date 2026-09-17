@@ -1,8 +1,8 @@
 # Super Goomba Bros
 
 An 8-bit side-scrolling rescue game built with Phaser 4 and React. Play a Goomba,
-warn nearby characters, evade Mario, and reach the castle door after enough NPCs
-escape. The campaign follows all 32 original SMB1 stages, including pipe entrances,
+warn nearby characters, evade Mario, and reach the castle door. The campaign
+follows all 32 original SMB1 stages, including pipe entrances,
 underground rooms, water, moving platforms, and castles.
 
 The world uses individual tiles from bundled level data. No full-map background,
@@ -53,10 +53,21 @@ Gameplay remains available. Reloading retries sound initialization.
 
 ## Rules
 
-Warned, Saved, and Died are separate counters. NPCs only count as saved at a castle
-door, including after leaving an underground or water area. They keep moving
-while the player visits another area. Mario notices running crowds and warnings,
-then pursues, jumps, and fires when powered.
+The in-play header is one SMB1 line: GOOMBA, SCORE, coins, WORLD, and TIME.
+Lives stay on the WORLD intro. TIME counts down from the stage timer and kills
+at 0. At 100 it hurries the music. SCORE lasts the campaign, keeps across lives,
+and zeros on title and GAME OVER. A coin is +200. A same-size or smaller mushroom
+is +1000. 100 coins are a 1-up.
+
+The castle door is always open. At the door the player vanishes, leftover TIME
+adds +50 per unit, then an outlined WARNED / SAVED / DIED / FLAG / MARIO tally
+updates SCORE. Pause is ignored until that ends. The next WORLD intro starts on
+its own. After 8-4 the title returns. There is no NEXT LEVEL button.
+
+Warned, Saved, and Died still count for that tally. NPCs only count as saved at a
+castle door, including after leaving an underground or water area. They keep
+moving while the player visits another area. Mario notices running crowds and
+warnings, then pursues, jumps, and fires when powered.
 
 Visible question blocks release random stars, mushrooms, or flowers. Hidden
 coin and 1-up blocks keep their original contents. 2x mushrooms are common;
@@ -69,11 +80,8 @@ and fireballs reduce him through fire, big, and small stages. His power can
 increase on return or through items, with no spontaneous upgrade while active.
 
 A campaign starts with three lives. Death spends a life, shows the world intro,
-and restarts the current stage. 0 lives is game over, then the title. The goal
-stays locked if too many NPCs die. A successful entry gives the remaining NPCs
-one fixed rescue window. Next Level starts a fresh stage through the intro;
-Play Again on the final result starts a new campaign. Nothing is stored between
-browser sessions.
+and restarts the current stage. SCORE and coins persist. 0 lives is game over,
+then the title. Nothing is stored between browser sessions.
 
 ## Checks and build
 
@@ -90,7 +98,7 @@ Phaser's official Arcade distribution excludes the unused Matter engine.
 
 The Node tests run the actual Arcade implementation without a DOM. Recorded
 player inputs reach each stage's doorway without teleporting during replay.
-Separate tests check NPC routes, rescue quotas, powers, Mario, and controls.
+Separate tests check NPC routes, powers, Mario, scoring, and controls.
 See [the test fixtures](tests/fixtures/README.md) for the scope of these checks.
 
 Gameplay rules are in [the spec](docs/game-spec.md). Tuning values are in

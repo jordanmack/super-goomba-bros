@@ -88,7 +88,8 @@ for (const viewport of [
       await expect(
         page.getByRole("button", { name, exact: true }),
       ).toBeInViewport();
-    await expect(page.getByTestId("lives")).toBeInViewport();
+    await expect(page.getByTestId("score")).toBeInViewport();
+    await expect(page.getByTestId("time")).toBeInViewport();
   });
 }
 

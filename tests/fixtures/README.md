@@ -9,10 +9,10 @@ in `src/assets/smb/README.md`.
 door. Each pair is `[buttons, frames]`, with bit1 Left, bit2 Right, bit4 Jump,
 bit8 Pipe, and bit16 Run. These files are never included in the game build.
 
-The player replay tests disable Mario, pre-satisfy the rescue quota, and remove
-emerging power-ups. This isolates movement and proves that no random power-up
-is required. The campaign tests check NPC navigation and rescue quotas. Other
-simulation tests cover active Mario, warnings, powers, death, and a complete win.
+The player replay tests disable Mario and remove emerging power-ups. This
+isolates movement and proves that no random power-up is required. The campaign
+tests check NPC navigation to rescue doors. Other simulation tests cover active
+Mario, warnings, powers, death, scoring, and a complete win.
 
 To find replacement routes after a deliberate physics or layout change, run
 `ionice -c3 nice -n19 node --experimental-strip-types tests/support/find-player-routes.ts`.

@@ -157,33 +157,53 @@ Saved NPCs stay safe and cannot return to danger.
 
 ## Counters and finish
 
-Display separate Warned, Saved, and Died counters plus rescue progress against
-the configured requirement. Display collected coins and remaining lives at the top
-of the screen.
+The in-play header is one non-wrapping SMB1 status block: `GOOMBA`, SCORE, coins,
+WORLD, and TIME. Icon tools stay on the right and must not wrap over the
+playfield. Lives appear only on the WORLD n-n intro (`× 03`), not the in-play
+bar. There is no in-world elapsed WORLD overlay.
+
+TIME counts down from the original per-stage timer (`header.timer`: 0=400, 1=300,
+2=200) at the original 24-frame tick. TIME starts when the player has control on
+the main area, not during a pipe-intro strip. TIME 0 is a death and spends a
+life; 8x does not ignore it. At 100, play the hurry cue, then the area theme
+faster.
+
+SCORE is campaign-long. Title and GAME OVER zero it. A lost life keeps SCORE and
+coins. SCORE may go negative; the HUD shows a minus. 100 coins grant a 1-up and
+wrap coins to 0.
+
+Live scoring during play:
+
+- Coin: +200
+- Same-size or smaller mushroom (no size change): +1000
 
 Warned increases on the first warning heard by an NPC. A later death does not
 reduce it. Saved increases only when an NPC reaches a rescue door alive.
-No character can count twice. Coins can be collected, but do not change rescue
-scores or requirements.
+No character can count twice. Warn and rescue still exist for score only.
 
-NPCs can enter safety before the player meets the quota. The player may backtrack
-to find more NPCs. The area before a locked door gives no special protection.
+The castle door is always open. Reaching it completes the stage:
 
-Once enough NPCs are saved and the player contacts the doorway:
-
-1. Make the player safe.
+1. The player vanishes. Mario and NPCs keep playing.
 2. Play the original clear tune.
-3. Start one fixed final rescue window.
-4. Let remaining NPCs continue moving and facing Mario.
-5. At the cutoff, lock the counts and show the result.
+3. Leftover TIME ticks to 0. SCORE rises +50 per remaining TIME unit with the
+   original tally sound.
+4. Then outlined white-on-black lines, no box: WARNED, SAVED, DIED, FLAG, MARIO.
+   Each line is count × points, then SCORE updates. Saves, deaths, and Mario
+   finishes during the tally still count.
+5. Pause and Escape are ignored until the tally ends. Mute still works.
+6. Auto-advance to the next WORLD n-n intro. There is no NEXT LEVEL button.
+   After 8-4, play the short world-clear cue, then return to the title.
 
-Later arrivals do not count and cannot extend the window. Next Level starts the
-next stage through the intro with fresh counters, actors, blocks, and powers.
-Lives persist. The final Play Again starts a new campaign with three lives.
+Castle breakdown points:
 
-A rescue is impossible when `saved + living_unsaved < required`. Include warned
-and unwarned living NPCs. Keep the goal locked, show that too many were lost,
-and let Mario keep hunting. The player may restart through Pause.
+- Each warned: +100
+- Each saved: +1000
+- Each died: −2000
+- Player beat Mario to the flag: +2000 (0 if Mario was first)
+- Each time the player finishes Mario: +1000
+- Leftover TIME: +50 per unit
+
+Pipe travel still does not rescue. The player may backtrack to find more NPCs.
 
 ## Mario
 
@@ -289,8 +309,9 @@ black intro shows WORLD n-n and the player Goomba × remaining lives, then the
 current stage restarts with cleared counters, powers, items, speech, used
 blocks, and pursuit state. Pipe-intro stages skip the overworld strip and
 spawn on main. The intro is silent; area music starts with play.
-Start Game, Next Level, and Pause Restart Level go through that intro when
-lives remain. The title screen stays the title screen. When lives reach 0, the
+Start Game, auto-continue after a castle tally, and Pause Restart Level go
+through that intro when lives remain. The title screen stays the title screen.
+When lives reach 0, the
 death cue still finishes, then GAME OVER appears on that same black screen
 with the original game-over music. When that cue finishes, return to the title.
 
@@ -318,10 +339,9 @@ The executable checks are under [tests](../tests). They cover decoded World 1-1
 anchors, all stage data, player input replays, NPC routes and quotas, powers,
 warnings, Mario behavior, and browser controls. Test fixtures are never bundled.
 
-Player route replays use ordinary controls, with Mario disabled, the quota
-pre-satisfied, and no random power-up required. Separate tests cover rescues
-and active Mario. These checks do not prove that every random attempt wins,
-or replace physical phone testing.
+Player route replays use ordinary controls, with Mario disabled and no random
+power-up required. Separate tests cover rescues and active Mario. These checks
+do not prove that every random attempt wins, or replace physical phone testing.
 
 Run the commands in [README](../README.md). Builds must remain one standalone
 HTML file, with no external runtime assets. Report failed or skipped checks and

@@ -10,6 +10,9 @@ export function areaData(id: string): Area {
   if (!area) throw new Error(`Unknown bundled area: ${id}`);
   return area as Area;
 }
+export function stageTimer(area: Area) {
+  return TUNING.timerByHeader[area.header.timer] ?? TUNING.timerByHeader[0];
+}
 export function isFlagpoleTile(id: number) {
   return id === 36 || id === 37;
 }

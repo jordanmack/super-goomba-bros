@@ -3,11 +3,10 @@ import assert from "node:assert/strict";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 import { Simulation, emptyInput } from "../src/game/simulation.ts";
 import { CAMPAIGN } from "../src/game/levels.ts";
-import { TUNING as T } from "../src/game/config.ts";
 import { physics } from "./support/arcade.ts";
 
 // These runs prove movement with ordinary controls. Separate campaign tests
-// prove NPC rescues; the quota is satisfied here to isolate player traversal.
+// prove NPC rescues; this isolates player traversal.
 for (const [index, level] of CAMPAIGN.entries())
   test(
     `player input replay reaches World ${level.id}'s castle door`,
@@ -16,13 +15,15 @@ for (const [index, level] of CAMPAIGN.entries())
       sim.levelIndex = index;
       sim.reset();
       sim.marioReturn = 1e6;
+      sim.timeLeft = 9999;
       for (const npc of sim.npcs) sim.physics.remove(npc.body);
       sim.npcs = [];
-      sim.saved = T.required;
+      sim.timeLeft = 9999;
       for (let frame = 0; frame < 60 * 20 && sim.pipeIntro; frame++)
         sim.step(1 / 60, emptyInput());
       assert.equal(sim.pipeIntro, false);
       assert.equal(sim.player.areaId, sim.level.main);
+      sim.timeLeft = 9999;
       const route = routes[level.id as keyof typeof routes];
       assert.ok(route, "a recorded route exists for this stage");
       for (const [bits, frames] of route)

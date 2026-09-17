@@ -194,5 +194,6 @@ test("play keeps the journey label and world intro after the title omits them", 
   await expect(intro.getByText("WORLD 1-1")).toBeVisible();
   await skipIntro(page);
   await expect(page.locator(".journey")).toContainText("THE GREAT ESCAPE");
-  await expect(page.locator(".phase")).toContainText("WORLD 1-1");
+  await expect(page.locator(".smb-hud")).toContainText("WORLD");
+  await expect(page.getByTestId("world")).toHaveText("1-1");
 });

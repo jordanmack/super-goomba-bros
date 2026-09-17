@@ -107,7 +107,7 @@ export class GameControls {
           if (state.helpOpen) closeHelp();
           return;
         }
-        if (state.sim.mode !== "title") {
+        if (state.sim.mode !== "title" && state.sim.mode !== "finishing") {
           togglePause();
           return;
         }

@@ -1,5 +1,6 @@
 import type { GameEvent } from "./simulation";
 import type Phaser from "phaser";
+import { TUNING as T } from "./config";
 import overworld from "../assets/audio/overworld.mp3?inline";
 import starman from "../assets/audio/starman.mp3?inline";
 import underground from "../assets/audio/underground.mp3?inline";
@@ -20,6 +21,8 @@ import oneUp from "../assets/audio/1-up.wav?inline";
 import gameover from "../assets/audio/gameover.wav?inline";
 import pause from "../assets/audio/pause.wav?inline";
 import appear from "../assets/audio/powerup_appears.wav?inline";
+import warning from "../assets/audio/warning.wav?inline";
+import worldClear from "../assets/audio/world_clear.wav?inline";
 
 export const RECORDINGS = {
   overworld,
@@ -42,6 +45,8 @@ export const RECORDINGS = {
   gameover,
   pause,
   appear,
+  warning,
+  worldClear,
 };
 const MUSIC_LOOPS: Record<
   string,
@@ -81,6 +86,9 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   oneUp: "oneUp",
   gameover: "gameover",
   appear: "appear",
+  tally: "coin",
+  hurry: "warning",
+  ending: "worldClear",
 };
 
 export class GameAudio {
@@ -92,7 +100,8 @@ export class GameAudio {
   private voices = new Set<OscillatorNode>();
   private disabled = false;
   private cue: Phaser.Sound.WebAudioSound | null = null;
-  private cueQueue: ("death" | "clear" | "gameover")[] = [];
+  private cueQueue: ("death" | "clear" | "gameover" | "warning" | "worldClear")[] =
+    [];
   private musicResume: { key: string; seek: number } | null = null;
 
   constructor(game: Phaser.Game) {
@@ -197,7 +206,10 @@ export class GameAudio {
     effect.play();
     return effect;
   }
-  private playCue(name: "death" | "clear" | "gameover", saveResume = false) {
+  private playCue(
+    name: "death" | "clear" | "gameover" | "warning" | "worldClear",
+    saveResume = false,
+  ) {
     this.stopMusic(saveResume);
     if (this.cue) {
       if (this.cue.key !== name && !this.cueQueue.includes(name))
@@ -240,6 +252,14 @@ export class GameAudio {
 
   event(event: GameEvent) {
     if (!this.available) return;
+    if (event === "hurry") {
+      this.playCue("warning");
+      return;
+    }
+    if (event === "ending") {
+      this.playCue("worldClear");
+      return;
+    }
     if (
       event === "death" ||
       event === "win" ||
@@ -256,7 +276,7 @@ export class GameAudio {
     else this.play(EFFECTS[event]);
   }
 
-  update(music = true, star = false, areaType = "overworld") {
+  update(music = true, star = false, areaType = "overworld", hurry = false) {
     if (!this.available) return;
     const key = star
       ? "starman"
@@ -265,6 +285,8 @@ export class GameAudio {
         : "overworld";
     if (this.music && (this.music.key !== key || !music)) this.stopMusic();
     if (!music) this.musicResume = null;
+    const rate = hurry ? T.hurryRate : 1;
+    if (this.music) this.music.rate = rate;
     if (
       !music ||
       this.music ||
@@ -277,6 +299,7 @@ export class GameAudio {
       return;
     const track = this.manager.add(key, {
       volume: 0.55,
+      rate,
     }) as Phaser.Sound.WebAudioSound;
     this.music = track;
     const loop = MUSIC_LOOPS[key];

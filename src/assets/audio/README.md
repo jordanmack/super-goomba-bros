@@ -34,9 +34,11 @@ sound; kicked shells use the original kick sound. Block bumps, breaks, pipe
 travel, shrinking, and power-up pickups use the corresponding original effects.
 Pause and resume play the original pause cue while music is held. A
 question-block item uses the original appear effect with the bump. A 1-up uses
-`smb_1-up.wav`. Game over uses `smb_gameover.wav`. Warnings use a custom short
-square-wave voice. There is no approach heartbeat or distance-based music
-change. The world intro is silent.
+`smb_1-up.wav`. Game over uses `smb_gameover.wav`. TIME 100 uses
+`smb_warning.wav`, then the area theme plays faster. Leftover TIME tally uses
+the coin beep. World 8-4 uses `smb_world_clear.wav` after the castle tally.
+Warnings use a custom short square-wave voice. There is no approach heartbeat or
+distance-based music change. The world intro is silent.
 Mario's defeat uses the original death recording. It interrupts the overworld
 music, which resumes after the cue finishes while the level continues.
 

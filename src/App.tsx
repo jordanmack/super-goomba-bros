@@ -16,7 +16,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { Simulation, emptyInput } from "./game/simulation";
-import type { Input, Mode } from "./game/simulation";
+import type { Input, Mode, TallyPhase } from "./game/simulation";
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
@@ -47,10 +47,10 @@ type Snapshot = {
   saved: number;
   died: number;
   coins: number;
+  score: number;
   lives: number;
   living: number;
   elapsed: number;
-  doomed: boolean;
   power: string;
   flower: boolean;
   door: boolean;
@@ -60,10 +60,12 @@ type Snapshot = {
     lines: { id: number; text: string }[];
   }[];
   cooldown: number;
-  finishLeft: number;
+  timeLeft: number;
+  tallyPhase: TallyPhase;
+  marioKills: number;
+  flagClaim: boolean;
   progress: number;
   level: string;
-  lastLevel: boolean;
 };
 const initial: Snapshot = {
   mode: "title",
@@ -71,20 +73,33 @@ const initial: Snapshot = {
   saved: 0,
   died: 0,
   coins: 0,
+  score: 0,
   lives: T.startingLives,
   living: T.population,
   elapsed: 0,
-  doomed: false,
   power: "",
   flower: false,
   door: true,
   shouts: [],
   cooldown: 0,
-  finishLeft: 0,
+  timeLeft: 400,
+  tallyPhase: "",
+  marioKills: 0,
+  flagClaim: false,
   progress: 0,
   level: "1-1",
-  lastLevel: false,
 };
+const TALLY_LINES = ["warned", "saved", "died", "flag", "mario"] as const;
+function formatScore(n: number) {
+  const body = String(Math.abs(n)).padStart(6, "0");
+  return n < 0 ? `-${body}` : body;
+}
+function tallyVisible(phase: TallyPhase, line: (typeof TALLY_LINES)[number]) {
+  if (phase === "ending") return true;
+  const shown = TALLY_LINES.indexOf(phase as (typeof TALLY_LINES)[number]);
+  const want = TALLY_LINES.indexOf(line);
+  return shown >= 0 && want >= 0 && shown >= want;
+}
 export default function App() {
   const surface = useRef<HTMLElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -169,7 +184,7 @@ export default function App() {
               else startAudio(game);
             },
             () => {
-              if (sim.mode === "playing" || sim.mode === "finishing") {
+              if (sim.mode === "playing") {
                 game.paused = true;
                 setPaused(true);
                 audio.pause();
@@ -218,6 +233,7 @@ export default function App() {
             (sim.player.alive && sim.player.starLeft > 0) ||
               (sim.marioActive && sim.mario.alive && sim.mario.starLeft > 0),
             sim.activeRoom.data.type,
+            sim.hurry,
           );
         }
         renderer.render(sim, now / 1000);
@@ -244,7 +260,12 @@ export default function App() {
           const point = renderer.screen(cluster.worldX, cluster.worldY, sim);
           return { x: point.x, y: point.y, lines: cluster.lines };
         });
-        if (ticks++ % 4 === 0 || sim.shouts.length || lastShoutCount) {
+        if (
+          ticks++ % 4 === 0 ||
+          sim.shouts.length ||
+          lastShoutCount ||
+          sim.mode === "finishing"
+        ) {
           lastShoutCount = sim.shouts.length;
           const p = sim.player.body.position;
           setState({
@@ -253,10 +274,10 @@ export default function App() {
             saved: sim.saved,
             died: sim.died(),
             coins: sim.coins,
+            score: sim.score,
             lives: sim.lives,
             living: sim.living(),
             elapsed: sim.elapsed,
-            doomed: sim.doomed,
             power: [
               sim.player.starLeft > 0
                 ? `STAR ${Math.ceil(sim.player.starLeft)}s`
@@ -276,14 +297,16 @@ export default function App() {
               sim.activeRoom.data.goal.kind !== "pipe",
             shouts,
             cooldown: sim.cooldown,
-            finishLeft: sim.finishLeft,
+            timeLeft: sim.timeLeft,
+            tallyPhase: sim.tallyPhase,
+            marioKills: sim.marioKills,
+            flagClaim: sim.playerClaimedFlag(),
             progress: Math.min(
               1,
               (p.x - sim.activeRoom.offset) /
                 (sim.goalX - sim.activeRoom.offset),
             ),
             level: sim.level.id,
-            lastLevel: sim.levelIndex === 31,
           });
         }
       };
@@ -329,7 +352,7 @@ export default function App() {
   };
   const pause = () => {
     const game = runtime.current;
-    if (!game) return;
+    if (!game || game.sim.mode === "finishing") return;
     game.paused = !game.paused;
     game.clearInput();
     setPaused(game.paused);
@@ -337,20 +360,6 @@ export default function App() {
     else startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
   };
-  const nextLevel = () => {
-    const game = runtime.current;
-    if (!game) return;
-    game.sim.nextLevel();
-    game.clearInput();
-    game.audio.resetMusic(true);
-    game.paused = false;
-    setPaused(false);
-    game.helpOpen = false;
-    setHelpOpen(false);
-    startAudio(game);
-    (document.activeElement as HTMLElement)?.blur();
-  };
-  const replay = () => enterLevel({ lives: T.startingLives, levelIndex: 0 });
   const mute = () => {
     if (runtime.current) runtime.current.audio.muted = !muted;
     setMuted(!muted);
@@ -364,6 +373,7 @@ export default function App() {
     }
   };
   const toggleHelp = () => {
+    if (runtime.current?.sim.mode === "finishing") return;
     if (helpOpen) {
       closeHelp();
       return;
@@ -418,13 +428,7 @@ export default function App() {
     if (!ready) return;
     runtime.current?.renderer.resize();
   }, [ready, padOpen]);
-  const overlay = paused || state.mode === "won";
-  const minutes = Math.floor(state.elapsed / 60)
-    .toString()
-    .padStart(2, "0");
-  const seconds = Math.floor(state.elapsed % 60)
-    .toString()
-    .padStart(2, "0");
+  const overlay = paused;
 
   return (
     <main
@@ -447,37 +451,30 @@ export default function App() {
           </span>
         </div>
         {active && (
-          <div className="counters" aria-label="Game counters">
+          <div className="smb-hud counters" aria-label="Game status">
             <div>
-              <span>WARNED</span>
-              <strong data-testid="warned">
-                {String(state.warned).padStart(2, "0")}
-                <small> / {T.population}</small>
+              <span>GOOMBA</span>
+              <strong data-testid="score">{formatScore(state.score)}</strong>
+            </div>
+            <div className="smb-coins">
+              <span className="smb-coins-spacer" aria-hidden="true">
+                &nbsp;
+              </span>
+              <strong>
+                <span aria-hidden="true">Ⓒ×</span>
+                <span data-testid="coins">
+                  {String(state.coins).padStart(2, "0")}
+                </span>
               </strong>
             </div>
-            <div className="saved-counter">
-              <span>SAVED</span>
-              <strong data-testid="saved">
-                {String(state.saved).padStart(2, "0")}
-                <small> / {T.required}</small>
-              </strong>
+            <div>
+              <span>WORLD</span>
+              <strong data-testid="world">{state.level}</strong>
             </div>
-            <div className="died-counter">
-              <span>DIED</span>
-              <strong data-testid="died">
-                {String(state.died).padStart(2, "0")}
-              </strong>
-            </div>
-            <div className="coin-counter">
-              <span>COINS</span>
-              <strong data-testid="coins">
-                {String(state.coins).padStart(2, "0")}
-              </strong>
-            </div>
-            <div className="lives-counter">
-              <span>LIVES</span>
-              <strong data-testid="lives">
-                {String(state.lives).padStart(2, "0")}
+            <div>
+              <span>TIME</span>
+              <strong data-testid="time">
+                {String(Math.max(0, state.timeLeft)).padStart(3, "0")}
               </strong>
             </div>
           </div>
@@ -486,6 +483,7 @@ export default function App() {
           <button
             ref={helpButton}
             onClick={toggleHelp}
+            disabled={state.mode === "finishing"}
             title="Key bindings"
             aria-label="Key bindings"
             aria-expanded={helpOpen}
@@ -522,7 +520,7 @@ export default function App() {
           >
             {muted ? <VolumeX /> : <Volume2 />}
           </button>
-          {playing && (
+          {playing && state.mode !== "finishing" && (
             <button
               onClick={pause}
               title={paused ? "Resume" : "Pause"}
@@ -556,12 +554,6 @@ export default function App() {
               {state.power}
             </div>
           )}
-          <div className="phase">
-            <span>WORLD {state.level}</span>
-            <time>
-              {minutes}:{seconds}
-            </time>
-          </div>
           {!overlay &&
             state.shouts.map((stack) => (
               <div
@@ -576,25 +568,33 @@ export default function App() {
                 ))}
               </div>
             ))}
-          {state.doomed && state.mode === "playing" && (
-            <div className="goal-message" role="status">
-              TOO MANY LOST. THE GOAL IS LOCKED.
-            </div>
-          )}
-          {!state.doomed &&
-            state.door &&
-            state.progress > 0.92 &&
-            state.mode === "playing" &&
-            state.saved < T.required && (
-              <div className="goal-message">
-                <DoorOpen size={18} /> {T.required - state.saved} MORE RESCUES
-                TO OPEN THE CASTLE DOOR
-              </div>
-            )}
-          {state.mode === "finishing" && (
-            <div className="finish-banner">
-              <DoorOpen /> CASTLE REACHED!{" "}
-              <span>LAST RESCUES: {Math.ceil(state.finishLeft)}</span>
+          {state.mode === "finishing" && state.tallyPhase !== "time" && (
+            <div className="tally" aria-label="Stage tally">
+              {tallyVisible(state.tallyPhase, "warned") && (
+                <div data-testid="tally-warned">
+                  WARNED {String(state.warned).padStart(2, "0")} × {T.warnedScore}
+                </div>
+              )}
+              {tallyVisible(state.tallyPhase, "saved") && (
+                <div data-testid="tally-saved">
+                  SAVED {String(state.saved).padStart(2, "0")} × {T.savedScore}
+                </div>
+              )}
+              {tallyVisible(state.tallyPhase, "died") && (
+                <div data-testid="tally-died">
+                  DIED {String(state.died).padStart(2, "0")} × {T.diedScore}
+                </div>
+              )}
+              {tallyVisible(state.tallyPhase, "flag") && (
+                <div data-testid="tally-flag">
+                  FLAG {state.flagClaim ? 1 : 0} × {T.flagScore}
+                </div>
+              )}
+              {tallyVisible(state.tallyPhase, "mario") && (
+                <div data-testid="tally-mario">
+                  MARIO {state.marioKills} × {T.marioScore}
+                </div>
+              )}
             </div>
           )}
         </>
@@ -734,7 +734,9 @@ export default function App() {
               <p className="intro-world">WORLD {state.level}</p>
               <div className="intro-lives">
                 {portrait && <img src={portrait} alt="" />}
-                <span>× {String(state.lives).padStart(2, "0")}</span>
+                <span data-testid="lives">
+                  × {String(state.lives).padStart(2, "0")}
+                </span>
               </div>
             </>
           )}
@@ -745,7 +747,7 @@ export default function App() {
           className="overlay"
           aria-label={paused ? "Paused" : "Result"}
         >
-          {paused ? (
+          {paused && (
             <>
               <p className="level-label">TAKE A BREATHER</p>
               <h2>PAUSED</h2>
@@ -755,41 +757,6 @@ export default function App() {
               <button className="secondary" onClick={restartLevel}>
                 <RotateCcw size={16} /> RESTART LEVEL
               </button>
-            </>
-          ) : (
-            <>
-              <p className="level-label">THE BROTHERHOOD LIVES</p>
-              <h2>
-                SMALL FEET.
-                <br />
-                BIG HERO.
-              </h2>
-              <div className="final-counts">
-                <div>
-                  <strong>{state.warned}</strong>
-                  <span>WARNED</span>
-                </div>
-                <div>
-                  <strong>{state.saved}</strong>
-                  <span>SAVED</span>
-                </div>
-                <div>
-                  <strong data-testid="result-died">{state.died}</strong>
-                  <span>DIED</span>
-                </div>
-              </div>
-              <button
-                className="primary"
-                onClick={state.lastLevel ? replay : nextLevel}
-              >
-                <Play size={20} />{" "}
-                {state.lastLevel ? "PLAY AGAIN" : "NEXT LEVEL"}
-              </button>
-              {!state.lastLevel && (
-                <button className="secondary" onClick={start}>
-                  <RotateCcw size={16} /> PLAY AGAIN
-                </button>
-              )}
             </>
           )}
         </section>

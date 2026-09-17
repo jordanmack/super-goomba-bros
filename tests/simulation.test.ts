@@ -5,7 +5,6 @@ import { physics } from "./support/arcade.ts";
 import {
   Simulation as RulesSimulation,
   emptyInput,
-  rescueImpossible,
 } from "../src/game/simulation.ts";
 import { MAP_TOP, PHRASES, TUNING as T, blockDrawY } from "../src/game/config.ts";
 import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
@@ -54,6 +53,14 @@ function poleOf(s: Simulation) {
   const pole = s.activeRoom.flagpole;
   assert.ok(pole, "stage has a flagpole");
   return pole;
+}
+
+function skipTally(s: Simulation) {
+  s.timeLeft = 0;
+  for (let i = 0; i < 12 && s.mode === "finishing"; i++) {
+    s.tallyHold = 0;
+    tick(s, dt);
+  }
 }
 
 function give(s: Simulation, actor: Actor, kind: ItemKind) {
@@ -796,8 +803,10 @@ test("player coins increment a counter without changing rescue scores", () => {
   assert.equal(s.coins, 0);
   assert.equal(s.died(), 0);
   s.coins = 5;
+  s.score = 400;
   s.nextLevel();
-  assert.equal(s.coins, 0);
+  assert.equal(s.coins, 5);
+  assert.equal(s.score, 400);
   assert.equal(s.died(), 0);
 });
 
@@ -935,6 +944,7 @@ test("NPC star contact also kills Mario, but giant NPC contact does not", () => 
     tick(s, dt);
     assert.equal(s.mario.alive, kind === "mushroom");
     assert.ok(n.alive);
+    if (kind === "star") assert.equal(s.marioKills, 0);
   }
 });
 
@@ -2087,42 +2097,32 @@ test("NPCs complete the full route offscreen, including both gaps", () => {
   );
 });
 
-test("NPCs can enter safety before quota unlocks the player goal", () => {
+test("the castle door is open with no save quota", () => {
   const s = game();
-  at(s, GOAL_X + 5);
-  tick(s, dt);
-  assert.equal(s.mode, "playing");
-  assert.ok(s.player.body.position.x < GOAL_X);
-  Body.setPosition(s.npcs[0].body, { x: GOAL_X + 2, y: 415 });
-  tick(s, dt);
-  assert.equal(s.saved, 1);
-  assert.equal(s.mode, "playing");
-  s.save(s.npcs[0]);
-  assert.equal(s.saved, 1);
-});
-
-test("safe player finish counts only arrivals before a fixed cutoff", () => {
-  const s = game();
-  s.npcs.slice(0, T.required).forEach((n) => s.save(n));
   at(s, GOAL_X + 5);
   tick(s, dt);
   assert.equal(s.mode, "finishing");
+  assert.equal(s.saved, 0);
+  assert.equal(s.player.saved, true);
   s.kill(s.player);
   assert.equal(s.player.alive, true);
-  Body.setPosition(s.npcs[T.required].body, { x: GOAL_X + 3, y: 415 });
-  tick(s, 1);
-  assert.equal(s.saved, T.required + 1);
-  const left = s.finishLeft;
+  Body.setPosition(s.npcs[0].body, { x: GOAL_X + 2, y: 415 });
+  tick(s, dt);
+  assert.equal(s.saved, 1);
+});
+
+test("castle tally still counts saves after the player vanishes", () => {
+  const s = game();
+  s.timeLeft = 0;
+  at(s, GOAL_X + 5);
+  tick(s, dt);
+  assert.equal(s.mode, "finishing");
+  assert.equal(s.tallyPhase, "warned");
+  Body.setPosition(s.npcs[0].body, { x: GOAL_X + 3, y: 415 });
+  tick(s, dt);
+  assert.equal(s.saved, 1);
   s.finish();
-  assert.equal(s.finishLeft, left);
-  tick(s, 5);
-  assert.equal(s.mode, "won");
-  Body.setPosition(s.npcs[T.required + 1].body, {
-    x: GOAL_X + 3,
-    y: 415,
-  });
-  tick(s, 2);
-  assert.equal(s.saved, T.required + 1);
+  assert.equal(s.mode, "finishing");
 });
 
 test("first player past the flagpole raises a Goomba flag", () => {
@@ -2241,7 +2241,6 @@ test("flagpole shaft adds no collision and does not change velocity", () => {
 test("claiming the flagpole still leaves the castle door as the goal", () => {
   const s = game();
   const pole = poleOf(s);
-  s.npcs.slice(0, T.required).forEach((n) => s.save(n));
   Body.setPosition(s.player.body, { x: pole.x, y: pole.top });
   tick(s, dt);
   assert.equal(pole.claim, "goomba");
@@ -2250,24 +2249,7 @@ test("claiming the flagpole still leaves the castle door as the goal", () => {
   tick(s, dt);
   assert.equal(s.mode, "finishing");
   assert.equal(pole.claim, "goomba");
-});
-
-test("impossibility includes all living and saved NPCs", () => {
-  assert.equal(rescueImpossible(4, 1, 5), false);
-  assert.equal(rescueImpossible(4, 0, 5), true);
-  const s = game();
-  s.npcs.slice(0, T.population - T.required + 1).forEach((n) => s.kill(n));
-  tick(s, dt);
-  assert.equal(s.mode, "playing");
-  assert.equal(s.doomed, true);
-  assert.equal(s.died(), T.population - T.required + 1);
-  assert.equal(s.saved + s.living(), T.required - 1);
-  assert.equal(rescueImpossible(s.saved, s.living(), T.required), true);
-  s.finish();
-  assert.equal(s.mode, "playing");
-  s.marioReturn = 0;
-  tick(s, dt);
-  assert.ok(s.marioActive);
+  assert.equal(s.playerClaimedFlag(), true);
 });
 
 test("one hit plays the complete death sequence before resetting run state", () => {
@@ -2287,7 +2269,7 @@ test("one hit plays the complete death sequence before resetting run state", () 
   assert.equal(s.warned, 0);
   assert.equal(s.saved, 0);
   assert.equal(s.died(), 0);
-  assert.equal(s.coins, 0);
+  assert.equal(s.coins, 4);
   assert.equal(s.phase, 0);
   assert.equal(s.fireballs.length, 0);
   assert.equal(s.obstacles[2].broken, false);
@@ -2442,6 +2424,7 @@ test("a recorded World 1-1 run can win with Mario active and without teleporting
   const s = new Simulation(() => 0.5);
   s.reset();
   s.marioReturn = 1e6;
+  s.timeLeft = 9999;
   for (const n of s.npcs) n.warned = true;
   s.warned = s.npcs.length;
   tick(s, 3);
@@ -2464,7 +2447,6 @@ test("a recorded World 1-1 run can win with Mario active and without teleporting
     }
   }
   assert.ok(s.mode === "finishing" || s.mode === "won");
-  assert.ok(s.saved >= T.required);
   assert.ok(marioAppeared);
   assert.ok(s.activeRoom.atDoor(s.player));
 });
@@ -3419,6 +3401,22 @@ test("hidden coins, hidden 1-ups, and 1-up bricks keep original contents", () =>
   assert.ok(s.events.includes("coin"));
   s.hitBlock(hiddenCoin, s.player);
   assert.equal(s.coins, coins + 1);
+
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
+  s.reset();
+  const marioCoin = s.obstacles.find(
+    (c) => c.hidden && c.content === "coin",
+  )!;
+  s.marioActive = true;
+  s.score = 0;
+  s.coins = 0;
+  const lives = s.lives;
+  s.hitBlock(marioCoin, s.mario);
+  assert.equal(marioCoin.used, true);
+  assert.equal(s.score, 0);
+  assert.equal(s.coins, 0);
+  assert.equal(s.lives, lives);
+  assert.ok(s.events.includes("coin"));
 
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
   s.reset();
@@ -4480,4 +4478,211 @@ test("a stopped water shell does not keep leftover swim speed", () => {
   assert.equal(n.shell, "stopped");
   assert.equal(n.body.velocity.y, 0);
   assert.ok(Math.abs(n.body.position.y - y) < 2);
+});
+
+test("TIME counts down from the stage timer and kills at 0", () => {
+  const s = game();
+  assert.equal(s.timeLeft, 300);
+  tick(s, T.timerTickFrames / 60);
+  assert.equal(s.timeLeft, 299);
+  assert.equal(s.hurry, false);
+  s.timeLeft = T.hurryAt + 1;
+  tick(s, T.timerTickFrames / 60);
+  assert.equal(s.timeLeft, T.hurryAt);
+  assert.equal(s.hurry, true);
+  assert.ok(s.events.includes("hurry"));
+  s.timeLeft = 1;
+  give(s, s.player, "mushroom8x");
+  tick(s, T.timerTickFrames / 60);
+  assert.equal(s.timeLeft, 0);
+  assert.equal(s.mode, "dead");
+  assert.equal(s.player.alive, false);
+});
+
+test("TIME waits until the player has control on the main area", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  assert.equal(s.player.areaId, "29");
+  assert.equal(s.timeLeft, 300);
+  for (let frame = 0; frame < 60 * 20 && s.pipeIntro; frame++) {
+    if (s.player.areaId !== s.level.main || s.player.pipeTravel)
+      assert.equal(s.timeLeft, 300);
+    s.step(dt, emptyInput());
+  }
+  assert.equal(s.pipeIntro, false);
+  assert.equal(s.player.areaId, s.level.main);
+  const left = s.timeLeft;
+  tick(s, T.timerTickFrames / 60);
+  assert.equal(s.timeLeft, left - 1);
+});
+
+test("a player coin scores 200 and 100 coins grant a 1-up", () => {
+  const s = game();
+  const room = s.loadRoom("42");
+  const coin = room.coins.find((c) => !c.collected)!;
+  coin.x = s.player.body.position.x;
+  coin.y = s.player.body.position.y;
+  tick(s, dt);
+  assert.equal(s.coins, 1);
+  assert.equal(s.score, T.coinScore);
+  s.coins = T.coinsForLife - 1;
+  const next = room.coins.find((c) => !c.collected)!;
+  next.x = s.player.body.position.x;
+  next.y = s.player.body.position.y;
+  const lives = s.lives;
+  tick(s, dt);
+  assert.equal(s.coins, 0);
+  assert.equal(s.lives, lives + 1);
+  assert.ok(s.events.includes("oneUp"));
+});
+
+test("SCORE persists across a lost life and zeros on GAME OVER", () => {
+  const s = game();
+  s.score = 2500;
+  s.coins = 7;
+  s.kill(s.player);
+  tick(s, T.deathSequenceSeconds + 0.1);
+  assert.equal(s.mode, "intro");
+  assert.equal(s.score, 2500);
+  assert.equal(s.coins, 7);
+  const over = game();
+  over.score = 2500;
+  over.lives = 1;
+  over.kill(over.player);
+  tick(over, T.deathSequenceSeconds + 0.1);
+  assert.equal(over.mode, "gameover");
+  assert.equal(over.score, 0);
+  tick(over, T.gameoverSeconds + 0.1);
+  assert.equal(over.mode, "title");
+  assert.equal(over.score, 0);
+  assert.equal(over.coins, 0);
+});
+
+test("leftover TIME and castle lines add to SCORE then auto-continue", () => {
+  const s = game();
+  s.warned = 2;
+  s.save(s.npcs[0]);
+  s.kill(s.npcs[1]);
+  const pole = poleOf(s);
+  pole.claim = "goomba";
+  s.marioKills = 1;
+  s.timeLeft = 2;
+  s.score = 0;
+  s.finish();
+  assert.equal(s.mode, "finishing");
+  assert.equal(s.player.saved, true);
+  tick(s, T.timerTallyFrames / 60);
+  assert.equal(s.timeLeft, 1);
+  assert.equal(s.score, T.timeScore);
+  tick(s, T.timerTallyFrames / 60);
+  assert.equal(s.timeLeft, 0);
+  while (s.tallyPhase === "time") tick(s, dt);
+  assert.equal(s.tallyPhase, "warned");
+  assert.equal(s.score, T.timeScore * 2 + 2 * T.warnedScore);
+  skipTally(s);
+  assert.equal(s.mode, "intro");
+  assert.equal(s.level.id, "1-2");
+  assert.equal(
+    s.score,
+    T.timeScore * 2 +
+      2 * T.warnedScore +
+      T.savedScore +
+      T.diedScore +
+      T.flagScore +
+      T.marioScore,
+  );
+});
+
+test("World 8-4 tally holds through world-clear then returns to the title", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.length - 1;
+  s.reset();
+  s.marioReturn = 1e6;
+  s.timeLeft = 0;
+  s.finish();
+  while (s.mode === "finishing" && s.tallyPhase !== "ending") {
+    s.tallyHold = 0;
+    tick(s, dt);
+  }
+  assert.equal(s.tallyPhase, "ending");
+  assert.ok(
+    s.tallyHold >= T.endingSeconds + T.deathSequenceSeconds - dt,
+    `hold ${s.tallyHold}`,
+  );
+  const hold = s.tallyHold;
+  tick(s, hold - dt);
+  assert.equal(s.mode, "finishing");
+  tick(s, 2 * dt);
+  assert.equal(s.mode, "title");
+  assert.equal(s.levelIndex, 0);
+  assert.equal(s.score, 0);
+});
+
+test("leftover TIME tally starts from a fresh 4-frame accumulator", () => {
+  const s = game();
+  tick(s, (T.timerTickFrames - 1) / 60);
+  assert.equal(s.timeLeft, 300);
+  s.timeLeft = 3;
+  s.score = 0;
+  s.finish();
+  tick(s, T.timerTallyFrames / 60);
+  assert.equal(s.timeLeft, 2);
+  assert.equal(s.score, T.timeScore);
+});
+
+test("a Mario-kicked shell that defeats Mario does not score MARIO points", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "moving";
+  n.facing = 1;
+  n.shellKicker = s.mario.id;
+  n.kickIgnore = 0;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
+  s.marioActive = true;
+  s.setMarioStage(0);
+  s.marioLook = 10;
+  s.marioPause = 10;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 220, y: 411 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.mario.alive, false);
+  assert.equal(s.marioKills, 0);
+});
+
+test("an NPC star kill does not count on the MARIO tally line", () => {
+  const s = game();
+  const n = s.npcs[0];
+  give(s, n, "star");
+  s.marioActive = true;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { ...n.body.position });
+  tick(s, dt);
+  assert.equal(s.mario.alive, false);
+  assert.equal(s.marioKills, 0);
+  s.timeLeft = 0;
+  s.score = 0;
+  s.finish();
+  s.tallyPhase = "mario";
+  s.tallyHold = T.tallyLineSeconds;
+  tick(s, dt);
+  assert.equal(s.score, 0);
+});
+
+test("SCORE may go negative from died penalties", () => {
+  const s = game();
+  s.timeLeft = 0;
+  s.score = 0;
+  s.npcs.slice(0, 3).forEach((n) => s.kill(n));
+  s.finish();
+  s.tallyPhase = "died";
+  s.tallyHold = T.tallyLineSeconds;
+  tick(s, dt);
+  assert.ok(s.score < 0);
 });

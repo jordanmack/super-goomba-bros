@@ -20,7 +20,7 @@ for (const [index, level] of CAMPAIGN.entries()) {
     {
       skip:
         level.id === "4-4"
-          ? "leftmost 4-4 NPC loops in the castle maze at run jump height; the quota test still saves 12"
+          ? "leftmost 4-4 NPC loops in the castle maze at run jump height"
           : false,
     },
     () => {
@@ -74,7 +74,7 @@ for (const [index, level] of CAMPAIGN.entries()) {
   });
 }
 
-test("every campaign stage can meet its rescue quota from the full starting population", { timeout: 20000 }, () => {
+test("every campaign stage still saves NPCs from the full starting population", { timeout: 20000 }, () => {
   const failures: object[] = [];
   for (let index = 0; index < CAMPAIGN.length; index++) {
     const sim = new Simulation(() => 0.37, physics());
@@ -82,6 +82,7 @@ test("every campaign stage can meet its rescue quota from the full starting popu
     sim.reset();
     sim.marioReturn = 1e6;
     finishPipeIntro(sim);
+    sim.timeLeft = 9999;
     sim.player.saved = true;
     Body.setFrozen(sim.player.body, true);
     for (const npc of sim.npcs) {
@@ -91,13 +92,11 @@ test("every campaign stage can meet its rescue quota from the full starting popu
     }
     for (
       let frame = 0;
-      frame < 60 * 180 &&
-      sim.saved < T.required &&
-      sim.saved + sim.living() >= T.required;
+      frame < 60 * 180 && sim.saved < 1 && sim.living() > 0;
       frame++
     )
       sim.step(1 / 60, emptyInput());
-    if (sim.saved < T.required)
+    if (sim.saved < 1)
       failures.push({
         level: sim.level.id,
         saved: sim.saved,
@@ -117,7 +116,7 @@ test("bonus pipe travel preserves rescues, powers, and NPC progress without fini
   runner.state = "run";
   runner.wait = 0;
   sim.warned = 13;
-  sim.saved = T.required;
+  sim.saved = 12;
   sim.player.flower = true;
   const entry = sim.activeRoom.data.pipes.find(
     (pipe) => pipe.direction === "down",
@@ -139,7 +138,7 @@ test("bonus pipe travel preserves rescues, powers, and NPC progress without fini
   assert.equal(sim.player.pipeTravel, undefined);
   assert.ok(sim.player.body.position.x >= sim.activeRoom.offset);
   assert.equal(sim.mode, "playing");
-  assert.equal(sim.saved, T.required);
+  assert.equal(sim.saved, 12);
   assert.equal(sim.warned, 13);
   assert.ok(sim.player.flower);
   for (let i = 0; i < 90; i++) sim.step(1 / 60, emptyInput());
@@ -161,7 +160,7 @@ test("bonus pipe travel preserves rescues, powers, and NPC progress without fini
   while (sim.player.pipeTravel && frames++ < 360)
     sim.step(1 / 60, emptyInput());
   assert.equal(sim.mode, "playing");
-  assert.equal(sim.saved, T.required);
+  assert.equal(sim.saved, 12);
   assert.ok(sim.player.flower);
   assert.equal(sim.rooms.size, 2);
 });

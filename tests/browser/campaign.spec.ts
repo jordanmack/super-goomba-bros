@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
 import campaign from "../../src/assets/levels/campaign.json" with { type: "json" };
-import { TUNING as T } from "../../src/game/config";
 import { skipIntro } from "./skip-intro.ts";
 
 // ionice can miss Playwright's 30s waitForFunction and test defaults.
@@ -48,7 +47,7 @@ test("all campaign stages render their tilemap and palette with Arcade bodies", 
       await page.waitForFunction(
         (id) =>
           (window as any).__game.renderer.play.tiles.tilemap.width > 0 &&
-          document.querySelector(".phase")?.textContent?.includes(id),
+          document.querySelector('[data-testid="world"]')?.textContent === id,
         level.id,
         { timeout: SCREENSHOT_WAIT_MS },
       );
@@ -67,18 +66,23 @@ test("next stage resets counters and preserves the complete clear cue", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
-  await page.evaluate((required) => {
+  await page.evaluate(() => {
     const g = (window as any).__game;
-    g.sim.npcs.slice(0, required).forEach((npc: any) => g.sim.save(npc));
+    g.sim.timeLeft = 0;
     g.sim.finish();
-    g.sim.finishLeft = 0.15;
-  }, T.required);
-  await page.getByRole("button", { name: "NEXT LEVEL" }).click();
+  });
+  await expect(page.locator(".finish-banner")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "NEXT LEVEL" })).toHaveCount(0);
+  await page.waitForFunction(() => {
+    const s = (window as any).__game.sim;
+    if (s.mode === "finishing") s.tallyHold = 0;
+    return s.level.id === "1-2" || s.mode === "intro";
+  });
   // 1-2 spawn-stomp races the remaining clear cue at full sim speed.
   await page.evaluate(() => {
     (window as any).__game.sim.marioReturn = 1e6;
   });
-  await expect(page.getByTestId("saved")).toContainText("00");
+  await expect(page.getByTestId("world")).toHaveText("1-2");
   await expect
     .poll(() => page.evaluate(() => (window as any).__game.sim.level.id))
     .toBe("1-2");
@@ -287,7 +291,7 @@ test("start shows a silent world intro, and 0 lives shows game over then title",
   await expect(intro).toHaveCSS("background-color", "rgb(0, 0, 0)");
   await expect(intro.getByText("WORLD 1-1")).toBeVisible();
   await expect(intro.locator(".intro-lives")).toContainText("× 03");
-  await expect(page.getByTestId("lives")).toHaveText("03");
+  await expect(page.getByTestId("lives")).toContainText("03");
   expect(
     await page.evaluate(() => (window as any).__game.audio.music),
   ).toBeNull();
