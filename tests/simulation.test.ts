@@ -833,7 +833,7 @@ test("a landed-on NPC can be warned after the player leaves range", () => {
   assert.ok(s.player.body.velocity.y > 0);
   tick(s, 0.8);
   assert.equal(n.warned, false);
-  assert.ok(s.cooldown > 0);
+  assert.equal(other.warned, true);
   tick(s, 1, { left: true });
   assert.ok(s.player.grounded);
   assert.ok(
@@ -842,7 +842,6 @@ test("a landed-on NPC can be warned after the player leaves range", () => {
       n.body.position.y - s.player.body.position.y,
     ) > T.warningRange,
   );
-  tick(s, T.warningCooldown + dt);
   tick(s, 1.2, { right: true });
   assert.equal(n.warned, true);
 });
@@ -1211,7 +1210,6 @@ test("an unwarned NPC inside 96px is warned without overlap", () => {
   assert.ok(s.events.includes("warn"));
   assert.ok(n.exclaimLeft > 0);
   s.events.length = 0;
-  s.cooldown = 0;
   tick(s, dt);
   assert.equal(s.warned, 1);
   assert.equal(s.events.includes("warn"), false);
@@ -1497,17 +1495,60 @@ test("warnings count nearby groups once, never rescue them", () => {
   assert.equal(s.npcs.length, T.population);
 });
 
+test("an unwarned NPC in range is warned the same step with no cooldown delay", () => {
+  const s = game();
+  const a = s.npcs[0];
+  const b = s.npcs[1];
+  parkNpcs(s, [a, b]);
+  a.idleWalking = false;
+  a.wait = 99;
+  b.idleWalking = false;
+  b.wait = 99;
+  Body.setPosition(a.body, { x: 200, y: 415 });
+  Body.setPosition(b.body, { x: 200 + T.warningRange + 40, y: 415 });
+  Body.setVelocity(a.body, { x: 0, y: 0 });
+  Body.setVelocity(b.body, { x: 0, y: 0 });
+  at(s, a.body.position.x);
+  tick(s, dt);
+  assert.equal(a.warned, true);
+  assert.equal(b.warned, false);
+  assert.equal(s.warned, 1);
+  assert.ok(s.cooldown > dt);
+  at(s, b.body.position.x);
+  tick(s, dt);
+  assert.equal(b.warned, true);
+  assert.equal(s.warned, 2);
+});
+
 test("warning cooldown and distance limit", () => {
   const s = game();
+  const a = s.npcs[0];
+  const b = s.npcs[1];
+  parkNpcs(s, [a, b]);
+  a.idleWalking = false;
+  a.wait = 99;
+  b.idleWalking = false;
+  b.wait = 99;
+  Body.setPosition(a.body, { x: 200, y: 415 });
+  Body.setPosition(b.body, { x: 200 + T.warningRange + 40, y: 415 });
+  Body.setVelocity(a.body, { x: 0, y: 0 });
+  Body.setVelocity(b.body, { x: 0, y: 0 });
   assert.equal(T.warningRange, 96);
   s.warn();
   assert.equal(s.warned, 0);
-  at(s, s.npcs[0].body.position.x);
+  at(s, a.body.position.x);
   s.warn();
-  assert.equal(s.warned, 0);
-  tick(s, T.warningCooldown + dt);
-  s.warn();
+  assert.equal(a.warned, true);
+  assert.equal(b.warned, false);
   assert.equal(s.warned, 1);
+  assert.ok(s.cooldown > 0);
+  at(s, b.body.position.x);
+  s.warn();
+  assert.equal(b.warned, true);
+  assert.equal(s.warned, 2);
+  at(s, a.body.position.x - T.warningRange - 12);
+  tick(s, dt);
+  assert.equal(s.warned, 2);
 });
 
 test("walking and jumping keep nearby NPCs alive", () => {

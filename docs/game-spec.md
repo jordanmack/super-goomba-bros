@@ -103,7 +103,7 @@ Every phrase must urge escape from incoming Mario. Use the phrase pool in
 [tuning](../src/game/config.ts), with lines such as “Run! Mario is coming!”
 and “Run my brothers or perish!” Avoid unrelated jokes.
 
-Warnings have a limited range and a short cooldown. Mario can hear them too.
+Warnings have a limited range. Mario can hear them too.
 A closer warning is more likely to draw him. Speaking does not grant safety.
 
 ## NPCs

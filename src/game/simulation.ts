@@ -645,10 +645,6 @@ export class Simulation {
     if (a === this.player || a === this.mario) return T.runSpeed;
     return T.runSpeed;
   }
-  private jumpImpulse(a: Actor, vx = a.body.velocity.x) {
-    if (this.roomFor(a).onSpring(a)) return T.springImpulse;
-    return jumpArc(vx).impulse;
-  }
   private jump(a: Actor, impulse?: number) {
     const water = this.roomFor(a).data.type === "water";
     if (!a.grounded && !water) return;
@@ -868,7 +864,7 @@ export class Simulation {
     }
   }
   warn() {
-    if (this.cooldown > 0 || this.mode !== "playing") return;
+    if (this.mode !== "playing") return;
     this.cooldown = T.warningCooldown;
     this.audible = T.warningSound;
     this.bubbleLeft = T.bubbleTime;
@@ -1270,12 +1266,7 @@ export class Simulation {
   }
 
   private autoWarn() {
-    if (
-      this.cooldown > 0 ||
-      this.mode !== "playing" ||
-      this.inPipe(this.player)
-    )
-      return;
+    if (this.mode !== "playing" || this.inPipe(this.player)) return;
     const playerBottom =
       this.player.body.position.y + 14 * this.player.scale;
     const falling = this.player.body.velocity.y > 0.2;
