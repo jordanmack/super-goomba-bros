@@ -560,12 +560,16 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
     const s = g.sim;
     const play = g.renderer.play;
     const textures = g.renderer.game.textures.list;
-    const caps = (name: string) => {
+    const pixels = (name: string) => {
       const image = textures[name].getSourceImage() as HTMLCanvasElement;
-      const data = image.getContext("2d")!.getImageData(0, 0, 16, 16).data;
+      return image.getContext("2d")!.getImageData(0, 0, 16, 16).data;
+    };
+    const caps = (name: string) => {
+      const data = pixels(name);
       let red = 0,
         green = 0,
-        gold = 0;
+        gold = 0,
+        blue = 0;
       for (let i = 0; i < data.length; i += 4) {
         if (!data[i + 3]) continue;
         const r = data[i],
@@ -574,11 +578,31 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
         if (r > 140 && gch < 90 && b < 80) red++;
         if (gch > r && gch > 100 && b < 80) green++;
         if (r > 200 && gch > 180 && b < 80) gold++;
+        if (b > 200 && r < 80 && gch > 80 && gch < 180) blue++;
       }
-      return { red, green, gold };
+      return { red, green, gold, blue };
+    };
+    const exact = (name: string, rgb: [number, number, number]) => {
+      const data = pixels(name);
+      let n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (
+          data[i + 3] &&
+          data[i] === rgb[0] &&
+          data[i + 1] === rgb[1] &&
+          data[i + 2] === rgb[2]
+        )
+          n++;
+      }
+      return n;
     };
     const sizes: Record<string, number | null> = {};
-    for (const kind of ["mushroom", "mushroom3x", "mushroom8x"] as const) {
+    for (const kind of [
+      "mushroom",
+      "mushroom3x",
+      "mushroom8x",
+      "oneUp",
+    ] as const) {
       const box = s.obstacles.find((c: any) => c.question && !c.used);
       s.hitBlock(box, s.player);
       const item = s.items.at(-1);
@@ -595,16 +619,32 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
       mushroom: caps("mushroom"),
       mushroom3x: caps("mushroom3x"),
       mushroom8x: caps("mushroom8x"),
+      oneUp: caps("oneUp"),
+      blue3x: exact("mushroom3x", [32, 136, 252]),
+      gold8x: exact("mushroom8x", [252, 200, 32]),
+      blueOnOneUp: exact("oneUp", [32, 136, 252]),
+      blueOn2x: exact("mushroom", [32, 136, 252]),
       sizes,
     };
   });
   expect(drawn.mushroom.red).toBeGreaterThan(drawn.mushroom.green);
   expect(drawn.mushroom.red).toBeGreaterThan(drawn.mushroom.gold);
-  expect(drawn.mushroom3x.green).toBeGreaterThan(drawn.mushroom3x.red);
+  expect(drawn.mushroom.red).toBeGreaterThan(drawn.mushroom.blue);
+  expect(drawn.mushroom3x.blue).toBeGreaterThan(drawn.mushroom3x.red);
+  expect(drawn.mushroom3x.blue).toBeGreaterThan(drawn.mushroom3x.green);
+  expect(drawn.mushroom3x.blue).toBeGreaterThan(drawn.mushroom3x.gold);
   expect(drawn.mushroom8x.gold).toBeGreaterThan(drawn.mushroom8x.red);
+  expect(drawn.mushroom8x.gold).toBeGreaterThan(drawn.mushroom8x.blue);
+  expect(drawn.oneUp.green).toBeGreaterThan(drawn.oneUp.red);
+  expect(drawn.oneUp.green).toBeGreaterThan(drawn.oneUp.blue);
+  expect(drawn.blue3x).toBeGreaterThan(0);
+  expect(drawn.gold8x).toBeGreaterThan(0);
+  expect(drawn.blueOnOneUp).toBe(0);
+  expect(drawn.blueOn2x).toBe(0);
   expect(drawn.sizes.mushroom).toBe(32);
   expect(drawn.sizes.mushroom3x).toBe(32);
   expect(drawn.sizes.mushroom8x).toBe(48);
+  expect(drawn.sizes.oneUp).toBe(32);
 });
 
 for (const viewport of [

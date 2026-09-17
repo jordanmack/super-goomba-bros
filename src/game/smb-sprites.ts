@@ -164,14 +164,15 @@ function goombaFlag(source: HTMLCanvasElement) {
 
 export function scenerySprites({ enemies, items }: SpriteSources) {
   const marioFlag = crop(items, 128, 0, 16, 16);
+  const mushroom = crop(items, 0, 0, 16, 16);
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
     platform: crop(items, 80, 24, 48, 8),
     coin: crop(items, 0, 80, 16, 16),
-    mushroom: crop(items, 0, 0, 16, 16),
+    mushroom,
     oneUp: crop(items, 16, 0, 16, 16),
-    mushroom3x: crop(items, 16, 0, 16, 16),
-    mushroom8x: mushroomCap(crop(items, 0, 0, 16, 16), [252, 200, 32]),
+    mushroom3x: mushroomCap(mushroom, [32, 136, 252]),
+    mushroom8x: mushroomCap(mushroom, [252, 200, 32]),
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
     marioFlag,

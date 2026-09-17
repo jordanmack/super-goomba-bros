@@ -218,7 +218,7 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
 - A star grants temporary immunity. Player and NPC star contact defeats Mario
   unless he also has a star. Mario avoids visible star holders.
 - Mushrooms set Goomba and NPC size to that mushroom's tier, including shrink.
-  Red 2x is the common mushroom. Green 3x and gold 8x appear less often than
+  Red 2x is the common mushroom. Blue 3x and gold 8x appear less often than
   2x. Star and flower stay in the pool. Any mushroom grows small Mario to big
   Mario; this size ladder is only for the player Goomba and NPCs. Shrink and
   grow blink between the two sizes. Growth resolves overlap with scenery.
