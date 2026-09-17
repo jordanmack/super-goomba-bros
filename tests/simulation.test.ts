@@ -7,7 +7,7 @@ import {
   emptyInput,
   rescueImpossible,
 } from "../src/game/simulation.ts";
-import { MAP_TOP, PHRASES, TUNING as T } from "../src/game/config.ts";
+import { MAP_TOP, PHRASES, TUNING as T, blockDrawY } from "../src/game/config.ts";
 import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
@@ -15,6 +15,7 @@ const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
 const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
+import { itemSpriteSize } from "../src/game/simulation.ts";
 import { flagTextureKey } from "../src/game/smb-sprites.ts";
 
 class Simulation extends RulesSimulation {
@@ -307,7 +308,7 @@ test("a warned NPC on the World 1-1 last pipe does not stay in the stair well", 
   );
 });
 
-test("giant head hits break bricks and let NPCs on top fall safely", () => {
+test("giant head hits break bricks and bounce NPCs on top without killing them", () => {
   const s = game();
   give(s, s.player, "mushroom");
   const brick = s.obstacles.find(
@@ -322,8 +323,10 @@ test("giant head hits break bricks and let NPCs on top fall safely", () => {
   tick(s, dt);
   assert.equal(brick.broken, true);
   assert.ok(!s.solids.includes(brick.body!));
+  assert.equal(n.alive, true);
+  assert.equal(n.body.velocity.y, -T.stompBounce);
   tick(s, 0.8);
-  assert.ok(n.alive && n.body.position.y > brick.y);
+  assert.ok(n.alive);
   assert.equal(
     s.particles.some((p) => p.color === "#bc0018"),
     false,
@@ -533,6 +536,42 @@ test("question-block items emit appear with bump, then power on collect", () => 
   assert.equal(s.events.includes("appear"), false);
 });
 
+function assertEmergeClip(s: Simulation, kind: ItemKind) {
+  const box = s.obstacles.find((c) => c.question && !c.hidden && !c.used)!;
+  s.hitBlock(box, s.player);
+  const item = s.items[0];
+  item.kind = kind;
+  const size = itemSpriteSize(kind);
+  assert.ok(item.emerge > 0);
+  assert.ok(item.clip);
+  let sawBelow = false;
+  for (let i = 0; i < 40; i++) {
+    tick(s, dt);
+    if (item.emerge <= 0) {
+      assert.equal(item.clip, undefined);
+      break;
+    }
+    const top = blockDrawY(box.y, box.bounce) - T.brickSize / 2;
+    const clip = item.clip!;
+    assert.ok(
+      clip.y + clip.h <= top + 1e-6,
+      `clip bottom ${clip.y + clip.h} below block top ${top}`,
+    );
+    assert.ok(clip.x <= item.body.position.x - size / 2 + 1e-6);
+    assert.ok(clip.x + clip.w >= item.body.position.x + size / 2 - 1e-6);
+    if (item.body.position.y + size / 2 > top) sawBelow = true;
+  }
+  assert.ok(sawBelow, "item extends below the bouncing block during emerge");
+  tick(s, 0.5);
+  assert.equal(item.emerge, 0);
+  assert.equal(item.clip, undefined);
+}
+
+test("emerging items stay clipped above the bouncing block", () => {
+  assertEmergeClip(game(), "mushroom");
+  assertEmergeClip(game(), "mushroom8x");
+});
+
 test("question blocks release each random item once, including on Mario hits", () => {
   for (const [roll, kind] of [
     [0, "star"],
@@ -583,6 +622,9 @@ test("head hits collect coins sitting on the bumped block", () => {
   assert.ok(small.block.bounce > 0);
   assert.equal(s.coins, 1);
   assert.ok(s.events.includes("coin"));
+  assert.equal(s.coinPops.length, 1);
+  assert.equal(s.coinPops[0].x, small.coin.x);
+  assert.equal(s.coinPops[0].y, small.coin.y);
   assert.equal(stray.collected, false);
   assert.equal(s.warned, 0);
   assert.equal(s.saved, 0);
@@ -593,14 +635,122 @@ test("head hits collect coins sitting on the bumped block", () => {
   assert.equal(qCoin.collected, true);
   assert.equal(box.broken, false);
   assert.equal(s.coins, 2);
+  assert.equal(s.coinPops.length, 2);
   give(s, s.player, "mushroom");
   s.hitBlock(broken.block, s.player);
   assert.equal(broken.coin.collected, true);
   assert.equal(broken.block.broken, true);
   assert.equal(s.coins, 3);
+  assert.equal(s.coinPops.length, 3);
+  s.events.length = 0;
   s.hitBlock(marioHit.block, s.mario);
   assert.equal(marioHit.coin.collected, true);
   assert.equal(s.coins, 3);
+  assert.ok(s.events.includes("coin"));
+  assert.equal(s.coinPops.length, 4);
+  assert.equal(s.coinPops[3].x, marioHit.coin.x);
+  assert.equal(s.coinPops[3].y, marioHit.coin.y);
+});
+
+function standOn(n: Actor, block: { x: number; y: number }) {
+  Body.setPosition(n.body, { x: block.x, y: block.y - 16 - 14 * n.scale });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.idleWalking = false;
+  n.idleWait = 2;
+}
+
+test("player bump and break bounce an NPC on the block without killing it", () => {
+  const s = game();
+  const brick = s.obstacles.find(
+    (c) => c.kind === "brick" && !c.question && !c.hidden && c.y > 300,
+  )!;
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  standOn(n, brick);
+  s.hitBlock(brick, s.player);
+  assert.equal(n.alive, true);
+  assert.equal(brick.broken, false);
+  assert.equal(n.body.velocity.y, -T.stompBounce);
+  assert.equal(n.shell, "none");
+  const koopa = s.npcs.find((npc) => npc.kind === "koopa")!;
+  const other = s.obstacles.find(
+    (c) =>
+      c.kind === "brick" &&
+      !c.question &&
+      !c.hidden &&
+      c !== brick &&
+      c.y > 300,
+  )!;
+  standOn(koopa, other);
+  s.hitBlock(other, s.player);
+  assert.equal(koopa.alive, true);
+  assert.equal(koopa.shell, "none");
+  assert.equal(koopa.body.velocity.y, -T.stompBounce);
+
+  give(s, s.player, "mushroom");
+  const breakable = s.obstacles.find(
+    (c) =>
+      c.kind === "brick" &&
+      !c.question &&
+      !c.hidden &&
+      !c.broken &&
+      c !== brick &&
+      c !== other &&
+      c.y > 300,
+  )!;
+  const falling = s.npcs.find(
+    (npc) => npc.alive && npc !== n && npc !== koopa,
+  )!;
+  standOn(falling, breakable);
+  s.hitBlock(breakable, s.player);
+  assert.equal(breakable.broken, true);
+  assert.equal(falling.alive, true);
+  assert.equal(falling.body.velocity.y, -T.stompBounce);
+  assert.equal(
+    s.particles.some((p) => p.color === "#bc0018"),
+    false,
+  );
+});
+
+test("Mario bump and break kill an NPC on the block", () => {
+  const s = game();
+  const box = s.obstacles.find((c) => c.question && !c.hidden)!;
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  standOn(n, box);
+  s.hitBlock(box, s.mario);
+  assert.equal(n.alive, false);
+  assert.equal(box.broken, false);
+  assert.ok(s.particles.some((p) => p.color === "#bc0018"));
+
+  const brick = s.obstacles.find(
+    (c) => c.kind === "brick" && !c.question && !c.hidden && c.y > 300,
+  )!;
+  const koopa = s.npcs.find((npc) => npc.kind === "koopa")!;
+  standOn(koopa, brick);
+  s.hitBlock(brick, s.mario);
+  assert.equal(koopa.alive, false);
+  assert.equal(koopa.shell, "none");
+  assert.equal(brick.broken, true);
+
+  const s2 = game();
+  const giantBrick = s2.obstacles.find(
+    (c) => c.kind === "brick" && !c.question && !c.hidden && c.y > 300,
+  )!;
+  const giant = s2.npcs.find((npc) => npc.kind === "goomba")!;
+  give(s2, giant, "mushroom");
+  standOn(giant, giantBrick);
+  s2.hitBlock(giantBrick, s2.mario);
+  assert.equal(giant.alive, false);
+  assert.equal(giant.scale, T.mushroomScale);
+
+  const s3 = game();
+  const starBrick = s3.obstacles.find(
+    (c) => c.kind === "brick" && !c.question && !c.hidden && c.y > 300,
+  )!;
+  const starred = s3.npcs.find((npc) => npc.kind === "goomba")!;
+  give(s3, starred, "star");
+  standOn(starred, starBrick);
+  s3.hitBlock(starBrick, s3.mario);
+  assert.equal(starred.alive, true);
 });
 
 test("player coins increment a counter without changing rescue scores", () => {

@@ -5,7 +5,7 @@ import {
   overlaps,
   rayBlocked,
 } from "./physics.ts";
-import { MAP_TOP, PHRASES, TUNING as T, jumpArc } from "./config.ts";
+import { MAP_TOP, PHRASES, TUNING as T, blockDrawY, jumpArc } from "./config.ts";
 import { CAMPAIGN } from "./levels.ts";
 import { Room } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
@@ -159,6 +159,8 @@ export const fireballScaleFor = (scale: number) =>
     : scale >= T.giantScale
       ? T.playerFireballScale
       : 1;
+export const itemSpriteSize = (kind: ItemKind) =>
+  kind === "mushroom8x" ? 48 : 32;
 export type Item = {
   id: number;
   kind: ItemKind;
@@ -167,6 +169,8 @@ export type Item = {
   originY: number;
   direction: number;
   age: number;
+  block?: Obstacle;
+  clip?: { x: number; y: number; w: number; h: number };
 };
 export type CoinPop = { x: number; y: number; age: number };
 export const rescueImpossible = (
@@ -973,6 +977,7 @@ export class Simulation {
   hitBlock(c: Obstacle, hitter: Actor) {
     if (c.broken || c.kind !== "brick" || c.bounce > 0) return;
     this.collectCoinsOnBlock(c, hitter);
+    this.bumpActorsOnBlock(c, hitter);
     const prize = c.content === "1-up" || (c.hidden && c.content === "coin");
     if (
       !c.question &&
@@ -1016,7 +1021,7 @@ export class Simulation {
   private spawnItem(c: Obstacle, kind: ItemKind, facing: number) {
     const body = this.physics.rectangle(c.x, c.y, 24, 28, false);
     Body.setFrozen(body, true);
-    this.items.push({
+    const item: Item = {
       id: this.nextId++,
       kind,
       body,
@@ -1024,7 +1029,28 @@ export class Simulation {
       originY: c.y,
       direction: facing,
       age: 0,
-    });
+      block: c,
+    };
+    this.setEmergeClip(item);
+    this.items.push(item);
+  }
+
+  private setEmergeClip(item: Item) {
+    if (item.emerge <= 0) {
+      item.clip = undefined;
+      return;
+    }
+    const bouncedY = item.block
+      ? blockDrawY(item.block.y, item.block.bounce)
+      : item.originY;
+    const top = bouncedY - T.brickSize / 2;
+    const size = itemSpriteSize(item.kind);
+    item.clip = {
+      x: item.body.position.x - size / 2,
+      y: 0,
+      w: size,
+      h: Math.max(1, top),
+    };
   }
 
   private collectCoin(coin: { collected: boolean }, collector: Actor) {
@@ -1039,12 +1065,45 @@ export class Simulation {
   private collectCoinsOnBlock(block: Obstacle, collector: Actor) {
     const half = T.brickSize / 2;
     for (const room of this.rooms.values())
-      for (const coin of room.coins)
+      for (const coin of room.coins) {
         if (
-          Math.abs(coin.x - block.x) < half &&
-          Math.abs(coin.y - (block.y - T.brickSize)) < half
+          coin.collected ||
+          Math.abs(coin.x - block.x) >= half ||
+          Math.abs(coin.y - (block.y - T.brickSize)) >= half
         )
-          this.collectCoin(coin, collector);
+          continue;
+        this.collectCoin(coin, collector);
+        if (!coin.collected) continue;
+        this.coinPops.push({ x: coin.x, y: coin.y, age: 0 });
+        if (collector !== this.player) this.events.push("coin");
+      }
+  }
+
+  private actorOnBlock(a: Actor, block: Obstacle) {
+    const half = T.brickSize / 2;
+    const top = block.y - half;
+    return (
+      a.body.bounds.max.y >= top - 2 &&
+      a.body.bounds.max.y <= top + 8 &&
+      a.body.bounds.max.x > block.x - half &&
+      a.body.bounds.min.x < block.x + half
+    );
+  }
+
+  private bumpActorsOnBlock(block: Obstacle, hitter: Actor) {
+    for (const n of this.npcs) {
+      if (!n.alive || n.saved || this.inPipe(n) || !this.actorOnBlock(n, block))
+        continue;
+      if (hitter === this.mario) {
+        if (n.starLeft <= 0) this.kill(n);
+        continue;
+      }
+      Body.setVelocity(n.body, {
+        x: n.body.velocity.x,
+        y: -T.stompBounce,
+      });
+      n.grounded = false;
+    }
   }
 
   collect(a: Actor, item: Item) {
@@ -1144,8 +1203,10 @@ export class Simulation {
           y: item.originY - 32 * (1 - item.emerge / 0.45),
         });
         if (item.emerge === 0) Body.setFrozen(item.body, false);
+        this.setEmergeClip(item);
         continue;
       }
+      item.clip = undefined;
       const p = item.body.position;
       const floor = this.solids.some(
         (s) =>

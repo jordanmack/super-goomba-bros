@@ -1,9 +1,9 @@
 import Phaser from "phaser";
-import { MAP_TOP, TUNING as T } from "../config";
+import { MAP_TOP, TUNING as T, blockDrawY } from "../config";
 import { isSolidTile, themeFor } from "../levels";
 import type { Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
-import type { Actor, Simulation } from "../simulation";
+import { itemSpriteSize, type Actor, type Simulation } from "../simulation";
 import { flagTextureKey } from "../smb-sprites";
 
 export class Play extends Phaser.Scene {
@@ -13,6 +13,14 @@ export class Play extends Phaser.Scene {
   private pipeMasks = new Map<
     number,
     { shape: Phaser.GameObjects.Rectangle; mask: Phaser.Filters.Mask }
+  >();
+  private itemMasks = new Map<
+    number,
+    {
+      sprite: Phaser.GameObjects.Image;
+      shape: Phaser.GameObjects.Rectangle;
+      mask: Phaser.Filters.Mask;
+    }
   >();
   tiles!: Phaser.Tilemaps.TilemapLayer;
   tick?: (time: number, delta: number) => void;
@@ -36,6 +44,11 @@ export class Play extends Phaser.Scene {
         entry.shape.destroy();
       }
       this.pipeMasks.clear();
+      for (const entry of this.itemMasks.values()) {
+        entry.mask.destroy();
+        entry.shape.destroy();
+      }
+      this.itemMasks.clear();
       this.room = undefined;
     });
   }
@@ -115,10 +128,8 @@ export class Play extends Phaser.Scene {
         )
         .setDisplaySize(32, 32);
       sprite
-        .setPosition(c.x, c.y)
+        .setPosition(c.x, blockDrawY(c.y, c.bounce))
         .setVisible(!c.broken && !(c.hidden && !c.used));
-      sprite.y =
-        c.y - 10 * Math.sin((Math.PI * c.bounce) / T.blockBounceSeconds);
     }
     for (const actor of [sim.player, ...sim.npcs, sim.mario])
       this.renderActor(actor, sim);
@@ -151,16 +162,25 @@ export class Play extends Phaser.Scene {
     for (const coin of room.coins)
       if (!coin.collected)
         image(coin.x, coin.y, 32, 32, "coin", 2).setRotation(0);
+    const liveItems = new Set<number>();
     for (const item of sim.items) {
-      const size = item.kind === "mushroom8x" ? 48 : 32;
-      image(
+      const size = itemSpriteSize(item.kind);
+      const sprite = image(
         item.body.position.x,
         item.body.position.y,
         size,
         size,
         item.kind,
         4,
-      ).setRotation(0);
+      );
+      sprite.setRotation(0);
+      if (item.clip) {
+        liveItems.add(item.id);
+        this.bindItemClip(item.id, sprite, item.clip);
+      }
+    }
+    for (const id of [...this.itemMasks.keys()]) {
+      if (!liveItems.has(id)) this.clearItemClip(id);
     }
     for (const pop of sim.coinPops)
       image(pop.x, pop.y - 48 * Math.min(1, pop.age / 0.5), 32, 32, "coin", 6).setRotation(0);
@@ -353,5 +373,43 @@ export class Play extends Phaser.Scene {
           ]
         : 0xffffff,
     );
+  }
+
+  private bindItemClip(
+    id: number,
+    sprite: Phaser.GameObjects.Image,
+    clip: { x: number; y: number; w: number; h: number },
+  ) {
+    let entry = this.itemMasks.get(id);
+    if (entry && entry.sprite !== sprite) {
+      this.clearItemClip(id);
+      entry = undefined;
+    }
+    if (!entry) {
+      sprite.enableFilters();
+      const shape = this.add
+        .rectangle(0, 0, 1, 1, 0xffffff)
+        .setVisible(false);
+      entry = {
+        sprite,
+        shape,
+        mask: sprite.filters!.external.addMask(
+          shape,
+          false,
+          this.cameras.main,
+        ),
+      };
+      this.itemMasks.set(id, entry);
+    }
+    entry.shape.setPosition(clip.x + clip.w / 2, clip.y + clip.h / 2);
+    entry.shape.setSize(clip.w, clip.h);
+  }
+
+  private clearItemClip(id: number) {
+    const entry = this.itemMasks.get(id);
+    if (!entry) return;
+    entry.sprite.filters?.external.remove(entry.mask);
+    entry.shape.destroy();
+    this.itemMasks.delete(id);
   }
 }

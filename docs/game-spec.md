@@ -200,8 +200,11 @@ spontaneously change his active power. Restarting a stage resets its timer.
 
 Floating bricks and question blocks are solid. A small-player head hit bounces
 a brick without breaking it. A giant-player or Mario head hit breaks an ordinary
-brick and removes its collision. Breaking a brick under an NPC does not kill it.
-A bounce or break from a head hit collects each coin sitting on that block.
+brick and removes its collision. A bounce or break from a head hit collects each
+coin sitting on that block, with the same coin pop and sound as a hidden coin
+block. It knocks up each NPC standing on the block. A player bounce or break
+does not kill that NPC. Mario's bounce or break kills them, including Koopas;
+this is not a stomp into a shell.
 
 Visible question blocks that are not hidden 1-up or hidden coin blocks release
 one random star, mushroom, or flower and become a used block. Original hidden
@@ -211,7 +214,8 @@ a used platform. Hidden 1-up blocks and the original non-hidden 1-up bricks
 release the green 1-up mushroom, not a red mushroom or other power. The omitted
 castle stop block stays omitted so the rescue door remains open.
 
-An item emerges before it can be collected. Mushrooms and 1-up mushrooms move
+An item emerges before it can be collected. While it rises, only the part above
+the block is visible. Mushrooms and 1-up mushrooms move
 and fall, stars bounce, and flowers remain where they land. Living characters
 can collect by contact. Items expire after their lifetime or when they leave
 the level. A 1-up grants an extra life and plays the original 1-up sound.

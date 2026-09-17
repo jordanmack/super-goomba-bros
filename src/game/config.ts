@@ -82,6 +82,10 @@ export const TUNING = {
   brickBurst: 12,
 } as const;
 
+export function blockDrawY(y: number, bounce: number) {
+  return y - 10 * Math.sin((Math.PI * bounce) / TUNING.blockBounceSeconds);
+}
+
 // NES X-speed byte is our 2x px/frame * 8. Cutoffs 16 and 25 match SMB1.
 export function jumpArc(vx: number) {
   const nes = Math.abs(vx) * 8;
