@@ -389,6 +389,31 @@ test("header pad button cycles compact, NES, and hidden without covering the wor
   await expect(footer).toBeVisible();
 });
 
+test("compact D-pad shows only arrow icons and keeps aria-labels", async ({
+  page,
+}) => {
+  await expect(page.locator(".nes-pad-art")).toHaveCount(0);
+  for (const viewport of [
+    { width: 844, height: 390 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const name of ["Up", "Down", "Left", "Right"]) {
+      const button = page.getByRole("button", { name, exact: true });
+      await expect(button).toBeVisible();
+      await expect(button).toHaveAttribute("aria-label", name);
+      await expect(button.locator("svg")).toBeVisible();
+      expect((await button.innerText()).trim()).toBe("");
+    }
+    await expect(page.getByRole("button", { name: "A", exact: true })).toHaveText(
+      "A",
+    );
+    await expect(page.getByRole("button", { name: "B", exact: true })).toHaveText(
+      "B",
+    );
+  }
+});
+
 test("compact pad is the default and maps Up to jump and B to run", async ({
   page,
 }) => {

@@ -641,10 +641,6 @@ p {
 .control-right {
   min-width: 57px;
 }
-.control-left span,
-.control-right span {
-  display: none;
-}
 .cooldown {
   position: absolute;
   inset: auto 0 0;

@@ -372,7 +372,9 @@ export default function App() {
       onDragStart={(e) => e.preventDefault()}
     >
       {icon}
-      {!extraClass.includes("nes-hit") && label && <span>{label}</span>}
+      {!extraClass.includes("nes-hit") &&
+        !extraClass.includes("dpad-") &&
+        label && <span>{label}</span>}
     </button>
   );
   const cyclePad = () => {
