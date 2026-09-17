@@ -986,13 +986,58 @@ test("touch movement supports simultaneous jump and clears on release", async ({
   await context.close();
 });
 
-test("player bubble is 8-bit and warned NPCs flash a brief exclamation", async ({
+test("player bubble is 8-bit and warned NPCs flash a tiny unscaled sweat drop", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(() => !!(window as any).__game?.sim);
+  await page.evaluate(() => {
+    (window as any).readSweatMark = (play: any, game: any) => {
+      const bang = play.effects.some(
+        (e: any) => e.visible && e.texture.key === "exclaim",
+      );
+      if (bang) throw new Error("white bang still visible");
+      const mark = play.effects.find(
+        (e: any) => e.visible && e.texture.key === "sweatDrop",
+      );
+      if (!mark) return null;
+      const src = game.textures.get(mark.texture.key).getSourceImage();
+      const canvas = document.createElement("canvas");
+      canvas.width = src.width;
+      canvas.height = src.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(src, 0, 0);
+      const data = ctx.getImageData(0, 0, src.width, src.height).data;
+      let dark = 0,
+        cyan = 0,
+        white = 0,
+        opaque = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (!data[i + 3]) continue;
+        opaque++;
+        const r = data[i],
+          g = data[i + 1],
+          b = data[i + 2];
+        if ((r + g + b) / 3 < 40) dark++;
+        if (b > r + 20 && g > 180) cyan++;
+        if (r > 250 && g > 250 && b > 250) white++;
+      }
+      return {
+        key: mark.texture.key,
+        x: mark.x,
+        y: mark.y,
+        displayWidth: mark.displayWidth,
+        displayHeight: mark.displayHeight,
+        sourceWidth: src.width,
+        sourceHeight: src.height,
+        dark,
+        cyan,
+        allWhiteOpaque: opaque > 0 && white === opaque,
+      };
+    };
+  });
   await page.evaluate((range) => {
     const s = (window as any).__game.sim;
     const n = s.npcs[0];
@@ -1044,25 +1089,132 @@ test("player bubble is 8-bit and warned NPCs flash a brief exclamation", async (
             e.displayHeight === 5,
         );
         return {
-          exclaim: play.effects.some(
-            (e: { visible: boolean; texture: { key: string } }) =>
-              e.visible && e.texture.key === "exclaim",
+          mark: (window as any).readSweatMark(
+            play,
+            (window as any).__game.renderer.game,
           ),
           standingYellow,
         };
       }),
     )
-    .toEqual({ exclaim: true, standingYellow: false });
+    .toMatchObject({ standingYellow: false, mark: expect.anything() });
+  const first = await page.evaluate(() =>
+    (window as any).readSweatMark(
+      (window as any).__game.renderer.play,
+      (window as any).__game.renderer.game,
+    ),
+  );
+  expect(first).toBeTruthy();
+  expect(first!.key).not.toBe("exclaim");
+  expect(first!.sourceWidth).toBeLessThanOrEqual(6);
+  expect(first!.sourceHeight).toBeLessThanOrEqual(8);
+  expect(first!.displayWidth).toBeLessThanOrEqual(16);
+  expect(first!.displayHeight).toBeLessThanOrEqual(16);
+  expect(first!.displayWidth).toBe(first!.sourceWidth * 2);
+  expect(first!.displayHeight).toBe(first!.sourceHeight * 2);
+  expect(first!.dark).toBeGreaterThan(0);
+  expect(first!.cyan).toBeGreaterThan(0);
+  expect(first!.allWhiteOpaque).toBe(false);
+  const aboveHead = await page.evaluate(() => {
+    const g = (window as any).__game;
+    const n = g.sim.npcs[0];
+    const mark = (window as any).readSweatMark(g.renderer.play, g.renderer.game);
+    const sprite = g.renderer.play.actors.get(n.id);
+    return mark.y + mark.displayHeight / 2 <= sprite.y - sprite.displayHeight;
+  });
+  expect(aboveHead).toBe(true);
+  for (const scale of [2, 3, 8]) {
+    const sized = await page.evaluate((scale) => {
+      const g = (window as any).__game;
+      g.paused = true;
+      const n = g.sim.npcs[0];
+      n.scale = scale;
+      n.exclaimLeft = 0.7;
+      n.alive = true;
+      n.saved = false;
+      g.renderer.play.renderState(g.sim, g.renderer.width);
+      const mark = (window as any).readSweatMark(
+        g.renderer.play,
+        g.renderer.game,
+      );
+      const sprite = g.renderer.play.actors.get(n.id);
+      return {
+        mark,
+        aboveHead:
+          mark &&
+          mark.y + mark.displayHeight / 2 <= sprite.y - sprite.displayHeight,
+      };
+    }, scale);
+    expect(sized.mark?.displayWidth).toBe(first!.displayWidth);
+    expect(sized.mark?.displayHeight).toBe(first!.displayHeight);
+    expect(sized.mark?.key).toBe(first!.key);
+    expect(sized.aboveHead).toBe(true);
+  }
+  expect(
+    await page.evaluate(() => {
+      const g = (window as any).__game;
+      g.paused = true;
+      for (const a of g.sim.npcs) a.exclaimLeft = 0;
+      const n = g.sim.npcs.find((a: { kind: string }) => a.kind === "koopa");
+      if (!n) return null;
+      n.exclaimLeft = 0.7;
+      n.alive = true;
+      n.saved = false;
+      g.renderer.play.renderState(g.sim, g.renderer.width);
+      const mark = (window as any).readSweatMark(
+        g.renderer.play,
+        g.renderer.game,
+      );
+      const sprite = g.renderer.play.actors.get(n.id);
+      n.exclaimLeft = 0;
+      return {
+        aboveHead:
+          !!mark &&
+          mark.y + mark.displayHeight / 2 <= sprite.y - sprite.displayHeight,
+        displayWidth: mark?.displayWidth,
+      };
+    }),
+  ).toMatchObject({ aboveHead: true, displayWidth: first!.displayWidth });
+  expect(
+    await page.evaluate(() => {
+      const g = (window as any).__game;
+      g.paused = true;
+      const n = g.sim.npcs[0];
+      n.scale = 1;
+      n.exclaimLeft = 0.7;
+      n.alive = true;
+      n.saved = true;
+      g.renderer.play.renderState(g.sim, g.renderer.width);
+      const saved = (window as any).readSweatMark(
+        g.renderer.play,
+        g.renderer.game,
+      );
+      n.saved = false;
+      n.alive = false;
+      g.renderer.play.renderState(g.sim, g.renderer.width);
+      const dead = (window as any).readSweatMark(
+        g.renderer.play,
+        g.renderer.game,
+      );
+      n.alive = true;
+      n.exclaimLeft = 0;
+      g.renderer.play.renderState(g.sim, g.renderer.width);
+      const spent = (window as any).readSweatMark(
+        g.renderer.play,
+        g.renderer.game,
+      );
+      n.exclaimLeft = 0.7;
+      g.paused = false;
+      return { saved, dead, spent };
+    }),
+  ).toEqual({ saved: null, dead: null, spent: null });
   await expect
     .poll(() =>
       page.evaluate(() => {
         const g = (window as any).__game;
         return (
           g.sim.npcs[0].exclaimLeft === 0 &&
-          !g.renderer.play.effects.some(
-            (e: { visible: boolean; texture: { key: string } }) =>
-              e.visible && e.texture.key === "exclaim",
-          )
+          !(window as any).readSweatMark(g.renderer.play, g.renderer.game)
         );
       }),
     )

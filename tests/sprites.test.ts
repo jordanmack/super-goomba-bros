@@ -1,9 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   flagTextureKey,
   stampGoombaFlag,
+  stampSweatDrop,
+  SWEAT_DROP_HEIGHT,
+  SWEAT_DROP_KEY,
+  SWEAT_DROP_WIDTH,
 } from "../src/game/smb-sprites.ts";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const W = 16;
 const H = 16;
@@ -84,4 +93,65 @@ test("Goomba flag stamps Goomba art into the cloth, not a Mario-flag recolor", (
   assert.notDeepEqual(px(flag, 8, 8), px(recolor, 8, 8));
   assert.notDeepEqual(px(flag, 6, 7), px(recolor, 6, 7));
   assert.notEqual(Buffer.from(flag).compare(Buffer.from(recolor)), 0);
+});
+
+test("the warned-NPC mark is a tiny outlined sweat drop, not a white bang", () => {
+  assert.ok(SWEAT_DROP_WIDTH <= 6);
+  assert.ok(SWEAT_DROP_HEIGHT <= 8);
+  assert.notEqual(SWEAT_DROP_WIDTH, 8);
+  assert.notEqual(SWEAT_DROP_HEIGHT, 16);
+  const data = new Uint8ClampedArray(SWEAT_DROP_WIDTH * SWEAT_DROP_HEIGHT * 4);
+  stampSweatDrop(data);
+  const at = (x: number, y: number) => px(data, x, y, SWEAT_DROP_WIDTH);
+  const opaqueXs = (y: number) => {
+    const xs: number[] = [];
+    for (let x = 0; x < SWEAT_DROP_WIDTH; x++)
+      if (at(x, y)[3]) xs.push(x);
+    return xs;
+  };
+  const top = opaqueXs(0);
+  const mid = opaqueXs(Math.floor(SWEAT_DROP_HEIGHT / 2));
+  const bottom = opaqueXs(SWEAT_DROP_HEIGHT - 1);
+  assert.equal(top.length, 1);
+  assert.ok(mid.length > top.length);
+  assert.ok(bottom.length <= top.length);
+  assert.equal(at(0, 0)[3], 0);
+  assert.equal(at(SWEAT_DROP_WIDTH - 1, 0)[3], 0);
+  let dark = 0,
+    light = 0,
+    white = 0;
+  for (let y = 0; y < SWEAT_DROP_HEIGHT; y++) {
+    for (let x = 0; x < SWEAT_DROP_WIDTH; x++) {
+      const [r, g, b, a] = at(x, y);
+      if (!a) continue;
+      const lum = (r + g + b) / 3;
+      if (lum < 40) dark++;
+      if (lum > 180) light++;
+      if (r > 250 && g > 250 && b > 250) white++;
+    }
+  }
+  assert.ok(dark >= 8);
+  assert.ok(light >= 4);
+  assert.ok(white < dark + light);
+  const tip = at(top[0], 0);
+  assert.deepEqual(tip, [0, 0, 0, 255]);
+  const fill = at(Math.floor(SWEAT_DROP_WIDTH / 2), 3);
+  assert.ok(fill[3] === 255 && fill[2] > fill[0] && fill[1] > 180);
+});
+
+test("Play draws the sweat drop unscaled, never a scaling exclaim bang", () => {
+  const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
+  const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
+  const draw = play.slice(
+    play.indexOf("n.exclaimLeft"),
+    play.indexOf("this.effects[index]"),
+  );
+  assert.equal(SWEAT_DROP_KEY, "sweatDrop");
+  assert.match(draw, /SWEAT_DROP_WIDTH \* 2/);
+  assert.match(draw, /SWEAT_DROP_HEIGHT \* 2/);
+  assert.match(draw, /SWEAT_DROP_KEY/);
+  assert.doesNotMatch(draw, /n\.scale/);
+  assert.doesNotMatch(play, /["']exclaim["']/);
+  assert.doesNotMatch(sprites, /pixelExclaim/);
+  assert.match(sprites, /sweatDrop/);
 });

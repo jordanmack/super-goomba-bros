@@ -4,7 +4,12 @@ import { isSolidTile, themeFor } from "../levels";
 import type { Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
 import { itemSpriteSize, type Actor, type Simulation } from "../simulation";
-import { flagTextureKey } from "../smb-sprites";
+import {
+  flagTextureKey,
+  SWEAT_DROP_HEIGHT,
+  SWEAT_DROP_KEY,
+  SWEAT_DROP_WIDTH,
+} from "../smb-sprites";
 
 export class Play extends Phaser.Scene {
   actors = new Map<number, Phaser.GameObjects.Sprite>();
@@ -237,12 +242,16 @@ export class Play extends Phaser.Scene {
       ).setRotation(0);
     for (const n of sim.npcs)
       if (n.exclaimLeft > 0 && n.alive && !n.saved)
+        // Tiny and unscaled: same pixels on 1x and 8x NPCs.
         image(
           n.body.position.x,
-          n.body.position.y - 34 * n.scale,
-          16 * n.scale,
-          32 * n.scale,
-          "exclaim",
+          n.body.bounds.max.y -
+            this.actorSpriteHeight(n, sim) -
+            SWEAT_DROP_HEIGHT -
+            2,
+          SWEAT_DROP_WIDTH * 2,
+          SWEAT_DROP_HEIGHT * 2,
+          SWEAT_DROP_KEY,
           12,
         ).setRotation(0);
     for (; index < this.effects.length; index++)
@@ -358,8 +367,7 @@ export class Play extends Phaser.Scene {
         .setTexture(
           base + (mario && !actor.grounded ? "Jump" : skid ? "Skid" : ""),
         );
-    const height =
-      (shelled ? 32 : actor.kind === "koopa" ? 48 : mario ? 64 : 32) * shown;
+    const height = this.actorSpriteHeight(actor, sim);
     sprite.setPosition(
       Math.round(actor.body.position.x) +
         (shake && Math.floor(sim.elapsed * 16) % 2 ? shown : 0),
@@ -377,6 +385,15 @@ export class Play extends Phaser.Scene {
             Math.floor(sim.elapsed * 12) % 4
           ]
         : 0xffffff,
+    );
+  }
+
+  private actorSpriteHeight(actor: Actor, sim: Simulation) {
+    const shown = sim.displayScale(actor);
+    const shelled = actor.kind === "koopa" && actor.shell !== "none";
+    return (
+      (shelled ? 32 : actor.kind === "koopa" ? 48 : actor.kind === "mario" ? 64 : 32) *
+      shown
     );
   }
 

@@ -122,18 +122,54 @@ function mushroomCap(source: HTMLCanvasElement, cap: [number, number, number]) {
   return canvas;
 }
 
-function pixelExclaim() {
+export const SWEAT_DROP_KEY = "sweatDrop";
+export const SWEAT_DROP_WIDTH = 5;
+export const SWEAT_DROP_HEIGHT = 7;
+
+const SWEAT_DROP_PIXELS = [
+  "..#..",
+  ".#C#.",
+  "#CWC#",
+  "#CCC#",
+  "#CCC#",
+  ".#C#.",
+  "..#..",
+] as const;
+
+export function stampSweatDrop(
+  data: Uint8ClampedArray,
+  width = SWEAT_DROP_WIDTH,
+) {
+  for (let y = 0; y < SWEAT_DROP_PIXELS.length; y++) {
+    const row = SWEAT_DROP_PIXELS[y];
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x];
+      if (ch === ".") continue;
+      const i = (y * width + x) * 4;
+      if (ch === "#") {
+        data[i] = data[i + 1] = data[i + 2] = 0;
+      } else if (ch === "W") {
+        data[i] = data[i + 1] = data[i + 2] = 255;
+      } else {
+        data[i] = 184;
+        data[i + 1] = 224;
+        data[i + 2] = 252;
+      }
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+}
+
+function pixelSweatDrop() {
   const canvas = document.createElement("canvas");
-  canvas.width = 8;
-  canvas.height = 16;
+  canvas.width = SWEAT_DROP_WIDTH;
+  canvas.height = SWEAT_DROP_HEIGHT;
   const context = canvas.getContext("2d")!;
   context.imageSmoothingEnabled = false;
-  context.fillStyle = "#ffffff";
-  context.fillRect(3, 0, 2, 9);
-  context.fillRect(2, 0, 4, 2);
-  context.fillRect(2, 7, 4, 2);
-  context.fillRect(3, 12, 2, 4);
-  context.fillRect(2, 13, 4, 2);
+  const pixels = context.createImageData(SWEAT_DROP_WIDTH, SWEAT_DROP_HEIGHT);
+  stampSweatDrop(pixels.data);
+  context.putImageData(pixels, 0, 0);
   return canvas;
 }
 
@@ -240,6 +276,6 @@ export function scenerySprites(
     star: crop(items, 0, 48, 16, 16),
     marioFlag,
     goombaFlag: goombaFlag(marioFlag, goomba),
-    exclaim: pixelExclaim(),
+    [SWEAT_DROP_KEY]: pixelSweatDrop(),
   };
 }

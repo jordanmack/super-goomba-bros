@@ -106,8 +106,9 @@ No contact is required. White pixel text with a black outline appears at the
 world position where the player spoke, and a short squeaky voice cue plays.
 A new shout does not replace earlier lines; each line expires on its own after
 about two seconds. The same radius warns those NPCs. Each character counts as
-warned only once. A warned NPC shows a brief 8-bit exclamation mark above its
-head, then the mark goes away.
+warned only once. A warned NPC shows a tiny 8-bit sweat drop above its head,
+then the mark goes away. The drop stays the same pixel size at every mushroom
+scale.
 
 Every phrase must urge escape from incoming Mario. Use the phrase pool in
 [tuning](../src/game/config.ts), with lines such as “Run! Mario is coming!”
