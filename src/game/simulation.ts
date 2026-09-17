@@ -995,6 +995,10 @@ export class Simulation {
     return a.starLeft > 0;
   }
 
+  private immuneToMario(a: Actor) {
+    return a.scale >= T.hugeScale;
+  }
+
   displayScale(a: Actor) {
     if (a.transformLeft <= 0) return a.scale;
     const shown = T.transformSeconds - a.transformLeft;
@@ -1024,7 +1028,14 @@ export class Simulation {
   }
 
   private hurt(a: Actor) {
-    if (!a.alive || a.saved || a.starLeft > 0 || this.shrinking(a)) return false;
+    if (
+      !a.alive ||
+      a.saved ||
+      a.starLeft > 0 ||
+      this.immuneToMario(a) ||
+      this.shrinking(a)
+    )
+      return false;
     if (a.scale > 1) {
       this.setGoombaScale(a, 1, true);
       this.events.push("shrink");
@@ -1660,13 +1671,16 @@ export class Simulation {
           marioBottom <= prevTop &&
           this.mario.body.bounds.max.y >= this.npcTop(n);
         if (fallingOn) {
-          this.koopaStomp(n, this.mario);
-          Body.setVelocity(this.mario.body, {
-            x: this.mario.body.velocity.x,
-            y: -T.stompBounce,
-          });
-        } else if (n.shell === "stopped") this.kickShell(n, this.mario);
-        else this.shellHits(this.mario);
+          if (!this.immuneToMario(n)) {
+            this.koopaStomp(n, this.mario);
+            Body.setVelocity(this.mario.body, {
+              x: this.mario.body.velocity.x,
+              y: -T.stompBounce,
+            });
+          }
+        } else if (n.shell === "stopped") {
+          if (!this.immuneToMario(n)) this.kickShell(n, this.mario);
+        } else this.shellHits(this.mario);
       }
       if (n.shell === "moving") {
         for (const other of this.npcs) {
@@ -2542,6 +2556,7 @@ export class Simulation {
         this.overlapActors(this.mario, a)
       ) {
         if (a === this.player && !a.grounded && !this.mario.grounded) continue;
+        if (this.immuneToMario(a)) continue;
         if (a.kind === "koopa") {
           this.koopaStomp(a, this.mario);
           Body.setVelocity(this.mario.body, {
@@ -2617,7 +2632,7 @@ export class Simulation {
           !this.inPipe(a) &&
           this.overlapFireball(a, f.x, f.y, radius)
         ) {
-          if (a.starLeft <= 0) this.kill(a);
+          if (a.starLeft <= 0 && !this.immuneToMario(a)) this.kill(a);
           f.age = 6;
           break;
         }

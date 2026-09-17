@@ -3662,17 +3662,203 @@ test("8x NPCs keep running and use the same size ladder", () => {
   assert.ok(n.body.position.x > startX + 80);
 });
 
-test("first damaging stomp shrinks 8x form and cancels the timer", () => {
+test("8x player survives a Mario stomp with the same scale and vy", () => {
   const s = game();
   give(s, s.player, "mushroom8x");
   parkNpcs(s, []);
+  tick(s, 0.1);
   marioStomp(s, s.player);
+  const scale = s.player.scale;
+  const vy = s.player.body.velocity.y;
   tick(s, dt);
   assert.equal(s.player.alive, true);
-  assert.equal(s.player.scale, 1);
-  assert.equal(s.player.hugeLeft, 0);
-  assert.equal(s.player.body.ignoreWalls, false);
-  assert.ok(s.events.includes("shrink"));
+  assert.equal(s.player.scale, scale);
+  assert.equal(s.player.scale, T.hugeScale);
+  assert.equal(s.player.body.velocity.y, vy);
+  assert.ok(s.player.hugeLeft > 0);
+  assert.equal(s.player.body.ignoreWalls, true);
+  assert.notEqual(s.mario.body.velocity.y, -T.stompBounce);
+  assert.ok(s.mario.body.velocity.y > 0);
+  assert.equal(s.events.includes("shrink"), false);
+  assert.equal(s.events.includes("splat"), false);
+});
+
+test("8x NPC survives a Mario stomp with the same scale and vy", () => {
+  for (const kind of ["goomba", "koopa"] as const) {
+    const s = game();
+    const n =
+      kind === "koopa"
+        ? troopa(s)
+        : s.npcs.find((npc) => npc.kind === "goomba")!;
+    give(s, n, "mushroom8x");
+    parkNpcs(s, [n]);
+    n.idleWalking = false;
+    n.idleWait = 99;
+    n.wait = 99;
+    tick(s, 0.1);
+    marioStomp(s, n);
+    const scale = n.scale;
+    const vy = n.body.velocity.y;
+    tick(s, dt);
+    assert.equal(n.alive, true, kind);
+    assert.equal(n.scale, scale, kind);
+    assert.equal(n.scale, T.hugeScale, kind);
+    assert.equal(n.body.velocity.y, vy, kind);
+    assert.equal(n.shell, "none", kind);
+    assert.notEqual(s.mario.body.velocity.y, -T.stompBounce, kind);
+    assert.ok(s.mario.body.velocity.y > 0, kind);
+    assert.equal(s.events.includes("shrink"), false, kind);
+    assert.equal(s.events.includes("splat"), false, kind);
+  }
+});
+
+test("Mario fireball does not kill 8x", () => {
+  for (const who of ["player", "npc"] as const) {
+    const s = game();
+    const target = who === "player" ? s.player : s.npcs[0];
+    give(s, target, "mushroom8x");
+    parkNpcs(s, who === "npc" ? [target] : []);
+    stillMario(s);
+    Body.setPosition(s.mario.body, { x: 4000, y: 411 });
+    s.fireballs.push({
+      id: 42,
+      x: target.body.position.x,
+      y: target.body.position.y,
+      vx: 0,
+      age: 0,
+      owner: "mario",
+      vy: 0,
+    });
+    tick(s, dt);
+    assert.equal(target.alive, true, who);
+    assert.equal(target.scale, T.hugeScale, who);
+    assert.equal(s.events.includes("splat"), false, who);
+  }
+});
+
+test("first damaging stomp still shrinks 2x and 3x", () => {
+  for (const kind of ["mushroom", "mushroom3x"] as const) {
+    const s = game();
+    give(s, s.player, kind);
+    parkNpcs(s, []);
+    marioStomp(s, s.player);
+    tick(s, dt);
+    assert.equal(s.player.alive, true, kind);
+    assert.equal(s.player.scale, 1, kind);
+    assert.ok(s.events.includes("shrink"), kind);
+  }
+});
+
+test("8x still stomps Mario, stays hunted, dies in a pit, then 3x is vulnerable", () => {
+  const stomp = game();
+  give(stomp, stomp.player, "mushroom8x");
+  parkNpcs(stomp, []);
+  assert.equal(stomp.invincible(stomp.player), false);
+  giantStompMario(stomp);
+  tick(stomp, dt);
+  assert.equal(stomp.marioStage, 0);
+  assert.ok(stomp.player.alive && stomp.mario.alive);
+  assert.equal(stomp.player.scale, T.hugeScale);
+  assert.ok(stomp.player.body.velocity.y < 0);
+
+  const hunt = game();
+  give(hunt, hunt.player, "mushroom8x");
+  hunt.random = () => 0;
+  stillMario(hunt);
+  hunt.marioLook = 0;
+  hunt.marioPause = 0;
+  hunt.marioReaction = 0;
+  Body.setPosition(hunt.mario.body, { x: 0, y: 411 });
+  tick(hunt, dt);
+  assert.equal(hunt.marioTarget, hunt.player.id);
+
+  const pit = game();
+  give(pit, pit.player, "mushroom8x");
+  parkNpcs(pit, []);
+  Body.setPosition(pit.player.body, { x: 200, y: 700 });
+  tick(pit, dt);
+  assert.equal(pit.player.alive, false);
+  assert.equal(pit.mode, "dead");
+  assert.equal(pit.events.includes("splat"), false);
+
+  const later = game();
+  give(later, later.player, "mushroom8x");
+  parkNpcs(later, []);
+  tick(later, T.hugeSeconds);
+  assert.equal(later.player.scale, T.giantScale);
+  later.player.transformLeft = 0;
+  marioStomp(later, later.player);
+  tick(later, dt);
+  assert.equal(later.player.alive, true);
+  assert.equal(later.player.scale, 1);
+  assert.ok(later.events.includes("shrink"));
+});
+
+test("air overlap: Mario with higher feet does not hurt 8x", () => {
+  const s = game();
+  give(s, s.player, "mushroom8x");
+  airOverlap(s, 8);
+  assert.ok(s.mario.body.bounds.max.y < s.player.body.bounds.max.y - 0.5);
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.scale, T.hugeScale);
+  assert.equal(s.events.includes("shrink"), false);
+});
+
+test("a moving shell does not hurt 8x", () => {
+  for (const who of ["player", "npc"] as const) {
+    const s = game();
+    const target = who === "player" ? s.player : s.npcs[0];
+    give(s, target, "mushroom8x");
+    const n = troopa(s);
+    parkNpcs(s, who === "npc" ? [target, n] : [n]);
+    n.idleWalking = false;
+    n.wait = 99;
+    n.shell = "moving";
+    n.facing = 1;
+    n.kickIgnore = 0;
+    Body.setPosition(n.body, { x: 200, y: 415 });
+    Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
+    const y = T.groundY - 14 * target.scale;
+    if (who === "player") at(s, n.body.position.x + 8, y);
+    else {
+      Body.setPosition(target.body, { x: n.body.position.x + 8, y });
+      Body.setVelocity(target.body, { x: 0, y: 0 });
+      target.idleWalking = false;
+      target.idleWait = 99;
+    }
+    tick(s, dt);
+    assert.equal(target.alive, true, who);
+    assert.equal(target.scale, T.hugeScale, who);
+    assert.equal(s.events.includes("shrink"), false, who);
+    assert.equal(s.events.includes("splat"), false, who);
+  }
+});
+
+test("Mario side contact does not kick a stopped 8x Koopa shell", () => {
+  const s = game();
+  const n = troopa(s);
+  give(s, n, "mushroom8x");
+  parkNpcs(s, [n]);
+  at(s, 4000);
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  Body.setPosition(n.body, { x: 200, y: T.groundY - 14 * n.scale });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  stillMario(s);
+  Body.setPosition(s.mario.body, {
+    x: n.body.position.x + 20,
+    y: n.body.position.y,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, T.hugeScale);
+  assert.equal(n.shell, "stopped");
+  assert.equal(s.events.includes("kick"), false);
+  assert.notEqual(s.mario.body.velocity.y, -T.stompBounce);
 });
 
 test("stomping a walking Koopa shells it without a player hop, and is not a death", () => {

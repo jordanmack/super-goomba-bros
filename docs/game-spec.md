@@ -188,9 +188,11 @@ Mario observes at intervals, reacts with a delay, and aims ahead of targets.
 Scenery blocks sight. Warnings and running crowds also draw attention.
 His jumps keep their launch direction so targets can dodge.
 Side contact alone is not a stomp, including grounded contact and air overlap
-with equal feet. He still hunts a giant player and giant NPCs. Giant size is
-not star immunity. A player or NPC star still defeats him on contact. Mario
-hitting the player still uses shrink-then-kill.
+with equal feet. He still hunts a giant player and giant NPCs, including 8x.
+2x and 3x size is not star immunity. 8x ignores Mario's stomp, side contact,
+fireball, and moving shell: no shrink, death, or bounce. A player or NPC star
+still defeats him on contact. Mario hitting a 2x or 3x player still uses
+shrink-then-kill.
 
 Running NPCs in view increase capped crowd pressure. More pressure makes Mario
 return sooner, react faster, run faster, and attack more often. Idle, dead,
@@ -244,14 +246,15 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   mushroom while Mario is already big or fire also scores 1000 and does not
   change his stage. Shrink and grow blink between the two sizes. Growth
   resolves overlap with scenery. Giant NPCs can back up to leave low ceilings.
-  The first damaging stomp or hit on mushroom form shrinks to small instead of
-  killing. A flower can remain on the small form.
+  The first damaging stomp or hit on 2x or 3x form shrinks to small instead of
+  killing. 8x ignores Mario's attacks. A flower can remain on the small form.
 - 2x keeps player fireballs at 1x. 3x uses the current giant fireball scale.
   8x fireballs match that size. Existing shots keep their launch size.
 - 8x lasts the star duration, then size becomes 3x. A same-size or smaller
   mushroom does not reset that timer. While 8x, walking smashes breakable bricks
   and treats unbreakable walls and pipe solids as empty. Floors still hold.
   Down at a real pipe entrance still enters. The character can still walk.
+  Mario's stomp, side contact, fireball, and moving shell do nothing to 8x.
 - A flower gives the player fireballs and a white palette. NPCs can show the
   flower palette but do not shoot. Mario becomes Fire Mario.
 - Powers can coexist. 2x, 3x, and flower powers last for the stage; stars and
@@ -265,16 +268,16 @@ on surfaces and stop at walls. Only a 3x or 8x player's fireball breaks an ordin
 breakable brick on side or bottom contact. Top contact bounces and does not
 break. Question blocks, used blocks, and unbreakable tiles are not broken this
 way. Player fireballs do not harm NPCs. Mario's fireballs kill unprotected
-characters, including giants. Stars protect against those fireballs.
+characters, including 2x and 3x. Stars and 8x protect against those fireballs.
 
 ## Death and audio
 
 A campaign starts with three lives. Lives persist across stages in one
 campaign. Play Again resets to three. One successful attack kills an
-unprotected player. Mushroom form shrinks on the first damaging stomp or hit;
-it is not full immunity. Mario's fireballs still kill characters who are not
-star-protected, including giants. Stars grant full immunity. Falling out of
-the level also kills. Death spends a life. If lives remain, the original-style
+unprotected player. 2x and 3x form shrinks on the first damaging stomp or hit;
+that size is not full immunity. 8x ignores Mario's attacks. Mario's fireballs
+still kill 2x and 3x characters who are not star-protected. Stars grant full
+immunity. Falling out of the level also kills, including 8x. Death spends a life. If lives remain, the original-style
 black intro shows WORLD n-n and the player Goomba × remaining lives, then the
 current stage restarts with cleared counters, powers, items, speech, used
 blocks, and pursuit state. The intro is silent; area music starts with play.
