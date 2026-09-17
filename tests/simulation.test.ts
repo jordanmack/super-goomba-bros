@@ -5209,28 +5209,62 @@ test("leftover TIME and castle lines add to SCORE then auto-continue", () => {
 });
 
 test("World 8-4 tally holds through world-clear then returns to the title", () => {
-  const s = game();
-  s.levelIndex = CAMPAIGN.length - 1;
-  s.reset();
-  s.marioReturn = 1e6;
-  s.timeLeft = 0;
-  s.finish();
-  while (s.mode === "finishing" && s.tallyPhase !== "ending") {
-    s.tallyHold = 0;
-    tick(s, dt);
-  }
-  assert.equal(s.tallyPhase, "ending");
+  const reachEnding = (dyingMario: boolean) => {
+    const s = game();
+    s.levelIndex = CAMPAIGN.length - 1;
+    s.reset();
+    s.marioReturn = 1e6;
+    for (const n of s.npcs) {
+      n.warned = true;
+      n.wait = 99;
+      n.idleWalking = false;
+    }
+    // Leftover TIME lets the clear cue finish before world-clear starts.
+    s.timeLeft = 100;
+    s.finish();
+    while (s.mode === "finishing" && s.tallyPhase === "time") tick(s, dt);
+    if (dyingMario) {
+      while (s.mode === "finishing" && s.tallyPhase !== "mario") {
+        s.tallyHold = 0;
+        tick(s, dt);
+      }
+      const n = s.npcs.find((npc) => npc.alive && !npc.saved);
+      assert.ok(n, "living NPC can touch Mario");
+      n.starLeft = T.starSeconds;
+      stillMario(s);
+      Body.setPosition(s.mario.body, { ...n.body.position });
+      Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+      tick(s, dt);
+      assert.ok(s.marioDeath);
+    }
+    while (s.mode === "finishing" && s.tallyPhase !== "ending") {
+      s.tallyHold = 0;
+      tick(s, dt);
+    }
+    assert.equal(s.tallyPhase, "ending");
+    return s;
+  };
+
+  const alive = reachEnding(false);
+  const aliveHold = alive.tallyHold;
+  const droppedSlack = T.endingSeconds + T.deathSequenceSeconds - aliveHold;
   assert.ok(
-    s.tallyHold >= T.endingSeconds + T.deathSequenceSeconds - dt,
-    `hold ${s.tallyHold}`,
+    Math.abs(droppedSlack - T.deathSequenceSeconds) < 0.25,
+    `alive hold ${aliveHold} drops death slack by ${droppedSlack}`,
   );
-  const hold = s.tallyHold;
-  tick(s, hold - dt);
-  assert.equal(s.mode, "finishing");
-  tick(s, 2 * dt);
-  assert.equal(s.mode, "title");
-  assert.equal(s.levelIndex, 0);
-  assert.equal(s.score, 0);
+  tick(alive, aliveHold - dt);
+  assert.equal(alive.mode, "finishing");
+  tick(alive, 2 * dt);
+  assert.equal(alive.mode, "title");
+  assert.equal(alive.levelIndex, 0);
+  assert.equal(alive.score, 0);
+
+  const dying = reachEnding(true);
+  assert.ok(dying.marioDeath);
+  assert.ok(
+    Math.abs(dying.tallyHold - aliveHold - T.deathSequenceSeconds) < 0.25,
+    `dying hold ${dying.tallyHold} alive ${aliveHold}`,
+  );
 });
 
 test("leftover TIME tally starts from a fresh 4-frame accumulator", () => {

@@ -2172,7 +2172,9 @@ export class Simulation {
         this.tallyPhase = "ending";
         const clearLeft = Math.max(0, T.clearSeconds - this.finishElapsed);
         this.tallyHold =
-          T.endingSeconds + clearLeft + T.deathSequenceSeconds;
+          T.endingSeconds +
+          clearLeft +
+          (this.marioDeath ? T.deathSequenceSeconds : 0);
         this.events.push("ending");
       } else this.nextLevel();
       return;
