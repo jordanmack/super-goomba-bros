@@ -2729,6 +2729,41 @@ export class Simulation {
     this.marioSeenAgo = 0;
   }
 
+  private placeHunterMario() {
+    const room = this.roomFor(this.player);
+    const half = this.mario.body.width / 2;
+    const page = 16 * 32;
+    const pageIndex = Math.max(0, Math.floor((this.cameraX - room.offset) / page));
+    const preferred = room.offset + pageIndex * page + 100;
+    const minX = Math.max(room.offset + half, this.cameraX - 650);
+    const maxX = Math.min(this.cameraX - half, room.goalX + 100);
+    const tryAt = (x: number) => {
+      if (x < minX || x > maxX) return false;
+      if (!room.standOnFloor(this.mario, x)) return false;
+      const m = this.mario.body.position;
+      return (
+        this.mario.body.bounds.max.x <= this.cameraX &&
+        m.x >= this.cameraX - 650 &&
+        m.x <= room.goalX + 100 &&
+        this.mario.body.bounds.min.x >= room.offset
+      );
+    };
+    if (tryAt(preferred)) return true;
+    const edge = this.cameraX - half;
+    if (edge !== preferred && tryAt(edge)) return true;
+    const leftCol = Math.min(
+      room.data.width - 1,
+      Math.floor((maxX - room.offset) / 32),
+    );
+    const minCol = Math.max(0, Math.floor((minX - room.offset) / 32));
+    for (let col = leftCol; col >= minCol; col--) {
+      const x = room.offset + col * 32 + 16;
+      if (x === preferred || x === edge) continue;
+      if (tryAt(x)) return true;
+    }
+    return false;
+  }
+
   private updateMario(dt: number) {
     if (!this.marioActive) {
       this.marioReturn -=
@@ -2739,13 +2774,12 @@ export class Simulation {
       }
       if (this.marioReturn > 0 || this.marioDeath) return;
       this.setMarioStage((this.phase === 0 ? 1 : this.phase) as 0 | 1 | 2);
+      this.mario.starLeft = 0;
+      this.mario.areaId = this.player.areaId;
+      if (!this.placeHunterMario()) return;
       this.marioActive = true;
       this.mario.alive = true;
-      this.mario.starLeft = 0;
-      this.setMarioStage((this.phase === 0 ? 1 : this.phase) as 0 | 1 | 2);
       Body.setFrozen(this.mario.body, false);
-      this.mario.areaId = this.player.areaId;
-      Body.setPosition(this.mario.body, { x: this.cameraX - 110, y: 350 });
       Body.setVelocity(this.mario.body, { x: 0, y: 0 });
       this.mario.facing = 1;
       this.marioDecision = 3;

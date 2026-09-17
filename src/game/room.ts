@@ -226,6 +226,29 @@ export class Room {
     throw new Error(`No safe entrance in area ${this.data.id} at ${desiredX}`);
   }
 
+  // One x only. Nearby search would let hunter Mario pop on-camera.
+  standOnFloor(actor: Actor, x: number) {
+    const half = actor.body.width / 2,
+      height = actor.body.height;
+    const floor = this.supportsAt(x, half).filter(
+      (solid) => !this.spawnKind(solid),
+    );
+    floor.sort((a, b) => b.bounds.min.y - a.bounds.min.y);
+    for (const solid of floor) {
+      Body.setPosition(actor.body, {
+        x,
+        y: solid.bounds.min.y - height / 2,
+      });
+      if (!overlaps(actor.body, this.solids, 0.01).length) {
+        Body.setVelocity(actor.body, { x: 0, y: 0 });
+        actor.homeX = x;
+        actor.grounded = true;
+        return true;
+      }
+    }
+    return false;
+  }
+
   dropOnto(actor: Actor, x: number) {
     const half = actor.body.width / 2,
       height = actor.body.height;

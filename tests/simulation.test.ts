@@ -928,6 +928,8 @@ test("Mario avoids stars and touching a star holder kills him until his return",
   assert.ok(s.player.alive);
   assert.ok(s.particles.length > 32);
   assert.equal(s.particles.length, T.bloodBurst);
+  at(s, 800);
+  s.cameraX = 400;
   tick(s, T.marioDefeatSeconds + dt);
   assert.ok(s.marioActive && s.mario.alive);
 });
@@ -1270,6 +1272,7 @@ test("giant player stomps shrink powered Mario first, then a later stomp can def
   tick(s, 0.8);
   assert.ok(s.marioDeath && s.marioDeath.y > start);
   assert.equal(s.events.filter((e) => e === "marioDeath").length, 1);
+  s.cameraX = s.activeRoom.offset + 400;
   tick(s, 2);
   assert.ok(!s.marioDeath && s.marioActive && s.mario.alive);
 });
@@ -2316,9 +2319,48 @@ test("player death hops then falls, and pit deaths skip the hop", () => {
   assert.ok(pit.playerDeath && pit.playerDeath.y >= pitY);
 });
 
+function followCamera(s: Simulation) {
+  const room = s.activeRoom;
+  const width = s.viewWidth;
+  s.cameraX = Math.max(
+    room.offset,
+    Math.min(
+      room.offset + room.data.width * 32 - width,
+      s.player.body.position.x - width * 0.36,
+    ),
+  );
+}
+
+function world12Main() {
+  const s = game();
+  s.nextLevel();
+  s.reset("playing");
+  assert.equal(s.level.id, "1-2");
+  assert.equal(s.player.areaId, "40");
+  s.cameraX = s.activeRoom.offset;
+  return s;
+}
+
+function hunterSpawnedSafe(s: Simulation) {
+  if (!s.marioActive) return true;
+  const room = s.activeRoom;
+  const col0 = room.offset;
+  const inWall =
+    s.mario.body.bounds.max.x > col0 &&
+    s.mario.body.bounds.min.x < col0 + 32 &&
+    s.mario.body.bounds.max.y > MAP_TOP + 64 &&
+    s.mario.body.bounds.min.y < T.groundY;
+  return (
+    !inWall &&
+    s.mario.body.bounds.max.x <= s.cameraX &&
+    overlaps(s.mario.body, room.solids, 0.01).length === 0
+  );
+}
+
 test("Mario first appears at three seconds, and later returns keep their delay", () => {
   const s = new Simulation(() => 0.5);
   s.reset();
+  s.cameraX = s.activeRoom.offset + 400;
   assert.equal(s.marioActive, false);
   tick(s, 3 - dt);
   assert.equal(s.marioActive, false);
@@ -2333,6 +2375,7 @@ test("Mario first appears at three seconds, and later returns keep their delay",
 
 test("time escalates Mario and returning does not reset it", () => {
   const s = game();
+  s.cameraX = s.activeRoom.offset + 400;
   s.elapsed = T.fireballsAt;
   tick(s, dt);
   assert.equal(s.phase, 2);
@@ -2346,6 +2389,166 @@ test("time escalates Mario and returning does not reset it", () => {
   s.marioReturn = 0;
   tick(s, dt);
   assert.equal(s.phase, 2);
+});
+
+test("World 1-2 start does not place hunter Mario in the column-0 brick wall", () => {
+  const s = game();
+  s.nextLevel();
+  tick(s, T.introSeconds + dt);
+  finishPipeIntro(s);
+  assert.equal(s.player.areaId, "40");
+  s.cameraX = s.activeRoom.offset;
+  s.marioReturn = 0;
+  s.step(dt, emptyInput());
+  const col0 = s.activeRoom.offset;
+  const inCol0Wall =
+    s.mario.body.bounds.max.x > col0 &&
+    s.mario.body.bounds.min.x < col0 + 32 &&
+    s.mario.body.bounds.max.y > MAP_TOP + 64 &&
+    s.mario.body.bounds.min.y < T.groundY;
+  assert.equal(inCol0Wall, false);
+  if (s.marioActive) {
+    assert.ok(
+      s.mario.body.bounds.max.x <= s.cameraX,
+      "spawn stays fully left of the camera",
+    );
+    assert.equal(overlaps(s.mario.body, s.activeRoom.solids, 0.01).length, 0);
+  } else assert.equal(s.marioActive, false);
+  tick(s, T.firstMarioAt);
+  assert.equal(s.marioActive, false);
+});
+
+test("hunter Mario walks in from off-camera left once 1-2 floor sits left of the camera", () => {
+  const s = world12Main();
+  s.cameraX = s.activeRoom.offset + 400;
+  s.marioReturn = 0;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioActive, true);
+  assert.ok(s.mario.body.bounds.max.x <= s.cameraX);
+  assert.ok(s.mario.body.bounds.min.x >= s.activeRoom.offset);
+  assert.equal(overlaps(s.mario.body, s.activeRoom.solids, 0.01).length, 0);
+});
+
+test("hunter Mario retries later when 1-2 start has no off-camera floor", () => {
+  const s = world12Main();
+  s.marioReturn = 0;
+  tick(s, 1);
+  assert.equal(s.marioActive, false);
+  s.cameraX = s.activeRoom.offset + 400;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioActive, true);
+  assert.ok(s.mario.body.bounds.max.x <= s.cameraX);
+  assert.equal(overlaps(s.mario.body, s.activeRoom.solids, 0.01).length, 0);
+});
+
+test("hunter Mario prefers the current 16-tile page left when that floor is off-camera", () => {
+  const s = game();
+  s.cameraX = 400;
+  s.marioReturn = 0;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioActive, true);
+  assert.ok(
+    Math.abs(s.mario.body.position.x - 100) < 8,
+    `page 0 spawn ${s.mario.body.position.x}`,
+  );
+  assert.ok(s.mario.body.bounds.max.x <= s.cameraX);
+  assert.equal(overlaps(s.mario.body, s.activeRoom.solids, 0.01).length, 0);
+  s.marioActive = false;
+  Body.setFrozen(s.mario.body, true);
+  s.cameraX = 512 + 200;
+  s.marioReturn = 0;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioActive, true);
+  assert.ok(
+    Math.abs(s.mario.body.position.x - (512 + 100)) < 8,
+    `page 1 spawn ${s.mario.body.position.x}`,
+  );
+  assert.ok(s.mario.body.bounds.max.x <= s.cameraX);
+});
+
+test("hunter Mario uses the same off-camera floor rule in water and castle", () => {
+  const cases = [
+    { from: "1-3", id: "1-4", type: "castle" },
+    { from: "2-1", id: "2-2", type: "water" },
+  ];
+  for (const c of cases) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === c.from);
+    s.reset();
+    s.marioReturn = 1e6;
+    s.nextLevel();
+    s.reset("playing");
+    assert.equal(s.level.id, c.id);
+    assert.equal(s.activeRoom.data.type, c.type);
+    assert.equal(s.pipeIntro, false);
+    s.cameraX = s.activeRoom.offset;
+    s.marioReturn = 0;
+    s.step(dt, emptyInput());
+    assert.ok(hunterSpawnedSafe(s), c.id);
+    s.cameraX = s.activeRoom.offset + 400;
+    s.marioReturn = 0;
+    s.step(dt, emptyInput());
+    assert.equal(s.marioActive, true, c.id);
+    assert.ok(s.mario.body.bounds.max.x <= s.cameraX, c.id);
+    assert.ok(s.mario.body.position.x >= s.cameraX - 650, c.id);
+    assert.equal(
+      overlaps(s.mario.body, s.activeRoom.solids, 0.01).length,
+      0,
+      c.id,
+    );
+  }
+});
+
+test("hunter Mario spawn stays inside the live off-camera band", () => {
+  const s = world12Main();
+  for (const camera of [5664, 5800, 6100]) {
+    s.marioActive = false;
+    Body.setFrozen(s.mario.body, true);
+    s.cameraX = s.activeRoom.offset + camera;
+    s.marioReturn = 0;
+    s.step(dt, emptyInput());
+    if (s.marioActive) {
+      assert.ok(
+        s.mario.body.position.x >= s.cameraX - 650,
+        `left cull cam ${camera} x ${s.mario.body.position.x}`,
+      );
+      assert.ok(
+        s.mario.body.position.x <= s.activeRoom.goalX + 100,
+        `goal cull cam ${camera} x ${s.mario.body.position.x}`,
+      );
+      assert.ok(s.mario.body.bounds.max.x <= s.cameraX);
+      assert.equal(overlaps(s.mario.body, s.activeRoom.solids, 0.01).length, 0);
+      s.step(dt, emptyInput());
+      assert.equal(s.marioActive, true, `stayed active cam ${camera}`);
+    } else {
+      assert.ok(
+        s.marioReturn <= 0,
+        `cull delayed return ${s.marioReturn} cam ${camera}`,
+      );
+    }
+  }
+});
+
+test("hunter Mario stands on free floor, not a brick, in World 3-1", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "3-1");
+  s.reset("playing");
+  s.cameraX = s.activeRoom.offset + 4224;
+  s.marioReturn = 0;
+  s.step(dt, emptyInput());
+  assert.ok(hunterSpawnedSafe(s));
+  if (s.marioActive) {
+    const feet = s.mario.body.bounds.max.y;
+    const onObject = s.activeRoom.obstacles.some(
+      (o) =>
+        o.body &&
+        !o.broken &&
+        Math.abs(o.body.bounds.min.y - feet) < 12 &&
+        s.mario.body.bounds.max.x > o.body.bounds.min.x &&
+        s.mario.body.bounds.min.x < o.body.bounds.max.x,
+    );
+    assert.equal(onObject, false);
+  }
 });
 
 test("Mario can attack players beside former cover locations", () => {
@@ -2441,6 +2644,7 @@ test("a recorded World 1-1 run can win with Mario active and without teleporting
   let marioAppeared = false;
   for (const [bits, frames] of routes["1-1"]) {
     for (let frame = 0; frame < frames; frame++) {
+      followCamera(s);
       s.step(dt, {
         ...emptyInput(),
         left: !!(bits & 1),
@@ -2845,6 +3049,7 @@ test("returning Mario does not keep a leftover wall-jump velocity", () => {
   s.step(dt, emptyInput());
   assert.equal(s.marioActive, false);
   assert.equal(s.mario.navVx, undefined);
+  s.cameraX = Math.max(s.cameraX, pipe.x);
   let returned = false;
   for (let i = 0; i < 5 * 60; i++) {
     s.step(dt, emptyInput());
@@ -3096,7 +3301,8 @@ test("1-2 after nextLevel from 1-1 goes through 29 without applying input", () =
   assert.ok(s.elapsed > 0);
   s.marioReturn = 0;
   tick(s, dt);
-  assert.equal(s.marioActive, true);
+  assert.ok(hunterSpawnedSafe(s));
+  assert.equal(s.marioActive, false);
 });
 
 test("1-2 death retry skips area 29 and spawns on main 40", () => {
