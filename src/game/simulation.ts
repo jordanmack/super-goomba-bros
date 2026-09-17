@@ -102,6 +102,13 @@ export type Actor = {
   swimSize?: number;
   swimRepath?: number;
 };
+export type Shout = {
+  id: number;
+  text: string;
+  left: number;
+  x: number;
+  y: number;
+};
 export type GameEvent =
   | "jump"
   | "bump"
@@ -293,10 +300,7 @@ export class Simulation {
     actor.navHoldX = undefined;
     actor.navBackoff = undefined;
     actor.swimPath = undefined;
-    if (actor === this.player) {
-      this.events.push("pipe");
-      this.bubbleLeft = 0;
-    }
+    if (actor === this.player) this.events.push("pipe");
     return true;
   }
   private updatePipeTravel(dt: number) {
@@ -426,9 +430,14 @@ export class Simulation {
   phase = 0;
   cooldown = 0;
   audible = 0;
-  bubble = "";
-  bubbleLeft = 0;
+  shouts: Shout[] = [];
   finishLeft = 0;
+  get bubble() {
+    return this.shouts.at(-1)?.text ?? "";
+  }
+  get bubbleLeft() {
+    return this.shouts.at(-1)?.left ?? 0;
+  }
   deadLeft = 0;
   marioActive = false;
   marioReturn = T.firstMarioAt as number;
@@ -508,8 +517,8 @@ export class Simulation {
       this.cooldown =
       this.audible =
         0;
-    this.bubble = "";
-    this.bubbleLeft = this.finishLeft = this.deadLeft = 0;
+    this.shouts = [];
+    this.finishLeft = this.deadLeft = 0;
     this.introLeft = mode === "intro" ? T.introSeconds : 0;
     this.gameoverLeft = 0;
     this.marioActive = false;
@@ -873,10 +882,15 @@ export class Simulation {
     if (this.mode !== "playing") return;
     this.cooldown = T.warningCooldown;
     this.audible = T.warningSound;
-    this.bubbleLeft = T.bubbleTime;
-    this.bubble = PHRASES[Math.floor(this.random() * PHRASES.length)];
-    this.events.push("warn");
     const p = this.player.body.position;
+    this.shouts.push({
+      id: this.nextId++,
+      text: PHRASES[Math.floor(this.random() * PHRASES.length)],
+      left: T.bubbleTime,
+      x: p.x,
+      y: p.y - 42 * this.player.scale,
+    });
+    this.events.push("warn");
     for (const n of this.npcs) {
       if (
         !n.alive ||
@@ -917,7 +931,7 @@ export class Simulation {
     if (a === this.player) {
       this.mode = "dead";
       this.deadLeft = T.deathSequenceSeconds;
-      this.bubbleLeft = 0;
+      this.shouts = [];
       this.lives = Math.max(0, this.lives - 1);
       this.events.push("death");
       const pit = a.body.position.y > 640;
@@ -1683,7 +1697,8 @@ export class Simulation {
     this.elapsed += dt;
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.audible = Math.max(0, this.audible - dt);
-    this.bubbleLeft = Math.max(0, this.bubbleLeft - dt);
+    for (const shout of this.shouts) shout.left = Math.max(0, shout.left - dt);
+    this.shouts = this.shouts.filter((shout) => shout.left > 0);
     for (const a of [this.player, ...this.npcs, this.mario]) {
       a.starLeft = Math.max(0, a.starLeft - dt);
       a.transformLeft = Math.max(0, a.transformLeft - dt);

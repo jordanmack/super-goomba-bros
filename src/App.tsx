@@ -54,9 +54,11 @@ type Snapshot = {
   power: string;
   flower: boolean;
   door: boolean;
-  bubble: string;
-  x: number;
-  y: number;
+  shouts: {
+    x: number;
+    y: number;
+    lines: { id: number; text: string }[];
+  }[];
   cooldown: number;
   finishLeft: number;
   progress: number;
@@ -76,9 +78,7 @@ const initial: Snapshot = {
   power: "",
   flower: false,
   door: true,
-  bubble: "",
-  x: 0,
-  y: 0,
+  shouts: [],
   cooldown: 0,
   finishLeft: 0,
   progress: 0,
@@ -198,7 +198,8 @@ export default function App() {
       if (import.meta.env.DEV)
         (window as unknown as { __game: Runtime }).__game = game;
       let accumulator = 0,
-        ticks = 0;
+        ticks = 0,
+        lastShoutCount = 0;
       const update = (now: number, frameDelta: number) => {
         const delta = Math.min(0.1, frameDelta / 1000);
         const frozen = game.paused || game.helpOpen;
@@ -220,9 +221,32 @@ export default function App() {
           );
         }
         renderer.render(sim, now / 1000);
-        if (ticks++ % 4 === 0) {
+        const clusters: {
+          worldX: number;
+          worldY: number;
+          lines: { id: number; text: string }[];
+        }[] = [];
+        for (const shout of sim.shouts) {
+          const cluster = clusters.find(
+            (entry) =>
+              Math.abs(entry.worldX - shout.x) < 32 &&
+              Math.abs(entry.worldY - shout.y) < 32,
+          );
+          if (cluster) cluster.lines.push({ id: shout.id, text: shout.text });
+          else
+            clusters.push({
+              worldX: shout.x,
+              worldY: shout.y,
+              lines: [{ id: shout.id, text: shout.text }],
+            });
+        }
+        const shouts = clusters.map((cluster) => {
+          const point = renderer.screen(cluster.worldX, cluster.worldY, sim);
+          return { x: point.x, y: point.y, lines: cluster.lines };
+        });
+        if (ticks++ % 4 === 0 || sim.shouts.length || lastShoutCount) {
+          lastShoutCount = sim.shouts.length;
           const p = sim.player.body.position;
-          const point = renderer.screen(p.x, p.y - 42 * sim.player.scale, sim);
           setState({
             mode: sim.mode,
             warned: sim.warned,
@@ -250,9 +274,7 @@ export default function App() {
             door:
               !!sim.activeRoom.data.goal &&
               sim.activeRoom.data.goal.kind !== "pipe",
-            bubble: sim.bubbleLeft > 0 ? sim.bubble : "",
-            x: point.x,
-            y: point.y,
+            shouts,
             cooldown: sim.cooldown,
             finishLeft: sim.finishLeft,
             progress: Math.min(
@@ -540,17 +562,20 @@ export default function App() {
               {minutes}:{seconds}
             </time>
           </div>
-          {state.bubble && !overlay && (
-            <div
-              className="speech"
-              style={{
-                left: `${Math.max(15, Math.min(85, state.x))}%`,
-                top: `${state.y}%`,
-              }}
-            >
-              {state.bubble}
-            </div>
-          )}
+          {!overlay &&
+            state.shouts.map((stack) => (
+              <div
+                key={stack.lines[0]!.id}
+                className="speech-stack"
+                style={{ left: `${stack.x}%`, top: `${stack.y}%` }}
+              >
+                {stack.lines.map((line) => (
+                  <div key={line.id} className="speech">
+                    {line.text}
+                  </div>
+                ))}
+              </div>
+            ))}
           {state.doomed && state.mode === "playing" && (
             <div className="goal-message" role="status">
               TOO MANY LOST. THE GOAL IS LOCKED.

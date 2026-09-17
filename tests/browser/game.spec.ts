@@ -1002,15 +1002,30 @@ test("player bubble is 8-bit and warned NPCs flash a brief exclamation", async (
   await expect(speech).toBeVisible();
   const style = await speech.evaluate((el) => {
     const c = getComputedStyle(el);
+    const after = getComputedStyle(el, ":after");
     return {
-      radius: c.borderRadius,
       bg: c.backgroundColor,
+      border: c.borderTopWidth,
+      shadow: c.boxShadow,
+      color: c.color,
       family: c.fontFamily.toLowerCase(),
+      textShadow: c.textShadow,
+      afterContent: after.content,
+      afterDisplay: after.display,
     };
   });
-  expect(parseFloat(style.radius) || 0).toBe(0);
-  expect(style.bg).not.toBe("rgb(255, 246, 212)");
+  expect(style.bg.replace(/\s/g, "")).toMatch(
+    /^(transparent|rgba\(0,0,0,0\))$/,
+  );
+  expect(parseFloat(style.border) || 0).toBe(0);
+  expect(style.shadow).toBe("none");
+  expect(style.color).toBe("rgb(255, 255, 255)");
   expect(style.family).toContain("press start");
+  expect(style.textShadow).not.toBe("none");
+  expect(style.textShadow).toMatch(/rgb\(0,\s*0,\s*0\)|#000/i);
+  expect(style.afterContent === "none" || style.afterDisplay === "none").toBe(
+    true,
+  );
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -1051,6 +1066,50 @@ test("player bubble is 8-bit and warned NPCs flash a brief exclamation", async (
       }),
     )
     .toBe(true);
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    for (const n of s.npcs) n.warned = true;
+    s.shouts = [];
+    s.warn();
+    s.warn();
+  });
+  await expect(speech).toHaveCount(2);
+  const boxes = await Promise.all(
+    (await speech.all()).map((el) => el.boundingBox()),
+  );
+  expect(boxes[0]).toBeTruthy();
+  expect(boxes[1]).toBeTruthy();
+  const a = boxes[0]!;
+  const b = boxes[1]!;
+  expect(a.y < b.y + b.height && b.y < a.y + a.height).toBe(false);
+  expect(Math.abs(a.x - b.x)).toBeLessThan(48);
+  expect(Math.abs(a.y - b.y)).toBeGreaterThan(8);
+  const stackLeft = await page
+    .locator(".speech-stack")
+    .evaluate((el) => el.style.left);
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.player.body.position.x += 400;
+  });
+  await expect
+    .poll(async () =>
+      page.locator(".speech-stack").evaluate((el) => el.style.left),
+    )
+    .not.toBe(stackLeft);
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    for (const n of s.npcs) n.warned = true;
+    s.shouts = [
+      { id: 9001, text: "LOW", left: 2, x: 220, y: 400 },
+      { id: 9002, text: "HIGH", left: 2, x: 220, y: 280 },
+    ];
+  });
+  const stacks = page.locator(".speech-stack");
+  await expect(stacks).toHaveCount(2);
+  const tops = await stacks.evaluateAll((els) =>
+    els.map((el) => (el as HTMLElement).style.top),
+  );
+  expect(tops[0]).not.toBe(tops[1]);
 });
 
 test("death restart, impossible quota, finish window, and final score screens", async ({

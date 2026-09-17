@@ -1409,6 +1409,50 @@ test("Mario still hears shouts beyond the warning radius", () => {
   assert.equal(s.warned, 0);
 });
 
+test("warning shouts stack at the speak position and expire on their own", () => {
+  const s = game();
+  for (const n of s.npcs) n.warned = true;
+  at(s, 200);
+  s.warn();
+  assert.equal(s.shouts.length, 1);
+  const first = s.shouts[0]!;
+  assert.equal(first.x, 200);
+  assert.equal(first.left, T.bubbleTime);
+  assert.ok(first.text.length > 0);
+  const spokenY = first.y;
+  tick(s, 1);
+  assert.equal(s.shouts.length, 1);
+  assert.ok(s.shouts[0]!.left < T.bubbleTime);
+  at(s, 360, 300);
+  s.warn();
+  assert.equal(s.shouts.length, 2);
+  assert.equal(s.shouts[0]!.x, 200);
+  assert.equal(s.shouts[0]!.y, spokenY);
+  assert.equal(s.shouts[1]!.x, 360);
+  assert.notEqual(s.shouts[1]!.y, spokenY);
+  assert.ok(s.shouts[0]!.left < s.shouts[1]!.left);
+  at(s, 500);
+  assert.equal(s.shouts[0]!.x, 200);
+  assert.equal(s.shouts[1]!.x, 360);
+  tick(s, s.shouts[0]!.left + dt);
+  assert.equal(s.shouts.length, 1);
+  assert.equal(s.shouts[0]!.x, 360);
+  tick(s, T.bubbleTime);
+  assert.equal(s.shouts.length, 0);
+});
+
+test("player death clears stacked shouts", () => {
+  const s = game();
+  for (const n of s.npcs) n.warned = true;
+  s.warn();
+  s.warn();
+  assert.equal(s.shouts.length, 2);
+  s.kill(s.player);
+  assert.equal(s.shouts.length, 0);
+  assert.equal(s.bubble, "");
+  assert.equal(s.bubbleLeft, 0);
+});
+
 test("warning phrases stay urgent and include brotherhood lines", () => {
   assert.ok(PHRASES.includes("Run my brothers or perish!"));
   assert.ok(PHRASES.filter((line) => /brothers/i.test(line)).length >= 3);

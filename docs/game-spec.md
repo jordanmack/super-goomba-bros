@@ -95,10 +95,12 @@ iOS system gestures are suppressed on a physical phone.
 ## Warnings
 
 An unwarned NPC inside the warning radius automatically makes the player speak.
-No contact is required. An 8-bit bubble appears near the player and a short
-squeaky voice cue plays. The same radius warns those NPCs. Each character
-counts as warned only once. A warned NPC shows a brief 8-bit exclamation mark
-above its head, then the mark goes away.
+No contact is required. White pixel text with a black outline appears at the
+world position where the player spoke, and a short squeaky voice cue plays.
+A new shout does not replace earlier lines; each line expires on its own after
+about two seconds. The same radius warns those NPCs. Each character counts as
+warned only once. A warned NPC shows a brief 8-bit exclamation mark above its
+head, then the mark goes away.
 
 Every phrase must urge escape from incoming Mario. Use the phrase pool in
 [tuning](../src/game/config.ts), with lines such as “Run! Mario is coming!”
