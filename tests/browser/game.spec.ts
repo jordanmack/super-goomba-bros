@@ -647,6 +647,192 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
   expect(drawn.sizes.oneUp).toBe(32);
 });
 
+test("player flagpole flag is Goomba art and Mario keeps the original flag", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
+  const drawn = await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    const s = g.sim;
+    const play = g.renderer.play;
+    const textures = g.renderer.game.textures.list;
+    const pixelsOf = (name: string) => {
+      const image = textures[name].getSourceImage() as HTMLCanvasElement;
+      return image.getContext("2d")!.getImageData(0, 0, image.width, image.height);
+    };
+    const goomba = pixelsOf("goomba");
+    const marioFlag = pixelsOf("marioFlag");
+    const goombaFlag = pixelsOf("goombaFlag");
+    const palette = (data: Uint8ClampedArray) => {
+      let white = 0,
+        red = 0,
+        brown = 0,
+        skin = 0,
+        dark = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (!data[i + 3]) continue;
+        const r = data[i],
+          gc = data[i + 1],
+          b = data[i + 2];
+        if (r > 200 && gc > 200 && b > 200) white++;
+        if (r > 180 && gc < 100 && b < 100) red++;
+        if (r > 200 && gc < 120 && b < 40) brown++;
+        if (r > 220 && gc > 180 && gc < 230 && b > 150 && b < 200) skin++;
+        if (r < 50 && gc < 50 && b < 50) dark++;
+      }
+      return { white, red, brown, skin, dark };
+    };
+    const recolor = new Uint8ClampedArray(marioFlag.data);
+    for (let i = 0; i < recolor.length; i += 4) {
+      if (!recolor[i + 3]) continue;
+      const x = (i / 4) % marioFlag.width;
+      const r = recolor[i],
+        gc = recolor[i + 1],
+        b = recolor[i + 2];
+      if (r > 200 && gc > 200 && b > 200) {
+        recolor[i] = 228;
+        recolor[i + 1] = 92;
+        recolor[i + 2] = 16;
+      } else if (x > 3 && r > 180 && gc < 100 && b < 100) {
+        recolor[i] = 252;
+        recolor[i + 1] = 216;
+        recolor[i + 2] = 168;
+      }
+    }
+    let stamped = 0,
+      recolorSame = 0;
+    const goombaColors = new Set<string>();
+    for (let i = 0; i < goomba.data.length; i += 4) {
+      if (!goomba.data[i + 3]) continue;
+      goombaColors.add(
+        `${goomba.data[i]},${goomba.data[i + 1]},${goomba.data[i + 2]}`,
+      );
+    }
+    let fromGoomba = 0;
+    for (let i = 0; i < goombaFlag.data.length; i += 4) {
+      if (!goombaFlag.data[i + 3]) continue;
+      const r = goombaFlag.data[i],
+        gc = goombaFlag.data[i + 1],
+        b = goombaFlag.data[i + 2];
+      if (goombaColors.has(`${r},${gc},${b}`)) fromGoomba++;
+      if (
+        r === recolor[i] &&
+        gc === recolor[i + 1] &&
+        b === recolor[i + 2]
+      )
+        recolorSame++;
+      const x = (i / 4) % goombaFlag.width;
+      const y = Math.floor(i / 4 / goombaFlag.width);
+      const gx = x - 1;
+      const gy = y - 1;
+      if (
+        gx >= 0 &&
+        gy >= 0 &&
+        gx < goomba.width &&
+        gy < goomba.height
+      ) {
+        const gi = (gy * goomba.width + gx) * 4;
+        if (
+          goomba.data[gi + 3] &&
+          r === goomba.data[gi] &&
+          gc === goomba.data[gi + 1] &&
+          b === goomba.data[gi + 2]
+        )
+          stamped++;
+      }
+    }
+    const idle = {
+      left: false,
+      right: false,
+      jump: false,
+      down: false,
+      fire: false,
+      run: false,
+    };
+    const pole = s.activeRoom.flagpole;
+    s.marioReturn = 1e6;
+    s.marioActive = false;
+    s.player.body.position.x = pole.x;
+    s.player.body.position.y = pole.top;
+    s.step(1 / 60, idle);
+    pole.raise = 1;
+    g.renderer.render(s, 0);
+    const flagsOf = () =>
+      play.effects
+        .filter(
+          (entry: { visible: boolean; texture: { key: string } }) =>
+            entry.visible &&
+            (entry.texture.key === "goombaFlag" ||
+              entry.texture.key === "marioFlag"),
+        )
+        .map((entry: { texture: { key: string } }) => entry.texture.key);
+    const playerFlags = flagsOf();
+    const playerClaim = pole.claim;
+    pole.claim = null;
+    pole.raise = 0;
+    s.player.body.position.x = pole.x - 80;
+    s.marioActive = true;
+    s.mario.body.frozen = false;
+    s.mario.body.position.x = pole.x;
+    s.mario.body.position.y = pole.top;
+    s.step(1 / 60, idle);
+    pole.raise = 1;
+    g.renderer.render(s, 0);
+    const marioFlags = flagsOf();
+    const marioClaim = pole.claim;
+    const sheet = document.createElement("canvas");
+    sheet.id = "debug-flag-sheet";
+    sheet.width = 160;
+    sheet.height = 80;
+    sheet.style.cssText = "position:fixed;top:100px;left:0;z-index:100";
+    const ctx = sheet.getContext("2d")!;
+    ctx.fillStyle = "#5c94fc";
+    ctx.fillRect(0, 0, 160, 80);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(textures.goombaFlag.getSourceImage(), 8, 8, 64, 64);
+    ctx.drawImage(textures.marioFlag.getSourceImage(), 88, 8, 64, 64);
+    document.body.append(sheet);
+    return {
+      goomba: palette(goomba.data),
+      marioFlag: palette(marioFlag.data),
+      goombaFlag: palette(goombaFlag.data),
+      stamped,
+      fromGoomba,
+      recolorSame,
+      playerClaim,
+      playerFlags,
+      marioClaim,
+      marioFlags,
+      sameCanvas:
+        textures.goombaFlag.getSourceImage() ===
+        textures.marioFlag.getSourceImage(),
+    };
+  });
+  expect(drawn.sameCanvas).toBe(false);
+  expect(drawn.marioFlag.white).toBeGreaterThan(50);
+  expect(drawn.marioFlag.red).toBeGreaterThan(20);
+  expect(drawn.marioFlag.dark).toBe(0);
+  expect(drawn.goombaFlag.dark).toBeGreaterThan(8);
+  expect(drawn.goombaFlag.skin).toBeGreaterThan(10);
+  expect(drawn.goombaFlag.brown).toBeGreaterThan(20);
+  expect(drawn.goombaFlag.white).toBe(0);
+  expect(drawn.stamped).toBeGreaterThan(50);
+  expect(drawn.fromGoomba).toBeGreaterThan(50);
+  expect(drawn.stamped).toBeGreaterThan(drawn.recolorSame);
+  expect(drawn.goomba.dark).toBeGreaterThan(0);
+  expect(drawn.playerClaim).toBe("goomba");
+  expect(drawn.playerFlags).toEqual(["goombaFlag"]);
+  expect(drawn.marioClaim).toBe("mario");
+  expect(drawn.marioFlags).toEqual(["marioFlag"]);
+  await page
+    .locator("#debug-flag-sheet")
+    .screenshot({ path: "test-results/goomba-mario-flags.png" });
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },

@@ -15,6 +15,7 @@ const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
 const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
+import { flagTextureKey } from "../src/game/smb-sprites.ts";
 
 class Simulation extends RulesSimulation {
   constructor(random = Math.random) {
@@ -1638,6 +1639,7 @@ test("first player past the flagpole raises a Goomba flag", () => {
   Body.setPosition(s.player.body, { x: pole.x + 80, y: pole.top });
   tick(s, 1);
   assert.equal(pole.claim, "goomba");
+  assert.equal(flagTextureKey(pole.claim), "goombaFlag");
   assert.equal(pole.raise, 1);
 });
 
@@ -1655,9 +1657,11 @@ test("first Mario past the flagpole raises a Mario flag", () => {
   Body.setVelocity(s.mario.body, { x: 0, y: 0 });
   tick(s, dt);
   assert.equal(pole.claim, "mario");
+  assert.equal(flagTextureKey(pole.claim), "marioFlag");
   Body.setPosition(s.player.body, { x: pole.x, y: pole.top });
   tick(s, dt);
   assert.equal(pole.claim, "mario");
+  assert.equal(flagTextureKey(pole.claim), "marioFlag");
   assert.ok(pole.raise > 0);
 });
 

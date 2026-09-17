@@ -36,9 +36,10 @@ settings unless a rule below explicitly fixes their relationship.
 - No logs or hiding spots are added. Bushes are scenery.
 - The goal is the castle doorway. Castle interiors use a rescue doorway after
   the original bridge. On stages with a flagpole, the first of the player or
-  Mario to pass it raises a matching flag (Goomba or Mario). NPCs do not claim
-  it. The pole and flag never add collision or change velocity. The castle door
-  remains the real goal.
+  Mario to pass it raises a matching flag (Goomba or Mario). The Goomba flag
+  uses Goomba sprite art on the original flag silhouette. Mario keeps the
+  original flag. NPCs do not claim it. The pole and flag never add collision or
+  change velocity. The castle door remains the real goal.
 
 Original asset sources and frame details are in the
 [sprite credits](../src/assets/smb/README.md) and

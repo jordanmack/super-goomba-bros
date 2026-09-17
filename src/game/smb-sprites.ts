@@ -137,32 +137,95 @@ function pixelExclaim() {
   return canvas;
 }
 
-function goombaFlag(source: HTMLCanvasElement) {
-  const canvas = document.createElement("canvas");
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const context = canvas.getContext("2d")!;
-  context.drawImage(source, 0, 0);
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  for (let i = 0; i < pixels.data.length; i += 4) {
-    const [r, g, b, alpha] = pixels.data.slice(i, i + 4);
-    if (!alpha) continue;
-    const x = (i / 4) % canvas.width;
-    if (r > 200 && g > 200 && b > 200) {
-      pixels.data[i] = 228;
-      pixels.data[i + 1] = 92;
-      pixels.data[i + 2] = 16;
-    } else if (x > 3 && r > 180 && g < 100 && b < 100) {
-      pixels.data[i] = 252;
-      pixels.data[i + 1] = 216;
-      pixels.data[i + 2] = 168;
+export function flagTextureKey(claim: "goomba" | "mario") {
+  return claim === "mario" ? "marioFlag" : "goombaFlag";
+}
+
+export function stampGoombaFlag(
+  flag: Uint8ClampedArray,
+  goomba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  goombaWidth = width,
+  goombaHeight = height,
+) {
+  let fillR = 228,
+    fillG = 88,
+    fillB = 16;
+  for (let i = 0; i < goomba.length; i += 4) {
+    if (
+      goomba[i + 3] &&
+      goomba[i] > 200 &&
+      goomba[i + 1] < 120 &&
+      goomba[i + 2] < 40
+    ) {
+      fillR = goomba[i];
+      fillG = goomba[i + 1];
+      fillB = goomba[i + 2];
+      break;
     }
   }
+  for (let i = 0; i < flag.length; i += 4) {
+    const x = (i / 4) % width;
+    const y = Math.floor(i / 4 / width);
+    const r = flag[i],
+      g = flag[i + 1],
+      b = flag[i + 2],
+      alpha = flag[i + 3];
+    if (!alpha || x <= 2) continue;
+    const cloth =
+      (r > 200 && g > 200 && b > 200) || (r > 180 && g < 100 && b < 100);
+    if (!cloth) continue;
+    // 1:1 stamp so Goomba eyes sit in the cloth; pole and orb stay.
+    const gx = x - 1;
+    const gy = y - 1;
+    const gi = (gy * goombaWidth + gx) * 4;
+    if (
+      gx >= 0 &&
+      gy >= 0 &&
+      gx < goombaWidth &&
+      gy < goombaHeight &&
+      goomba[gi + 3]
+    ) {
+      flag[i] = goomba[gi];
+      flag[i + 1] = goomba[gi + 1];
+      flag[i + 2] = goomba[gi + 2];
+    } else {
+      flag[i] = fillR;
+      flag[i + 1] = fillG;
+      flag[i + 2] = fillB;
+    }
+  }
+  return flag;
+}
+
+function goombaFlag(flag: HTMLCanvasElement, goomba: HTMLCanvasElement) {
+  const canvas = document.createElement("canvas");
+  canvas.width = flag.width;
+  canvas.height = flag.height;
+  const context = canvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  context.drawImage(flag, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  const face = goomba
+    .getContext("2d")!
+    .getImageData(0, 0, goomba.width, goomba.height);
+  stampGoombaFlag(
+    pixels.data,
+    face.data,
+    canvas.width,
+    canvas.height,
+    goomba.width,
+    goomba.height,
+  );
   context.putImageData(pixels, 0, 0);
   return canvas;
 }
 
-export function scenerySprites({ enemies, items }: SpriteSources) {
+export function scenerySprites(
+  { enemies, items }: SpriteSources,
+  goomba: HTMLCanvasElement,
+) {
   const marioFlag = crop(items, 128, 0, 16, 16);
   const mushroom = crop(items, 0, 0, 16, 16);
   return {
@@ -176,7 +239,7 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
     marioFlag,
-    goombaFlag: goombaFlag(marioFlag),
+    goombaFlag: goombaFlag(marioFlag, goomba),
     exclaim: pixelExclaim(),
   };
 }

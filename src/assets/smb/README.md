@@ -45,6 +45,7 @@ the Koopa's current mushroom scale. Fire Goombas and Koopas use a white power-up
 palette while retaining their original faces and outlines.
 
 Items, coins, platforms, fireballs, and flagpole flags also use original sprite
-frames. The Goomba flag recolors the original Mario flag.
+frames. The Goomba flag stamps Goomba face art onto the original flag cloth.
+Mario keeps the original flag.
 Small fireballs use the native eight-pixel fireball image. Castle doors use
 original metatiles. No log graphics or hiding places are included.

@@ -4,6 +4,7 @@ import { isSolidTile, themeFor } from "../levels";
 import type { Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
 import type { Actor, Simulation } from "../simulation";
+import { flagTextureKey } from "../smb-sprites";
 
 export class Play extends Phaser.Scene {
   actors = new Map<number, Phaser.GameObjects.Sprite>();
@@ -187,7 +188,7 @@ export class Play extends Phaser.Scene {
         pole.bottom + (pole.top - pole.bottom) * pole.raise,
         32,
         32,
-        pole.claim === "mario" ? "marioFlag" : "goombaFlag",
+        flagTextureKey(pole.claim),
         6,
       ).setFlipX(true);
     for (const f of sim.fireballs)
