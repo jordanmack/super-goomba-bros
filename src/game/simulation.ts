@@ -418,6 +418,7 @@ export class Simulation {
   warned = 0;
   saved = 0;
   coins = 0;
+  score = 0;
   phase = 0;
   cooldown = 0;
   audible = 0;
@@ -498,6 +499,7 @@ export class Simulation {
       this.warned =
       this.saved =
       this.coins =
+      this.score =
       this.phase =
       this.cooldown =
       this.audible =
@@ -1059,11 +1061,16 @@ export class Simulation {
     if (item.kind === "star") a.starLeft = T.starSeconds;
     if (a === this.mario) {
       if (item.kind === "flower") this.setMarioStage(2, this.marioStage === 0);
-      if (isMushroom(item.kind) && this.marioStage === 0)
-        this.setMarioStage(1, true);
+      if (isMushroom(item.kind)) {
+        if (this.marioStage === 0) this.setMarioStage(1, true);
+        else this.score += 1000;
+      }
     } else if (item.kind === "flower") a.flower = true;
-    if (a !== this.mario && isMushroom(item.kind))
-      this.setGoombaScale(a, mushroomScale(item.kind), true);
+    if (a !== this.mario && isMushroom(item.kind)) {
+      const next = mushroomScale(item.kind);
+      if (next > a.scale) this.setGoombaScale(a, next, true);
+      else if (a === this.player) this.score += 1000;
+    }
     this.physics.remove(item.body);
     this.items = this.items.filter((i) => i !== item);
     this.events.push("power");

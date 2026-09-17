@@ -218,18 +218,23 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
 
 - A star grants temporary immunity. Player and NPC star contact defeats Mario
   unless he also has a star. Mario avoids visible star holders.
-- Mushrooms set Goomba and NPC size to that mushroom's tier, including shrink.
+- Mushrooms grow Goomba and NPC size only when the mushroom's tier is larger
+  than the current size (2x < 3x < 8x). A same-size or smaller mushroom does
+  not change size, does not reset the 8x timer, still consumes the item, and
+  plays the power-up sound. The player scores 1000 points for that same-size
+  or smaller mushroom. NPCs follow the same size rule and do not score.
   Red 2x is the common mushroom. Blue 3x and gold 8x appear less often than
   2x. Star and flower stay in the pool. Any mushroom grows small Mario to big
-  Mario; this size ladder is only for the player Goomba and NPCs. Shrink and
-  grow blink between the two sizes. Growth resolves overlap with scenery.
-  Giant NPCs can back up to leave low ceilings. The first damaging stomp or
-  hit on mushroom form shrinks to small instead of killing. A flower can
-  remain on the small form.
+  Mario; this size ladder is only for the player Goomba and NPCs. An extra
+  mushroom while Mario is already big or fire also scores 1000 and does not
+  change his stage. Shrink and grow blink between the two sizes. Growth
+  resolves overlap with scenery. Giant NPCs can back up to leave low ceilings.
+  The first damaging stomp or hit on mushroom form shrinks to small instead of
+  killing. A flower can remain on the small form.
 - 2x keeps player fireballs at 1x. 3x uses the current giant fireball scale.
   8x fireballs match that size. Existing shots keep their launch size.
-- 8x lasts the star duration, then size becomes 3x. Collecting another
-  mushroom cancels the 8x timer. While 8x, walking smashes breakable bricks
+- 8x lasts the star duration, then size becomes 3x. A same-size or smaller
+  mushroom does not reset that timer. While 8x, walking smashes breakable bricks
   and treats unbreakable walls and pipe solids as empty. Floors still hold.
   Down at a real pipe entrance still enters. The character can still walk.
 - A flower gives the player fireballs and a white palette. NPCs can show the

@@ -196,6 +196,7 @@ test("Mario power pickups upgrade his stage only while he is active", () => {
   assert.equal(s.marioStage, 2);
   assert.equal(s.mario.scale, 1);
   assert.ok(s.mario.flower);
+  assert.equal(s.score, 1000);
 });
 
 test("idle NPCs leave isolated blocks and stairs without rapidly flipping direction", () => {
@@ -2473,7 +2474,7 @@ test("lives, world intro, and game over follow a campaign attempt", () => {
   assert.equal(s.lives, T.startingLives);
 });
 
-test("mushrooms set 2x, 3x, or timed 8x size, including shrink", () => {
+test("mushrooms grow 2x, 3x, or timed 8x; same or smaller score 1000", () => {
   assert.equal(T.hugeSeconds, T.starSeconds);
   assert.ok(1 - T.mushroom3xChance - T.mushroom8xChance > T.mushroom3xChance);
   assert.ok(1 - T.mushroom3xChance - T.mushroom8xChance > T.mushroom8xChance);
@@ -2481,20 +2482,59 @@ test("mushrooms set 2x, 3x, or timed 8x size, including shrink", () => {
   give(s, s.player, "mushroom");
   assert.equal(s.player.scale, T.mushroomScale);
   assert.equal(s.player.hugeLeft, 0);
+  assert.equal(s.score, 0);
+  give(s, s.player, "mushroom");
+  assert.equal(s.player.scale, T.mushroomScale);
+  assert.equal(s.score, 1000);
   give(s, s.player, "mushroom3x");
   assert.equal(s.player.scale, T.giantScale);
+  assert.equal(s.score, 1000);
   give(s, s.player, "mushroom8x");
   assert.equal(s.player.scale, T.hugeScale);
   assert.equal(s.player.hugeLeft, T.hugeSeconds);
+  assert.equal(s.score, 1000);
   tick(s, 0.2, { right: true });
   assert.equal(s.player.body.velocity.x, T.walkSpeed);
   tick(s, T.hugeSeconds);
   assert.equal(s.player.scale, T.giantScale);
   assert.equal(s.player.hugeLeft, 0);
   give(s, s.player, "mushroom8x");
+  tick(s, 0.5);
+  const left = s.player.hugeLeft;
+  assert.ok(left > 0 && left < T.hugeSeconds);
+  s.events.length = 0;
   give(s, s.player, "mushroom");
-  assert.equal(s.player.scale, T.mushroomScale);
-  assert.equal(s.player.hugeLeft, 0);
+  assert.equal(s.player.scale, T.hugeScale);
+  assert.equal(s.player.hugeLeft, left);
+  assert.equal(s.score, 2000);
+  assert.ok(s.events.includes("power"));
+  assert.equal(s.items.length, 0);
+  give(s, s.player, "mushroom3x");
+  assert.equal(s.player.scale, T.hugeScale);
+  assert.equal(s.player.hugeLeft, left);
+  assert.equal(s.score, 3000);
+  give(s, s.player, "mushroom8x");
+  assert.equal(s.player.scale, T.hugeScale);
+  assert.equal(s.player.hugeLeft, left);
+  assert.equal(s.score, 4000);
+  const n = s.npcs[0];
+  give(s, n, "mushroom8x");
+  tick(s, 0.3);
+  const npcLeft = n.hugeLeft;
+  assert.ok(npcLeft > 0 && npcLeft < T.hugeSeconds);
+  give(s, n, "mushroom");
+  assert.equal(n.scale, T.hugeScale);
+  assert.equal(n.hugeLeft, npcLeft);
+  assert.equal(s.score, 4000);
+  s.marioActive = true;
+  s.setMarioStage(1);
+  give(s, s.mario, "mushroom");
+  assert.equal(s.marioStage, 1);
+  assert.equal(s.score, 5000);
+  s.setMarioStage(2);
+  give(s, s.mario, "mushroom3x");
+  assert.equal(s.marioStage, 2);
+  assert.equal(s.score, 6000);
 });
 
 test("question blocks keep star and flower and roll rarer 3x and 8x mushrooms", () => {
@@ -2528,6 +2568,7 @@ test("Mario still uses original small and big from any mushroom", () => {
   assert.equal(s.mario.hugeLeft, 0);
   give(s, s.mario, "mushroom3x");
   assert.equal(s.marioStage, 1);
+  assert.equal(s.score, 1000);
 });
 
 test("8x walking smashes bricks, passes pipes, and still enters a pipe", () => {
