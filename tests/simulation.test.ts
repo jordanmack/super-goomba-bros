@@ -2916,6 +2916,45 @@ test("Mario walking right into a pipe does not remain still against it", () => {
   );
 });
 
+test("marioPause does not freeze Mario against a wall he is walking into", () => {
+  const s = game();
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
+  isolateSolid(s, pipe.body!);
+  s.obstacles = [pipe];
+  const aim = pipe.x + 240;
+  at(s, aim, T.groundY - 14);
+  for (const npc of s.npcs) s.kill(npc, false);
+  s.marioActive = true;
+  s.marioPause = 10;
+  s.marioReaction = 0;
+  s.marioLook = 10;
+  s.marioJumpWait = 10;
+  s.marioChase = 8;
+  s.marioTarget = s.player.id;
+  s.marioAim = aim;
+  s.marioDecision = 10;
+  s.marioIgnore = 0;
+  Body.setFrozen(s.mario.body, false);
+  const contactX = pipe.body!.bounds.min.x - s.mario.body.width / 2;
+  Body.setPosition(s.mario.body, {
+    x: contactX - 4,
+    y: T.groundY - 19 * s.mario.scale,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  s.mario.facing = 1;
+  const worst = groundedStall(s, contactX, 4);
+  assert.ok(s.marioPause > 0, `pause expired (${s.marioPause})`);
+  assert.ok(
+    worst < 60,
+    `stalled ${worst} grounded frames at ${JSON.stringify(s.mario.body.position)} vx=${s.mario.body.velocity.x}`,
+  );
+  const x = s.mario.body.position.x;
+  assert.ok(
+    x > pipe.x || x < contactX - 20,
+    `jump-clears or turns: ${JSON.stringify(s.mario.body.position)}`,
+  );
+});
+
 test("Mario turns away from a wall that is too tall to jump", () => {
   const s = game();
   const wall = tallWall(s, 400);
