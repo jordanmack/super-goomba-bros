@@ -1012,8 +1012,8 @@ test("falling onto an NPC from above warning range does not hop or warn it", () 
   );
   let landed = false;
   for (let i = 0; i < 50; i++) {
-    const playerBottom = s.player.body.position.y + 14 * s.player.scale;
-    const npcTop = n.body.position.y - 14 * n.scale;
+    const playerBottom = s.player.body.bounds.max.y;
+    const npcTop = n.body.bounds.min.y;
     tick(s, dt);
     assert.equal(n.warned, false);
     assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
@@ -1080,17 +1080,37 @@ function marioStomp(s: Simulation, target: Actor) {
   const p = target.body.position;
   Body.setPosition(s.mario.body, {
     x: p.x,
-    y: p.y - 14 * target.scale - 5,
+    y: p.y - target.body.height / 2 - 5,
   });
   Body.setVelocity(s.mario.body, { x: 0, y: 4 });
 }
 
 function giantStompMario(s: Simulation) {
   stillMario(s);
-  const marioTop = 411 - 19 * s.mario.scale;
-  at(s, 100, marioTop - 14 * s.player.scale - 2);
-  Body.setVelocity(s.player.body, { x: 0, y: 4 });
   Body.setPosition(s.mario.body, { x: 100, y: 411 });
+  at(s, 100, s.mario.body.bounds.min.y - s.player.body.height / 2 - 2);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+}
+
+function mushroomKind(scale: number): ItemKind {
+  return scale >= T.hugeScale
+    ? "mushroom8x"
+    : scale >= T.giantScale
+      ? "mushroom3x"
+      : "mushroom";
+}
+
+function airOverlap(s: Simulation, playerFeetDelta: number) {
+  stillMario(s);
+  parkNpcs(s, []);
+  Body.setPosition(s.mario.body, { x: 200, y: 320 });
+  at(
+    s,
+    200,
+    s.mario.body.bounds.max.y + playerFeetDelta - s.player.body.height / 2,
+  );
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
   Body.setVelocity(s.mario.body, { x: 0, y: 0 });
 }
 
@@ -1234,6 +1254,111 @@ test("giant player stomps shrink powered Mario first, then a later stomp can def
   assert.ok(!s.marioDeath && s.marioActive && s.mario.alive);
 });
 
+test("player and NPC bodies scale with mushroom size; Mario small is half of big", () => {
+  const goomba = { w: 24, h: 28 };
+  for (const scale of [1, T.mushroomScale, T.giantScale, T.hugeScale]) {
+    const s = game();
+    const playerFeet = s.player.body.bounds.max.y;
+    const n = s.npcs[0];
+    const npcFeet = n.body.bounds.max.y;
+    if (scale > 1) {
+      give(s, s.player, mushroomKind(scale));
+      give(s, n, mushroomKind(scale));
+    }
+    assert.equal(s.player.body.width, goomba.w * scale);
+    assert.equal(s.player.body.height, goomba.h * scale);
+    assert.equal(n.body.width, goomba.w * scale);
+    assert.equal(n.body.height, goomba.h * scale);
+    assert.ok(Math.abs(s.player.body.bounds.max.y - playerFeet) < 0.01);
+    assert.ok(Math.abs(n.body.bounds.max.y - npcFeet) < 0.01);
+    if (scale > 1) {
+      assert.ok(s.player.transformLeft > 0);
+      assert.equal(s.player.body.width, goomba.w * scale);
+    }
+  }
+  const s = game();
+  assert.equal(s.mario.body.width, 24);
+  assert.equal(s.mario.body.height, 38);
+  s.setMarioStage(0);
+  assert.equal(s.mario.scale, 0.5);
+  assert.equal(s.mario.body.width, 12);
+  assert.equal(s.mario.body.height, 19);
+  s.setMarioStage(2);
+  assert.equal(s.marioStage, 2);
+  assert.equal(s.mario.body.width, 24);
+  assert.equal(s.mario.body.height, 38);
+});
+
+test("star vs small Mario overlap uses the scaled body, not unscaled 19", () => {
+  const s = game();
+  give(s, s.player, "star");
+  stillMario(s);
+  s.setMarioStage(0);
+  parkNpcs(s, []);
+  Body.setPosition(s.mario.body, { x: 200, y: 300 });
+  const unscaled = s.player.body.height / 2 + 19;
+  const scaled =
+    s.player.body.height / 2 + s.mario.body.height / 2;
+  assert.ok(unscaled > scaled + 5);
+  const dy = (unscaled + scaled) / 2;
+  at(s, 200, 300 - dy);
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.marioActive, true);
+  assert.equal(s.mario.alive, true);
+  assert.ok(s.player.alive);
+});
+
+test("player fireballs use Mario's scaled body, not unscaled 19", () => {
+  const s = game();
+  stillMario(s);
+  s.setMarioStage(0);
+  parkNpcs(s, []);
+  Body.setPosition(s.mario.body, { x: 200, y: 300 });
+  const radius = 6;
+  const dy = (19 + s.mario.body.height / 2) / 2 + radius;
+  s.fireballs.push({
+    id: 1,
+    x: 200,
+    y: 300 - dy,
+    vx: 0,
+    age: 0,
+    owner: "player",
+  });
+  tick(s, dt);
+  assert.equal(s.marioStage, 0);
+  assert.equal(s.marioActive, true);
+});
+
+test("small Mario head hits use the scaled body top", () => {
+  const s = game();
+  stillMario(s);
+  s.marioDecision = 10;
+  s.setMarioStage(0);
+  parkNpcs(s, []);
+  at(s, 400);
+  const brick = s.obstacles.find(
+    (c) =>
+      c.kind === "brick" &&
+      !c.question &&
+      !c.hidden &&
+      !c.broken &&
+      !c.content &&
+      c.body &&
+      c.y > 300 &&
+      c.x < 900,
+  )!;
+  const top = brick.body!.bounds.max.y;
+  Body.setPosition(s.mario.body, {
+    x: brick.x,
+    y: top + s.mario.body.height / 2 + 1,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: -4 });
+  tick(s, dt);
+  assert.equal(brick.broken, true);
+});
+
 function owned(s: Simulation, owner: "player" | "mario") {
   return s.fireballs.filter((f) => f.owner === owner);
 }
@@ -1342,7 +1467,7 @@ test("player fireballs step Mario from fire to big to small, then defeat him", (
 });
 
 function overlapX(s: Simulation, n: Actor) {
-  return 12 * n.scale + 13 * s.player.scale;
+  return (n.body.width + s.player.body.width) / 2 + 1;
 }
 
 test("an unwarned NPC inside 96px is warned without overlap", () => {
@@ -2170,6 +2295,110 @@ test("side contact is not a stomp", () => {
   Body.setPosition(s.mario.body, { x: 102, y: 411 });
   tick(s, dt);
   assert.equal(s.player.alive, true);
+});
+
+test("air overlap: giant player with higher feet stomps Mario even when not falling", () => {
+  const s = game();
+  give(s, s.player, "mushroom");
+  airOverlap(s, -8);
+  assert.ok(s.player.body.bounds.max.y < s.mario.body.bounds.max.y - 0.5);
+  assert.ok(s.player.body.velocity.y <= 0);
+  tick(s, dt);
+  assert.equal(s.player.grounded, false);
+  assert.equal(s.mario.grounded, false);
+  assert.equal(s.marioStage, 0);
+  assert.ok(s.player.alive && s.mario.alive);
+  assert.ok(s.player.body.velocity.y < 0);
+});
+
+test("air overlap: Mario with higher feet hurts the player even when not falling", () => {
+  const s = game();
+  airOverlap(s, 8);
+  assert.ok(s.mario.body.bounds.max.y < s.player.body.bounds.max.y - 0.5);
+  assert.ok(s.mario.body.velocity.y <= 0);
+  tick(s, dt);
+  assert.equal(s.player.alive, false);
+});
+
+test("air overlap: small player with higher feet does not hurt Mario or take damage", () => {
+  const s = game();
+  airOverlap(s, -8);
+  assert.ok(s.player.body.bounds.max.y < s.mario.body.bounds.max.y - 0.5);
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.mario.alive, true);
+  assert.equal(s.marioStage, 1);
+});
+
+test("air overlap: equal feet is a side and not a stomp", () => {
+  const s = game();
+  give(s, s.player, "mushroom");
+  airOverlap(s, 0);
+  assert.ok(
+    Math.abs(s.player.body.bounds.max.y - s.mario.body.bounds.max.y) < 0.01,
+  );
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.marioStage, 1);
+  assert.equal(s.mario.alive, true);
+});
+
+test("air overlap: a star still defeats Mario on contact", () => {
+  const s = game();
+  give(s, s.player, "star");
+  airOverlap(s, 0);
+  tick(s, dt);
+  assert.equal(s.marioActive, false);
+  assert.equal(s.mario.alive, false);
+  assert.ok(s.player.alive);
+});
+
+test("air overlap: a later starred NPC still defeats Mario after equal feet", () => {
+  const s = game();
+  const n = s.npcs[0];
+  give(s, n, "star");
+  airOverlap(s, 0);
+  Body.setPosition(n.body, { ...s.mario.body.position });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.marioActive, false);
+  assert.equal(s.mario.alive, false);
+  assert.ok(s.player.alive);
+  assert.ok(n.alive);
+});
+
+test("air overlap: starred Mario still hurts the player", () => {
+  const s = game();
+  stillMario(s);
+  give(s, s.mario, "star");
+  airOverlap(s, 8);
+  assert.ok(s.mario.body.bounds.max.y < s.player.body.bounds.max.y - 0.5);
+  tick(s, dt);
+  assert.equal(s.player.alive, false);
+  assert.equal(s.mario.alive, true);
+  assert.ok(s.mario.starLeft > 0);
+});
+
+test("Mario falling-from-above stomp uses current body extents, not a 34px floor", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  stillMario(s);
+  s.setMarioStage(0);
+  Body.setPosition(n.body, { x: 200, y: 320 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  const reach =
+    (n.body.height + s.mario.body.height) / 2 + 2;
+  Body.setPosition(s.mario.body, { x: 200, y: n.body.position.y - reach });
+  Body.setVelocity(s.mario.body, { x: 0, y: 4 });
+  assert.ok(
+    Math.abs(n.body.position.y - s.mario.body.position.y) >
+      (n.body.height + s.mario.body.height) / 2,
+  );
+  assert.ok(Math.abs(n.body.position.y - s.mario.body.position.y) < 34);
+  tick(s, dt);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, 1);
 });
 
 test("Mario reacts before pursuing and does not update aim between observations", () => {

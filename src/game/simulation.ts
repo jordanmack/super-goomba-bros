@@ -605,7 +605,7 @@ export class Simulation {
     return T.population - this.saved - this.living();
   }
   private ground(a: Actor) {
-    const bottom = a.body.position.y + (a.kind === "mario" ? 19 : 14) * a.scale;
+    const bottom = a.body.bounds.max.y;
     const onLid = this.solids.some(
       (s) =>
         !s.headOnly &&
@@ -933,10 +933,7 @@ export class Simulation {
         n.warned ||
         this.bouncedNpcs.has(n) ||
         (this.player.body.velocity.y > 0.2 &&
-          this.fallingOntoNpc(
-            n,
-            this.player.body.position.y + 14 * this.player.scale,
-          )) ||
+          this.fallingOntoNpc(n, this.player.body.bounds.max.y)) ||
         !this.withinWarningRange(n)
       )
         continue;
@@ -994,13 +991,12 @@ export class Simulation {
   private resize(a: Actor, nextScale: number, blink: boolean) {
     const previous = a.scale;
     if (previous === nextScale) return;
-    const radius = a.kind === "mario" ? 19 : 14;
-    const feet = a.body.position.y + radius * previous;
+    const feet = a.body.bounds.max.y;
     Body.scale(a.body, nextScale / previous, nextScale / previous);
     a.scale = nextScale;
     Body.setPosition(a.body, {
       x: a.body.position.x,
-      y: feet - radius * nextScale,
+      y: feet - a.body.height / 2,
     });
     if (blink) {
       a.transformFrom = previous;
@@ -1211,7 +1207,7 @@ export class Simulation {
       const top = Math.min(...hits.map((hit) => hit.bounds.min.y));
       Body.setPosition(a.body, {
         x: a.body.position.x,
-        y: top - 14 * a.scale - 0.1,
+        y: top - a.body.height / 2 - 0.1,
       });
     }
     const originX = a.body.position.x;
@@ -1257,11 +1253,13 @@ export class Simulation {
       }
       item.clip = undefined;
       const p = item.body.position;
+      const halfW = item.body.width / 2,
+        halfH = item.body.height / 2;
       const floor = this.solids.some(
         (s) =>
-          p.x + 12 > s.bounds.min.x &&
-          p.x - 12 < s.bounds.max.x &&
-          Math.abs(p.y + 14 - s.bounds.min.y) < 5,
+          p.x + halfW > s.bounds.min.x &&
+          p.x - halfW < s.bounds.max.x &&
+          Math.abs(p.y + halfH - s.bounds.min.y) < 5,
       );
       const wall = this.solids.some(
         (s) =>
@@ -1287,8 +1285,7 @@ export class Simulation {
           !a.saved &&
           !this.inPipe(a) &&
           (a !== this.mario || this.marioActive) &&
-          Math.abs(a.body.position.x - p.x) < 12 * a.scale + 12 &&
-          Math.abs(a.body.position.y - p.y) < 14 * a.scale + 14
+          this.overlapBody(a.body, item.body)
         ) {
           this.collect(a, item);
           break;
@@ -1355,13 +1352,13 @@ export class Simulation {
   }
 
   private npcTop(n: Actor) {
-    return n.body.position.y - 14 * n.scale;
+    return n.body.bounds.min.y;
   }
 
   private overlapNpcX(n: Actor) {
     return (
       Math.abs(this.player.body.position.x - n.body.position.x) <
-      12 * this.player.scale + 12 * n.scale
+      (this.player.body.width + n.body.width) / 2
     );
   }
 
@@ -1387,8 +1384,7 @@ export class Simulation {
 
   private autoWarn() {
     if (this.mode !== "playing" || this.inPipe(this.player)) return;
-    const playerBottom =
-      this.player.body.position.y + 14 * this.player.scale;
+    const playerBottom = this.player.body.bounds.max.y;
     const falling = this.player.body.velocity.y > 0.2;
     const nearby = this.npcs.some(
       (n) =>
@@ -1433,15 +1429,70 @@ export class Simulation {
     }
   }
 
-  private overlapActors(a: Actor, b: Actor) {
-    const halfW = (actor: Actor) => 12 * actor.scale;
-    const halfH = (actor: Actor) =>
-      (actor.kind === "mario" ? 19 : 14) * actor.scale;
+  private overlapBody(a: Body, b: Body) {
     return (
-      Math.abs(a.body.position.x - b.body.position.x) <
-        halfW(a) + halfW(b) &&
-      Math.abs(a.body.position.y - b.body.position.y) < halfH(a) + halfH(b)
+      Math.abs(a.position.x - b.position.x) < (a.width + b.width) / 2 &&
+      Math.abs(a.position.y - b.position.y) < (a.height + b.height) / 2
     );
+  }
+
+  private overlapActors(a: Actor, b: Actor) {
+    return this.overlapBody(a.body, b.body);
+  }
+
+  private overlapFireball(a: Actor, x: number, y: number, radius: number) {
+    return (
+      Math.abs(a.body.position.x - x) < a.body.width / 2 + radius &&
+      Math.abs(a.body.position.y - y) < a.body.height / 2 + radius
+    );
+  }
+
+  private stompMario(stomper: Actor) {
+    if (this.marioStun !== 0) return;
+    this.hitMarioByFireball();
+    Body.setVelocity(stomper.body, {
+      x: stomper.body.velocity.x,
+      y: -T.stompBounce,
+    });
+  }
+
+  private resolveMarioContact(playerBottom: number, playerFalling: boolean) {
+    if (!this.marioActive) return;
+    for (const a of [this.player, ...this.npcs]) {
+      if (
+        !this.marioActive ||
+        !a.alive ||
+        a.saved ||
+        this.inPipe(a) ||
+        this.inPipe(this.mario)
+      )
+        continue;
+      if (!this.overlapActors(a, this.mario)) continue;
+      if (a.starLeft > 0) {
+        if (this.mario.starLeft <= 0) {
+          this.defeatMario();
+          return;
+        }
+        continue;
+      }
+      if (a !== this.player) continue;
+      if (!a.grounded && !this.mario.grounded) {
+        const dy = a.body.bounds.max.y - this.mario.body.bounds.max.y;
+        if (Math.abs(dy) <= 0.5) continue;
+        if (dy < 0) {
+          if (a.scale > 1 && this.mario.starLeft <= 0) this.stompMario(a);
+        } else if (this.marioStun === 0) this.hurt(a);
+        continue;
+      }
+      if (
+        this.mario.starLeft <= 0 &&
+        a.scale > 1 &&
+        playerFalling &&
+        playerBottom <= this.mario.body.bounds.min.y + 12 &&
+        a.body.bounds.max.y >= this.mario.body.bounds.min.y
+      )
+        this.stompMario(a);
+    }
   }
 
   private shellFallSpeed(n: Actor) {
@@ -1795,7 +1846,7 @@ export class Simulation {
       if (input.fire && this.player.flower && this.canThrowFireball("player")) {
         this.fireballs.push({
           id: this.nextId++,
-          x: p.x + this.player.facing * (12 * this.player.scale + 10),
+          x: p.x + this.player.facing * (this.player.body.width / 2 + 10),
           y: p.y,
           vx: this.player.facing * 6,
           vy: 0,
@@ -1845,11 +1896,11 @@ export class Simulation {
       )
       .map((a) => ({
         actor: a,
-        top: a.body.position.y - (a === this.mario ? 19 : 14 * a.scale),
+        top: a.body.bounds.min.y,
       }));
-    const playerBottom = this.player.body.position.y + 14 * this.player.scale;
+    const playerBottom = this.player.body.bounds.max.y;
     const playerFalling = this.player.body.velocity.y > 0.2;
-    const marioBottom = this.mario.body.position.y + 19 * this.mario.scale;
+    const marioBottom = this.mario.body.bounds.max.y;
     const marioFalling = this.mario.body.velocity.y > 0.2;
     const prevNpcTops = new Map<Actor, number>();
     for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
@@ -1900,43 +1951,7 @@ export class Simulation {
     this.updateItems(dt);
     for (const pop of this.coinPops) pop.age += dt;
     this.coinPops = this.coinPops.filter((pop) => pop.age < 0.5);
-    if (this.marioActive && this.mario.starLeft <= 0) {
-      for (const a of [this.player, ...this.npcs]) {
-        if (!a.alive || a.saved || this.inPipe(a) || this.inPipe(this.mario))
-          continue;
-        const overlapX =
-          Math.abs(a.body.position.x - this.mario.body.position.x) <
-          12 * a.scale + 12;
-        if (
-          a.starLeft > 0 &&
-          overlapX &&
-          Math.abs(a.body.position.y - this.mario.body.position.y) <
-            14 * a.scale + 19
-        ) {
-          this.defeatMario();
-          break;
-        }
-        if (
-          a === this.player &&
-          a.scale > 1 &&
-          playerFalling &&
-          overlapX &&
-          playerBottom <=
-            this.mario.body.position.y - 19 * this.mario.scale + 12 &&
-          a.body.bounds.max.y >=
-            this.mario.body.position.y - 19 * this.mario.scale
-        ) {
-          if (this.marioStun === 0) {
-            this.hitMarioByFireball();
-            Body.setVelocity(a.body, {
-              x: a.body.velocity.x,
-              y: -T.stompBounce,
-            });
-          }
-          break;
-        }
-      }
-    }
+    this.resolveMarioContact(playerBottom, playerFalling);
     for (const a of [this.player, ...this.npcs])
       if (a.alive && !a.saved && !this.inPipe(a) && a.body.position.y > 640)
         this.kill(a, false);
@@ -2050,7 +2065,7 @@ export class Simulation {
         continue;
       }
       if (!n.warned) {
-        const feet = p.y + 14 * n.scale;
+        const feet = n.body.bounds.max.y;
         const speed = T.idleSpeed * (0.8 + n.fear * 0.4);
         if (n.idleDrop || !n.grounded) {
           n.idleDrop ??= { airborne: !n.grounded };
@@ -2075,7 +2090,7 @@ export class Simulation {
         }
         if (n.idleWalking) {
           const route = (direction: number) => {
-            const ahead = p.x + direction * (12 * n.scale + 8);
+            const ahead = p.x + direction * (n.body.width / 2 + 8);
             const below = this.solids.filter(
               (s) => ahead >= s.bounds.min.x && ahead <= s.bounds.max.x,
             );
@@ -2084,7 +2099,7 @@ export class Simulation {
               below.some(
                 (s) =>
                   s.bounds.min.y < feet - 5 &&
-                  s.bounds.max.y > p.y - 14 * n.scale,
+                  s.bounds.max.y > n.body.bounds.min.y,
               )
             )
               return "blocked";
@@ -2509,11 +2524,9 @@ export class Simulation {
       if (
         this.mario.body.velocity.y > 0.2 &&
         m.y < p.y - 8 &&
-        Math.abs(p.x - m.x) <
-          Math.max(22, 12 * a.scale + 12 * this.mario.scale) &&
-        Math.abs(p.y - m.y) <
-          Math.max(34, 14 * a.scale + 19 * this.mario.scale)
+        this.overlapActors(this.mario, a)
       ) {
+        if (a === this.player && !a.grounded && !this.mario.grounded) continue;
         if (a.kind === "koopa") {
           this.koopaStomp(a, this.mario);
           Body.setVelocity(this.mario.body, {
@@ -2575,10 +2588,7 @@ export class Simulation {
         if (
           this.marioActive &&
           !this.inPipe(this.mario) &&
-          Math.abs(this.mario.body.position.x - f.x) <
-            12 * this.mario.scale + radius &&
-          Math.abs(this.mario.body.position.y - f.y) <
-            19 * this.mario.scale + radius
+          this.overlapFireball(this.mario, f.x, f.y, radius)
         ) {
           this.hitMarioByFireball();
           f.age = 6;
@@ -2590,8 +2600,7 @@ export class Simulation {
           a.alive &&
           !a.saved &&
           !this.inPipe(a) &&
-          Math.abs(a.body.position.x - f.x) < 12 * a.scale + radius &&
-          Math.abs(a.body.position.y - f.y) < 14 * a.scale + radius
+          this.overlapFireball(a, f.x, f.y, radius)
         ) {
           if (a.starLeft <= 0) this.kill(a);
           f.age = 6;

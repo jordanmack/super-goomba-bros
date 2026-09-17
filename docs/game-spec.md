@@ -126,6 +126,10 @@ outside the camera view, including while the player is in another area.
 
 NPCs collect items by contact without seeking them or intentionally attacking
 Mario. A giant NPC still flees. Only the giant player can stomp Mario.
+When the player and Mario overlap in the air, compare feet
+(`body.bounds.max.y`). Smaller Y is higher. The higher feet deal the hit. Equal
+feet (within a tiny epsilon) are a side and not a stomp. A small player with
+higher feet does not hurt Mario and does not take that hit.
 A falling player that lands on an NPC does not bounce upward. That landing does
 not kill or warn the NPC. Side contact is not a bounce.
 A stomp on a walking Koopa, from the player or Mario, turns the Koopa into a
@@ -180,8 +184,10 @@ game dynamic. They do not replace NPCs or reset the attempt.
 Mario observes at intervals, reacts with a delay, and aims ahead of targets.
 Scenery blocks sight. Warnings and running crowds also draw attention.
 His jumps keep their launch direction so targets can dodge.
-Side contact alone is not a stomp. He still hunts a giant player and giant
-NPCs. Giant size is not star immunity.
+Side contact alone is not a stomp, including grounded contact and air overlap
+with equal feet. He still hunts a giant player and giant NPCs. Giant size is
+not star immunity. A player or NPC star still defeats him on contact. Mario
+hitting the player still uses shrink-then-kill.
 
 Running NPCs in view increase capped crowd pressure. More pressure makes Mario
 return sooner, react faster, run faster, and attack more often. Idle, dead,
