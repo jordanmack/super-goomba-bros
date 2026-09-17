@@ -66,8 +66,11 @@ export class PhaserGame {
   resize() {
     this.width =
       (540 * this.host.clientWidth) / Math.max(1, this.host.clientHeight);
-    if (this.game.isBooted)
-      this.game.scale.setGameSize(this.width, this.height);
+    if (!this.game.isBooted) return;
+    // FIT caches parent bounds. Update them before setGameSize or the canvas
+    // keeps the previous letterbox after the pad unmounts.
+    this.game.scale.getParentBounds();
+    this.game.scale.setGameSize(this.width, this.height);
   }
   bindPhysics(physics: PhysicsWorld) {
     physics.bind(this.play!.physics.world, Phaser.Physics.Arcade);

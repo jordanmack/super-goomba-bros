@@ -76,6 +76,110 @@ for (const viewport of viewports) {
   });
 }
 
+async function titleBoxes(page: Page) {
+  return page.evaluate(() => {
+    const playfield = document
+      .querySelector(".playfield")!
+      .getBoundingClientRect();
+    const canvasEl = document.querySelector(
+      ".world canvas",
+    ) as HTMLCanvasElement;
+    const canvas = canvasEl.getBoundingClientRect();
+    const scale = (window as any).__game?.renderer.game.scale;
+    return {
+      playfieldHeight: playfield.height,
+      playfieldWidth: playfield.width,
+      canvasHeight: canvas.height,
+      canvasWidth: canvas.width,
+      canvasTop: canvas.top,
+      playfieldTop: playfield.top,
+      innerHeight: window.innerHeight,
+      pad: !!document.querySelector(".play-footer"),
+      styleHeight: parseFloat(canvasEl.style.height) || 0,
+      styleWidth: parseFloat(canvasEl.style.width) || 0,
+      displayHeight: scale?.displaySize.height ?? 0,
+      displayWidth: scale?.displaySize.width ?? 0,
+      parentHeight: scale?.parentSize.height ?? 0,
+      parentWidth: scale?.parentSize.width ?? 0,
+    };
+  });
+}
+
+function filledTitle(box: Awaited<ReturnType<typeof titleBoxes>>) {
+  return (
+    !box.pad &&
+    box.styleHeight > 0 &&
+    Math.abs(box.playfieldHeight - box.innerHeight) < 5 &&
+    Math.abs(box.canvasHeight - box.playfieldHeight) < 5 &&
+    Math.abs(box.styleHeight - box.playfieldHeight) < 5 &&
+    Math.abs(box.styleWidth - box.playfieldWidth) < 5 &&
+    Math.abs(box.displayHeight - box.parentHeight) < 5 &&
+    Math.abs(box.parentHeight - box.playfieldHeight) < 5
+  );
+}
+
+test("GAME OVER returns the title playfield to the cold-load size", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/");
+  const screen = page.getByRole("region", { name: "Title screen" });
+  await expect(screen).toBeVisible();
+  await expect(page.locator("main.at-title")).toBeVisible();
+  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled();
+  const cold = await titleBoxes(page);
+  expect(filledTitle(cold)).toBe(true);
+  expect(Math.abs(cold.canvasTop - cold.playfieldTop)).toBeLessThan(5);
+
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await expect(page.locator(".play-footer")).toBeVisible();
+  const inGame = await titleBoxes(page);
+  expect(inGame.pad).toBe(true);
+  expect(inGame.playfieldHeight).toBeLessThan(cold.playfieldHeight - 40);
+  expect(inGame.parentHeight).toBeLessThan(cold.parentHeight - 40);
+  expect(inGame.styleHeight).toBeLessThan(cold.styleHeight - 40);
+
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.lives = 1;
+    s.kill(s.player, false);
+  });
+  await expect(page.getByRole("region", { name: "Game over" })).toBeVisible({
+    timeout: 8000,
+  });
+  await expect(screen).toBeVisible({ timeout: 8000 });
+  await expect(page.locator("main.at-title")).toBeVisible();
+  await expect(page.locator(".play-footer")).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const next = await titleBoxes(page);
+      return (
+        filledTitle(next) &&
+        Math.abs(next.playfieldHeight - cold.playfieldHeight) < 5 &&
+        Math.abs(next.parentHeight - cold.parentHeight) < 5 &&
+        Math.abs(next.styleHeight - cold.styleHeight) < 5 &&
+        Math.abs(next.displayHeight - cold.displayHeight) < 5
+      );
+    })
+    .toBe(true);
+  const back = await titleBoxes(page);
+  expect(filledTitle(back)).toBe(true);
+  expect(Math.abs(back.playfieldHeight - cold.playfieldHeight)).toBeLessThan(5);
+  expect(Math.abs(back.canvasHeight - cold.canvasHeight)).toBeLessThan(5);
+  expect(Math.abs(back.styleHeight - cold.styleHeight)).toBeLessThan(5);
+  expect(Math.abs(back.displayHeight - cold.displayHeight)).toBeLessThan(5);
+  expect(Math.abs(back.parentHeight - cold.parentHeight)).toBeLessThan(5);
+  expect(back.playfieldHeight).toBeGreaterThan(inGame.playfieldHeight + 40);
+  expect(back.parentHeight).toBeGreaterThan(inGame.parentHeight + 40);
+  expect(back.styleHeight).toBeGreaterThan(inGame.styleHeight + 40);
+  await expect(screen.getByText("A LITTLE COURAGE. A BIG MUSTACHE.")).toBeVisible();
+  await expect(
+    screen.getByRole("heading", { name: "Super Goomba Bros" }),
+  ).toBeVisible();
+  await expect(screen.getByRole("button", { name: "START GAME" })).toBeVisible();
+});
+
 test("play keeps the journey label and world intro after the title omits them", async ({
   page,
 }) => {

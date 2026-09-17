@@ -391,6 +391,11 @@ export default function App() {
     state.mode === "dead" ||
     state.mode === "won";
   const interstitial = state.mode === "intro" || state.mode === "gameover";
+  const padOpen = playing && padLayout !== "hidden";
+  useLayoutEffect(() => {
+    if (!ready) return;
+    runtime.current?.renderer.resize();
+  }, [ready, padOpen]);
   const overlay = paused || state.mode === "won";
   const minutes = Math.floor(state.elapsed / 60)
     .toString()
@@ -570,7 +575,7 @@ export default function App() {
         </>
       )}
       </div>
-      {playing && padLayout !== "hidden" && (
+      {padOpen && (
             <footer className="play-footer" inert={helpOpen || undefined}>
               <div className="journey">
                 <span>THE GREAT ESCAPE</span>
