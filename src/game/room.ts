@@ -137,10 +137,44 @@ export class Room {
       }
   }
 
-  place(actor: Actor, desiredX: number) {
+  private spawnKind(solid: Body) {
+    if (solid.headOnly) return;
+    if (this.platforms.some((p) => p.body === solid)) return "platform";
+    const obstacle = this.obstacles.find((o) => o.body === solid);
+    if (!obstacle || obstacle.hidden) return;
+    if (obstacle.kind === "brick" || obstacle.kind === "pipe")
+      return obstacle.kind;
+  }
+
+  private supportsAt(x: number, half: number) {
+    return this.solids.filter(
+      (s) =>
+        !s.headOnly &&
+        x + half > s.bounds.min.x &&
+        x - half < s.bounds.max.x &&
+        s.bounds.min.y >= MAP_TOP + 80,
+    );
+  }
+
+  place(
+    actor: Actor,
+    desiredX: number,
+    support: "low" | "brick" | "lid" = "low",
+    occupied?: Set<string>,
+  ) {
     const half = actor.body.width / 2,
       height = actor.body.height;
-    for (let attempt = 0; attempt < this.data.width; attempt++) {
+    const raised = support !== "low";
+    const attempts = raised
+      ? Math.round(T.elevatedSpawnNear / 32) * 2 + 1
+      : this.data.width;
+    const matches = (solid: Body) => {
+      const kind = this.spawnKind(solid);
+      if (support === "brick") return kind === "brick";
+      if (support === "lid") return kind === "pipe" || kind === "platform";
+      return true;
+    };
+    for (let attempt = 0; attempt < attempts; attempt++) {
       const x = Math.max(
         this.offset + half + 1,
         Math.min(
@@ -148,28 +182,45 @@ export class Room {
           desiredX + (attempt % 2 ? 1 : -1) * Math.ceil(attempt / 2) * 32,
         ),
       );
-      const supports = this.solids
-        .filter(
-          (s) =>
-            !s.headOnly &&
-            x + half > s.bounds.min.x &&
-            x - half < s.bounds.max.x &&
-            s.bounds.min.y >= MAP_TOP + 80,
+      let supports = this.supportsAt(x, half).filter(matches);
+      if (support === "low") {
+        const floor = supports.filter((solid) => !this.spawnKind(solid));
+        if (floor.length) supports = floor;
+      }
+      supports.sort((a, b) => b.bounds.min.y - a.bounds.min.y);
+      for (const solid of supports) {
+        const minX = solid.bounds.min.x + half,
+          maxX = solid.bounds.max.x - half;
+        if (raised && minX > maxX + 0.01) continue;
+        const px = raised
+          ? Math.max(
+              minX,
+              Math.min(maxX, Math.floor(x / 32) * 32 + 16),
+            )
+          : x;
+        const top = Math.round(solid.bounds.min.y);
+        const cells: string[] = [];
+        for (
+          let col = Math.floor((px - half) / 32);
+          col <= Math.floor((px + half - 0.01) / 32);
+          col++
         )
-        .sort((a, b) => b.bounds.min.y - a.bounds.min.y);
-      for (const support of supports) {
+          cells.push(`${col}:${top}`);
+        if (occupied && cells.some((cell) => occupied.has(cell))) continue;
         Body.setPosition(actor.body, {
-          x,
-          y: support.bounds.min.y - height / 2,
+          x: px,
+          y: solid.bounds.min.y - height / 2,
         });
         if (!overlaps(actor.body, this.solids, 0.01).length) {
           Body.setVelocity(actor.body, { x: 0, y: 0 });
-          actor.homeX = x;
+          actor.homeX = px;
           actor.grounded = true;
-          return;
+          if (occupied) for (const cell of cells) occupied.add(cell);
+          return true;
         }
       }
     }
+    if (raised) return false;
     throw new Error(`No safe entrance in area ${this.data.id} at ${desiredX}`);
   }
 
@@ -180,15 +231,9 @@ export class Room {
       this.offset + half + 1,
       Math.min(this.goalX - 48, x),
     );
-    const supports = this.solids
-      .filter(
-        (s) =>
-          !s.headOnly &&
-          x + half > s.bounds.min.x &&
-          x - half < s.bounds.max.x &&
-          s.bounds.min.y >= MAP_TOP + 80,
-      )
-      .sort((a, b) => b.bounds.min.y - a.bounds.min.y);
+    const supports = this.supportsAt(x, half).sort(
+      (a, b) => b.bounds.min.y - a.bounds.min.y,
+    );
     for (const support of supports) {
       Body.setPosition(actor.body, {
         x,

@@ -1473,6 +1473,7 @@ function overlapX(s: Simulation, n: Actor) {
 test("an unwarned NPC inside 96px is warned without overlap", () => {
   const s = game();
   const n = s.npcs[0];
+  Body.setPosition(n.body, { x: 400, y: 415 });
   const gap = overlapX(s, n) + 20;
   at(s, n.body.position.x - gap);
   assert.ok(gap > overlapX(s, n));
@@ -1498,6 +1499,7 @@ test("an unwarned NPC inside 96px is warned without overlap", () => {
 test("an unwarned NPC outside 96px is not warned", () => {
   const s = game();
   const n = s.npcs[0];
+  Body.setPosition(n.body, { x: 400, y: 415 });
   at(s, n.body.position.x - T.warningRange - 12);
   tick(s, dt);
   assert.equal(n.warned, false);
@@ -1508,6 +1510,7 @@ test("an unwarned NPC outside 96px is not warned", () => {
 test("warning cooldown and one-count still hold", () => {
   const s = game();
   const n = s.npcs[0];
+  Body.setPosition(n.body, { x: 400, y: 415 });
   at(s, n.body.position.x - 40);
   tick(s, dt);
   assert.equal(s.warned, 1);
@@ -1629,6 +1632,173 @@ test("fixed population and unique traits per character across a run", () => {
     s.npcs.map((n) => [n.speed, n.fear, n.reaction]),
     traits,
   );
+});
+
+function supportUnder(s: Simulation, actor: Actor) {
+  const feet = actor.body.bounds.max.y,
+    half = actor.body.width / 2;
+  return s.solids.find(
+    (solid) =>
+      !solid.headOnly &&
+      actor.body.position.x + half > solid.bounds.min.x &&
+      actor.body.position.x - half < solid.bounds.max.x &&
+      Math.abs(feet - solid.bounds.min.y) < 1.5,
+  );
+}
+
+test("place does not always take the lowest floor and skips hidden blocks", () => {
+  const s = game();
+  const n = s.npcs[0];
+  const brick = s.obstacles.find(
+    (c) => c.kind === "brick" && !c.hidden && c.body,
+  )!;
+  s.activeRoom.place(n, brick.x);
+  const lowY = n.body.position.y;
+  assert.equal(s.activeRoom.place(n, brick.x, "brick"), true);
+  assert.ok(n.body.position.y < lowY - 20, "raised spawn sits above the floor");
+  assert.ok(Math.abs(n.body.bounds.max.y - brick.body!.bounds.min.y) < 1);
+  assert.equal(overlaps(n.body, s.solids, 0.01).length, 0);
+  const hidden = s.obstacles.find((c) => c.hidden && c.body)!;
+  s.activeRoom.place(n, hidden.x, "brick");
+  assert.ok(
+    Math.abs(n.body.bounds.max.y - hidden.body!.bounds.min.y) > 2,
+    "unrevealed hidden blocks are not standable starts",
+  );
+  const pipe = s.obstacles.find((c) => c.kind === "pipe" && c.body)!;
+  assert.equal(s.activeRoom.place(n, pipe.x, "lid"), true);
+  assert.ok(Math.abs(n.body.bounds.max.y - pipe.body!.bounds.min.y) < 1);
+  assert.equal(overlaps(n.body, s.solids, 0.01).length, 0);
+});
+
+test("raised place refuses a second NPC in the same spawn cell", () => {
+  const s = game();
+  const a = s.npcs[0],
+    b = s.npcs[1];
+  const brick = s.obstacles.find(
+    (c) => c.kind === "brick" && !c.hidden && c.body,
+  )!;
+  Body.setPosition(b.body, { x: 80, y: 80 });
+  b.grounded = false;
+  const occupied = new Set<string>();
+  assert.equal(s.activeRoom.place(a, brick.x, "brick", occupied), true);
+  const placed = s.activeRoom.place(b, brick.x, "brick", occupied);
+  if (!placed) {
+    assert.equal(b.grounded, false);
+    return;
+  }
+  assert.ok(
+    Math.abs(a.body.position.x - b.body.position.x) >= a.body.width,
+    "stacked raised bodies",
+  );
+  assert.notEqual(
+    `${Math.floor(a.body.position.x / 32)}:${Math.round(a.body.bounds.max.y)}`,
+    `${Math.floor(b.body.position.x / 32)}:${Math.round(b.body.bounds.max.y)}`,
+  );
+});
+
+test("a share of World 1-1 NPCs spawn on brick and question tops", () => {
+  const s = game();
+  assert.equal(s.npcs.length, T.population);
+  assert.ok(
+    Math.abs(s.player.body.bounds.max.y - T.groundY) < 2,
+    "player still starts on the floor",
+  );
+  const cells = new Set<string>();
+  let bricks = 0,
+    floor = 0;
+  for (const n of s.npcs) {
+    assert.equal(n.areaId, s.level.main);
+    assert.equal(overlaps(n.body, s.solids, 0.01).length, 0);
+    const support = supportUnder(s, n);
+    assert.ok(support, "NPC feet rest on a solid");
+    assert.equal(support.headOnly, false);
+    const cell = `${Math.floor(n.body.position.x / 32)}:${Math.round(support.bounds.min.y)}`;
+    assert.equal(cells.has(cell), false, "two NPCs share a spawn cell");
+    cells.add(cell);
+    const block = s.obstacles.find((c) => c.body === support);
+    if (block?.kind === "brick" && !block.hidden) bricks++;
+    else if (Math.abs(support.bounds.min.y - T.groundY) < 4) floor++;
+  }
+  const brickTops = s.obstacles.filter(
+    (c) => c.kind === "brick" && !c.hidden && c.body,
+  ).length;
+  assert.ok(brickTops >= T.population / 3, "1-1 has brick and question tops");
+  assert.ok(
+    bricks >= Math.round(T.population * T.elevatedSpawnShare),
+    `brick/question spawns ${bricks}`,
+  );
+  assert.ok(floor > 0, "ground spawns remain");
+  assert.ok(bricks < T.population, "not every NPC starts on a brick");
+});
+
+test("place lid sits on a moving platform above the floor", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-3");
+  s.reset();
+  s.marioReturn = 1e6;
+  const platform = s.activeRoom.platforms.find((p) => {
+    const x = p.body.position.x;
+    return s.solids.some(
+      (solid) =>
+        solid !== p.body &&
+        !solid.headOnly &&
+        x > solid.bounds.min.x &&
+        x < solid.bounds.max.x &&
+        solid.bounds.min.y > p.body.bounds.min.y + 20 &&
+        Math.abs(solid.bounds.min.y - T.groundY) < 8,
+    );
+  });
+  assert.ok(platform, "1-3 has a platform over the floor");
+  const n = s.npcs[0];
+  s.activeRoom.place(n, platform.body.position.x, "low");
+  const lowY = n.body.position.y;
+  assert.equal(s.activeRoom.place(n, platform.body.position.x, "lid"), true);
+  assert.ok(n.body.position.y < lowY - 20, "lid spawn sits above the floor");
+  assert.ok(Math.abs(n.body.bounds.max.y - platform.body.bounds.min.y) < 1);
+  assert.equal(overlaps(n.body, s.solids, 0.01).length, 0);
+});
+
+test("a pipe-heavy stage spawns NPCs on pipe lids", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "8-4");
+  s.reset();
+  s.marioReturn = 1e6;
+  let onLid = 0;
+  for (const n of s.npcs) {
+    const support = supportUnder(s, n);
+    assert.ok(support, "NPC feet rest on a solid");
+    if (
+      s.obstacles.some((c) => c.body === support && c.kind === "pipe") ||
+      s.activeRoom.platforms.some((p) => p.body === support)
+    )
+      onLid++;
+  }
+  assert.ok(
+    onLid >= Math.round(T.population * T.elevatedSpawnShare),
+    `pipe-lid spawns ${onLid}`,
+  );
+});
+
+test("NPC spawns do not overlap each other", () => {
+  for (const [index, level] of CAMPAIGN.entries()) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = index;
+    s.reset();
+    for (let i = 0; i < s.npcs.length; i++) {
+      for (let j = i + 1; j < s.npcs.length; j++) {
+        const a = s.npcs[i].body.bounds,
+          b = s.npcs[j].body.bounds;
+        assert.equal(
+          a.max.x > b.min.x &&
+            b.max.x > a.min.x &&
+            a.max.y > b.min.y &&
+            b.max.y > a.min.y,
+          false,
+          `${level.id} NPCs ${i} and ${j} overlap`,
+        );
+      }
+    }
+  }
 });
 
 test("World 1-1 has its original gaps, six pipe heights, block rows, and end stairs", () => {
@@ -1758,6 +1928,8 @@ test("a loud crowd draws Mario from beyond normal sight range", () => {
 test("unwarned NPCs patrol locally, pause, and never count as warned or saved", () => {
   const s = game();
   const n = s.npcs[0];
+  Body.setPosition(n.body, { x: 400, y: 415 });
+  n.homeX = 400;
   const start = n.body.position.x;
   tick(s, 0.8);
   assert.ok(Math.abs(n.body.position.x - start) > 10);
@@ -2971,7 +3143,12 @@ test("every floating brick has a solid top and can be destroyed and restored", (
 
 test("Mario breaks ordinary bricks by striking from below, not merely standing nearby", () => {
   const s = game();
-  const brick = s.obstacles.find((c) => c.kind === "brick" && c.y > 300)!;
+  const brick = s.obstacles.find(
+    (c) =>
+      c.kind === "brick" &&
+      c.y > 300 &&
+      !s.npcs.some((n) => supportUnder(s, n) === c.body),
+  )!;
   at(s, 100);
   s.marioActive = true;
   s.marioLook = 10;

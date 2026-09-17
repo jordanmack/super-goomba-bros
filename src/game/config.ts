@@ -1,5 +1,7 @@
 export const TUNING = {
   population: 30,
+  elevatedSpawnShare: 1 / 3,
+  elevatedSpawnNear: 192,
   idleRadius: 65,
   idleSpeed: 0.65,
   required: 12,

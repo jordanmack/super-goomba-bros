@@ -494,16 +494,31 @@ export class Simulation {
     const entry = this.loadRoom(this.level.route[0]);
     this.player.areaId = entry.data.id;
     entry.place(this.player, entry.offset + 100);
+    const occupied = new Set<string>();
+    let raisedLeft = Math.round(T.population * T.elevatedSpawnShare);
     this.npcs = Array.from({ length: T.population }, (_, i) => {
       const x =
         main.offset +
         390 +
         i * ((main.goalX - main.offset - 650) / T.population) +
         this.random() * 65;
-      const actor = this.actor(x, i % 3 === 1 ? "koopa" : "goomba");
-      main.place(actor, x);
-      return actor;
+      return this.actor(x, i % 3 === 1 ? "koopa" : "goomba");
     });
+    for (const actor of this.npcs) {
+      if (raisedLeft && main.place(actor, actor.homeX, "brick", occupied))
+        raisedLeft--;
+    }
+    for (const actor of this.npcs) {
+      if (
+        !actor.grounded &&
+        raisedLeft &&
+        main.place(actor, actor.homeX, "lid", occupied)
+      )
+        raisedLeft--;
+    }
+    for (const actor of this.npcs) {
+      if (!actor.grounded) main.place(actor, actor.homeX, "low", occupied);
+    }
     this.mario = this.actor(entry.offset - 200, "mario");
     this.mario.areaId = entry.data.id;
     this.setMarioStage(1);

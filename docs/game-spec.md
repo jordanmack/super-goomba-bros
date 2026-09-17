@@ -113,6 +113,9 @@ A closer warning is more likely to draw him. Speaking does not grant safety.
 
 Use a fixed population per stage. Do not replace dead or saved NPCs. Randomize
 safe starting positions and hidden traits for fear, reaction time, and speed.
+About one in three NPCs start on a nearby brick, question block, pipe lid, or
+moving platform when those tops exist. The rest start on the floor. Unrevealed
+hidden blocks are not standable starts. Two NPCs do not share a spawn cell.
 These traits stay fixed during an attempt.
 
 Unwarned NPCs patrol, pause, turn, and step off safe surfaces. They avoid lethal
