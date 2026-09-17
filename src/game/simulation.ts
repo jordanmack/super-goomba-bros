@@ -297,6 +297,7 @@ export class Simulation {
     actor.idleDrop = undefined;
     actor.facing = dir === "down" ? actor.facing : 1;
     actor.navVx = undefined;
+    actor.navDelay = undefined;
     actor.navHoldX = undefined;
     actor.navBackoff = undefined;
     actor.swimPath = undefined;
@@ -627,18 +628,27 @@ export class Simulation {
     a.grounded = (onLid || inVolume) && Math.abs(a.body.velocity.y) < 1;
   }
   private move(a: Actor, vx: number) {
-    if (
-      a !== this.player &&
-      a !== this.mario &&
-      !a.grounded &&
-      a.navVx !== undefined
-    ) {
+    if (a !== this.player && !a.grounded && a.navVx !== undefined) {
       // Keep the planned launch velocity so a reverse takeoff is not flipped.
       if ((a.navDelay ?? 0) > 0) vx = 0;
       else vx = a.navVx;
     }
     Body.setVelocity(a.body, { x: vx, y: a.body.velocity.y });
     if (vx) a.facing = Math.sign(vx);
+  }
+  private wallAhead(a: Actor, direction: number, solids: Body[] = this.solids) {
+    if (a.body.ignoreWalls) return false;
+    const p = a.body.position,
+      feet = a.body.bounds.max.y,
+      half = a.body.width / 2;
+    return solids.some(
+      (s) =>
+        !s.headOnly &&
+        p.x + direction * (half + 30) > s.bounds.min.x &&
+        p.x + direction * (half + 30) < s.bounds.max.x &&
+        feet > s.bounds.min.y + 5 &&
+        a.body.bounds.min.y < s.bounds.max.y,
+    );
   }
   private launchJump(a: Actor, vx: number, impulse: number, delay = 0) {
     this.move(a, vx);
@@ -712,17 +722,42 @@ export class Simulation {
             s.bounds.min.y < feet - 5 &&
             s.bounds.max.y >= feet - 5)),
     );
-    const wall =
-      !a.body.ignoreWalls &&
-      solids.some(
-        (s) =>
-          p.x + direction * (half + 30) > s.bounds.min.x &&
-          p.x + direction * (half + 30) < s.bounds.max.x &&
-          feet > s.bounds.min.y + 5 &&
-          a.body.bounds.min.y < s.bounds.max.y,
-      );
+    const wall = this.wallAhead(a, direction, solids);
     if (supported && !wall && (a === this.mario || !inWell)) return;
     if (a === this.mario) {
+      if (wall) {
+        // Collision zeros vx against a flush wall, so a standing hop cannot clear it.
+        const pace = this.runSpeedFor(a);
+        const impulse = this.roomFor(a).onSpring(a)
+          ? T.springImpulse
+          : T.runJumpSpeed;
+        const arc = jumpArc(pace);
+        const gravity = { hold: arc.hold, fall: arc.fall };
+        const launch =
+          planJump(
+            a.body,
+            solids,
+            direction,
+            pace,
+            impulse,
+            undefined,
+            false,
+            gravity,
+          ) ??
+          planJump(
+            a.body,
+            solids,
+            -direction,
+            pace,
+            impulse,
+            undefined,
+            false,
+            gravity,
+          );
+        if (launch) this.launchJump(a, launch.vx, impulse, launch.delay);
+        else this.move(a, -direction * pace);
+        return;
+      }
       this.jump(a);
       return;
     }
@@ -1288,6 +1323,9 @@ export class Simulation {
       age: 0,
     };
     this.marioActive = this.mario.alive = false;
+    this.mario.navVx = undefined;
+    this.mario.navDelay = undefined;
+    this.mario.navHoldX = undefined;
     this.mario.starLeft = 0;
     this.setMarioStage(0);
     this.marioReturn = T.marioDefeatSeconds;
@@ -1816,7 +1854,7 @@ export class Simulation {
     const prevNpcTops = new Map<Actor, number>();
     for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
     this.physics.step(dt);
-    for (const n of this.npcs) {
+    for (const n of [...this.npcs, this.mario]) {
       if (n.navHoldX === undefined) continue;
       // Keep takeoff x so delayed air speed can match ground pace without extra travel.
       Body.setPosition(n.body, { x: n.navHoldX, y: n.body.position.y });
@@ -2253,6 +2291,9 @@ export class Simulation {
       this.marioPause = this.marioReaction = this.marioSeenAgo = 0;
       this.brickTarget = null;
       this.marioStun = 0;
+      this.mario.navVx = undefined;
+      this.mario.navDelay = undefined;
+      this.mario.navHoldX = undefined;
     }
     if (this.inPipe(this.mario)) return;
     this.marioIgnore = Math.max(0, this.marioIgnore - dt);
@@ -2265,6 +2306,8 @@ export class Simulation {
     this.marioLook -= dt * aggression;
     this.marioPause = Math.max(0, this.marioPause - dt);
     this.marioSeenAgo += dt;
+    this.mario.navDelay = Math.max(0, (this.mario.navDelay ?? 0) - 1);
+    if (this.mario.grounded) this.mario.navVx = undefined;
     if (pursuing && (this.marioChase === 0 || this.marioSeenAgo > 1.4)) {
       this.marioChase = 0;
       this.marioTarget = null;
@@ -2281,6 +2324,9 @@ export class Simulation {
     ) {
       this.marioActive = false;
       this.marioReturn = 2.5 + this.random() * 2.5;
+      this.mario.navVx = undefined;
+      this.mario.navDelay = undefined;
+      this.mario.navHoldX = undefined;
       Body.setFrozen(this.mario.body, true);
       return;
     }
@@ -2302,6 +2348,8 @@ export class Simulation {
       const direction = Math.sign(m.x - starThreat.body.position.x) || -1;
       if (water) {
         this.swim(this.mario, { x: m.x + direction * 240, y: m.y });
+      } else if (!this.mario.grounded && this.mario.navVx !== undefined) {
+        this.move(this.mario, this.mario.navVx);
       } else if (this.mario.grounded) {
         this.move(this.mario, direction * (4.8 + this.marioPressure));
         this.autoJump(this.mario, direction);
@@ -2357,7 +2405,8 @@ export class Simulation {
         distance > 8 &&
         distance < 125 &&
         this.mario.grounded &&
-        this.marioJumpWait <= 0
+        this.marioJumpWait <= 0 &&
+        !this.wallAhead(this.mario, direction)
       ) {
         this.marioJumpWait = 0.65 + this.random() * 0.35;
         // Commit toward the predicted landing point, with bounded inaccuracy.
@@ -2425,7 +2474,10 @@ export class Simulation {
       this.marioPressure * T.marioCrowdSpeedBonus +
       (this.doomed ? 0.8 : 0);
     const desired =
-      this.marioPause > 0 || this.marioReaction > 0 ? 0 : direction * speed;
+      this.marioReaction > 0 ||
+      (this.marioPause > 0 && !this.wallAhead(this.mario, direction))
+        ? 0
+        : direction * speed;
     // A jump commits to its takeoff velocity; Mario cannot steer after a dodge.
     if (water) {
       const target = candidates.find((a) => a.id === this.marioTarget);
@@ -2436,6 +2488,8 @@ export class Simulation {
           this.mario,
           target?.body.position ?? { x: m.x + direction * 200, y: m.y },
         );
+    } else if (!this.mario.grounded && this.mario.navVx !== undefined) {
+      this.move(this.mario, this.mario.navVx);
     } else if (this.mario.grounded) {
       const vx = this.mario.body.velocity.x;
       const acceleration = 0.16 + this.marioPressure * 0.16;
@@ -2443,8 +2497,7 @@ export class Simulation {
         this.mario,
         vx + Math.max(-acceleration, Math.min(acceleration, desired - vx)),
       );
-      if (desired && Math.abs(this.mario.body.velocity.x) > 0.5)
-        this.autoJump(this.mario, direction);
+      if (desired) this.autoJump(this.mario, direction);
     }
     for (const a of candidates) {
       const p = a.body.position;

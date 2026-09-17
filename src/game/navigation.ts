@@ -32,6 +32,7 @@ export function planJump(
   impulse: number,
   accept: (landing: { x: number; y: number }) => boolean = () => true,
   preferLow = false,
+  gravity?: { hold: number; fall: number },
 ) {
   const half = body.width / 2,
     tall = body.height / 2;
@@ -62,8 +63,8 @@ export function planJump(
       ),
     ),
   ];
-  const holdG = T.jumpHoldGravity / 3600,
-    fallG = T.npcJumpFallGravity / 3600;
+  const holdG = (gravity?.hold ?? T.jumpHoldGravity) / 3600,
+    fallG = (gravity?.fall ?? T.npcJumpFallGravity) / 3600;
   for (const delay of [0, 10, 18, 24])
     for (const pace of paces) {
       let x = start.x,

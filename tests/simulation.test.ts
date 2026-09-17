@@ -2214,6 +2214,253 @@ test("Mario cannot reverse a jump to follow a dodge", () => {
   assert.ok(s.mario.body.velocity.x > 2);
 });
 
+function isolateSolid(s: Simulation, keep: Body, width = 1600) {
+  for (const solid of s.solids) if (solid !== keep) s.physics.remove(solid);
+  const floor = s.physics.rectangle(
+    keep.position.x,
+    T.groundY + 80,
+    width,
+    160,
+    true,
+  );
+  s.solids = [floor, keep];
+  return floor;
+}
+
+function huntMario(s: Simulation, x: number, aim: number) {
+  for (const npc of s.npcs) s.kill(npc, false);
+  s.marioActive = true;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  s.marioLook = 10;
+  s.marioJumpWait = 10;
+  s.marioChase = 8;
+  s.marioTarget = s.player.id;
+  s.marioAim = aim;
+  s.marioDecision = 10;
+  s.marioIgnore = 0;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, {
+    x,
+    y: T.groundY - 19 * s.mario.scale,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  s.mario.facing = 1;
+}
+
+function groundedStall(s: Simulation, nearX: number, seconds: number) {
+  let streak = 0,
+    worst = 0;
+  for (let i = 0; i < Math.round(seconds * 60); i++) {
+    s.step(dt, emptyInput());
+    const still =
+      s.marioActive &&
+      s.mario.grounded &&
+      Math.abs(s.mario.body.velocity.x) < 0.5 &&
+      Math.abs(s.mario.body.position.x - nearX) < 8;
+    streak = still ? streak + 1 : 0;
+    worst = Math.max(worst, streak);
+  }
+  return worst;
+}
+
+function faceCamp(s: Simulation, nearX: number, seconds: number) {
+  let streak = 0,
+    near = 0,
+    leftAlive = false;
+  for (let i = 0; i < Math.round(seconds * 60); i++) {
+    s.step(dt, emptyInput());
+    const atFace = Math.abs(s.mario.body.position.x - nearX) < 8;
+    streak = atFace ? streak + 1 : 0;
+    near = Math.max(near, streak);
+    if (
+      s.marioActive &&
+      s.mario.alive &&
+      Math.abs(s.mario.body.position.x - nearX) > 24
+    )
+      leftAlive = true;
+  }
+  return { near, leftAlive, x: s.mario.body.position.x };
+}
+
+function tallWall(s: Simulation, height: number, x = 400) {
+  for (const solid of [...s.solids]) s.physics.remove(solid);
+  const floor = s.physics.rectangle(x, T.groundY + 80, 1600, 160, true);
+  const wall = s.physics.rectangle(x, T.groundY - height / 2, 64, height, true);
+  s.solids = [floor, wall];
+  s.obstacles = [];
+  return wall;
+}
+
+test("Mario walking right into a pipe does not remain still against it", () => {
+  const s = game();
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
+  isolateSolid(s, pipe.body!);
+  s.obstacles = [pipe];
+  const aim = pipe.x + 240;
+  at(s, aim, T.groundY - 14);
+  huntMario(s, pipe.body!.bounds.min.x - 80, aim);
+  const contactX = pipe.body!.bounds.min.x - s.mario.body.width / 2;
+  const worst = groundedStall(s, contactX, 4);
+  assert.ok(
+    worst < 60,
+    `stalled ${worst} grounded frames at ${JSON.stringify(s.mario.body.position)} vx=${s.mario.body.velocity.x}`,
+  );
+  assert.ok(
+    s.mario.body.position.x > pipe.x,
+    `clears the pipe: ${JSON.stringify(s.mario.body.position)}`,
+  );
+});
+
+test("Mario turns away from a wall that is too tall to jump", () => {
+  const s = game();
+  const wall = tallWall(s, 400);
+  at(s, 800, T.groundY - 14);
+  huntMario(s, wall.bounds.min.x - 80, 800);
+  const contactX = wall.bounds.min.x - s.mario.body.width / 2;
+  const camp = faceCamp(s, contactX, 4);
+  assert.ok(
+    camp.near < 120,
+    `stalled ${camp.near} frames at ${JSON.stringify(s.mario.body.position)} vx=${s.mario.body.velocity.x}`,
+  );
+  assert.ok(
+    s.mario.body.position.x < wall.bounds.min.x - 20,
+    `turns from the tall wall: ${JSON.stringify(s.mario.body.position)}`,
+  );
+});
+
+test("Mario turns from a five-tile wall his jump cannot clear", () => {
+  const s = game();
+  const wall = tallWall(s, 160);
+  at(s, 800, T.groundY - 14);
+  huntMario(s, wall.bounds.min.x - 80, 800);
+  const contactX = wall.bounds.min.x - s.mario.body.width / 2;
+  const camp = faceCamp(s, contactX, 4);
+  assert.ok(
+    camp.near < 120,
+    `bounce-camped ${camp.near} frames at a 160px wall: ${JSON.stringify(s.mario.body.position)}`,
+  );
+  assert.ok(
+    s.mario.body.position.x < wall.bounds.min.x - 20,
+    `turns from a 160px wall: ${JSON.stringify(s.mario.body.position)}`,
+  );
+});
+
+test("Mario star-evade does not camp when the flee path hits a pipe", () => {
+  const s = game();
+  give(s, s.player, "star");
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
+  isolateSolid(s, pipe.body!);
+  s.obstacles = [pipe];
+  for (const npc of s.npcs) s.kill(npc, false);
+  at(s, pipe.body!.bounds.min.x - 180, T.groundY - 14);
+  s.marioActive = true;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  s.marioLook = 10;
+  s.marioChase = 0;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, {
+    x: pipe.body!.bounds.min.x - 40,
+    y: T.groundY - 19 * s.mario.scale,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  s.mario.facing = 1;
+  const contactX = pipe.body!.bounds.min.x - s.mario.body.width / 2;
+  const camp = faceCamp(s, contactX, 4);
+  assert.ok(
+    camp.near < 120,
+    `star-evade camped ${camp.near} frames at ${JSON.stringify(s.mario.body.position)} vx=${s.mario.body.velocity.x}`,
+  );
+  assert.ok(
+    camp.leftAlive,
+    `star-evade leaves the pipe while alive: ${JSON.stringify({
+      active: s.marioActive,
+      alive: s.mario.alive,
+      death: s.marioDeath,
+      pos: s.mario.body.position,
+    })}`,
+  );
+});
+
+test("Mario star-evade does not camp on a five-tile wall", () => {
+  const s = game();
+  give(s, s.player, "star");
+  const wall = tallWall(s, 160);
+  for (const npc of s.npcs) s.kill(npc, false);
+  const contactX = wall.bounds.min.x - s.mario.body.width / 2;
+  at(s, contactX - 160, T.groundY - 14);
+  s.marioActive = true;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  s.marioLook = 10;
+  s.marioChase = 0;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, {
+    x: contactX - 8,
+    y: T.groundY - 19 * s.mario.scale,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  s.mario.facing = 1;
+  const camp = faceCamp(s, contactX, 4);
+  assert.ok(
+    camp.near < 120,
+    `star-evade camped ${camp.near} frames at a 160px wall: ${JSON.stringify(s.mario.body.position)}`,
+  );
+  assert.ok(
+    camp.leftAlive,
+    `star-evade leaves a 160px wall while alive: ${JSON.stringify({
+      active: s.marioActive,
+      alive: s.mario.alive,
+      death: s.marioDeath,
+      pos: s.mario.body.position,
+    })}`,
+  );
+});
+
+test("returning Mario does not keep a leftover wall-jump velocity", () => {
+  const s = game();
+  const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
+  isolateSolid(s, pipe.body!);
+  s.obstacles = [pipe];
+  const aim = pipe.x + 240;
+  at(s, aim, T.groundY - 14);
+  huntMario(s, pipe.body!.bounds.min.x - 80, aim);
+  let leftover: number | undefined;
+  for (let i = 0; i < 3 * 60; i++) {
+    s.step(dt, emptyInput());
+    if (!s.mario.grounded && s.mario.navVx !== undefined) {
+      leftover = s.mario.navVx;
+      break;
+    }
+  }
+  assert.ok(
+    leftover !== undefined && Math.abs(leftover) > 1,
+    `wall jump never set navVx: grounded=${s.mario.grounded} navVx=${s.mario.navVx}`,
+  );
+  Body.setPosition(s.mario.body, {
+    x: s.cameraX - 700,
+    y: s.mario.body.position.y,
+  });
+  s.step(dt, emptyInput());
+  assert.equal(s.marioActive, false);
+  assert.equal(s.mario.navVx, undefined);
+  let returned = false;
+  for (let i = 0; i < 5 * 60; i++) {
+    s.step(dt, emptyInput());
+    if (s.marioActive) {
+      returned = true;
+      break;
+    }
+  }
+  assert.ok(returned && s.mario.alive, "Mario returns");
+  assert.equal(s.mario.navVx, undefined);
+  assert.ok(
+    Math.abs(s.mario.body.velocity.x) < 1,
+    `respawn vx ${s.mario.body.velocity.x} leftover was ${leftover}`,
+  );
+});
+
 test("pursuit continues while the target stays exposed", () => {
   const s = game();
   at(s, 432);
