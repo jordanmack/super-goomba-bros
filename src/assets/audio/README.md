@@ -37,8 +37,9 @@ question-block item uses the original appear effect with the bump. A 1-up uses
 `smb_1-up.wav`. Game over uses `smb_gameover.wav`. TIME 100 uses
 `smb_warning.wav`, then the area theme plays faster. Leftover TIME tally uses
 the coin beep. World 8-4 uses `smb_world_clear.wav` after the castle tally.
-Warnings use a custom short square-wave voice. There is no approach heartbeat or
-distance-based music change. The world intro is silent.
+Warnings use a custom short square-wave voice, picked at random from a small
+pool of chirps. Pitch shapes live in `../../game/config.ts`. There is no
+approach heartbeat or distance-based music change. The world intro is silent.
 Mario's defeat uses the original death recording. It interrupts the overworld
 music, which resumes after the cue finishes while the level continues.
 

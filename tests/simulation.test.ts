@@ -1604,6 +1604,13 @@ test("player death clears stacked shouts", () => {
 test("warning phrases stay urgent and include brotherhood lines", () => {
   assert.ok(PHRASES.includes("Run my brothers or perish!"));
   assert.ok(PHRASES.filter((line) => /brothers/i.test(line)).length >= 3);
+  assert.ok(PHRASES.includes("RUUUUUUUUUUUUUUUN!"));
+  assert.ok(PHRASES.includes("Everybody run! He'll kill us all!"));
+  assert.ok(
+    PHRASES.includes(
+      "Hide yo kids, hide yo wife, hide everybody! He's stomping everybody out here!",
+    ),
+  );
   for (const line of PHRASES) {
     assert.match(line, /!/);
     assert.equal(/joke|banana|pizza/i.test(line), false);

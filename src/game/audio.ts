@@ -1,6 +1,6 @@
 import type { GameEvent } from "./simulation";
 import type Phaser from "phaser";
-import { TUNING as T } from "./config";
+import { TUNING as T, pickWarningChirp } from "./config";
 import overworld from "../assets/audio/overworld.mp3?inline";
 import starman from "../assets/audio/starman.mp3?inline";
 import underground from "../assets/audio/underground.mp3?inline";
@@ -103,9 +103,11 @@ export class GameAudio {
   private cueQueue: ("death" | "clear" | "gameover" | "warning" | "worldClear")[] =
     [];
   private musicResume: { key: string; seek: number } | null = null;
+  random: () => number;
 
-  constructor(game: Phaser.Game) {
+  constructor(game: Phaser.Game, random = Math.random) {
     this.game = game;
+    this.random = random;
     this.manager.volume = 0.8;
     this.manager.pauseOnBlur = false;
   }
@@ -229,19 +231,26 @@ export class GameAudio {
   private playWarning() {
     if (!this.context || !this.masterGain || this.muted) return;
     const now = this.context.currentTime;
+    const chirp = pickWarningChirp(this.random);
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
     oscillator.type = "square";
-    oscillator.frequency.setValueAtTime(520, now);
-    oscillator.frequency.exponentialRampToValueAtTime(940, now + 0.08);
-    oscillator.frequency.exponentialRampToValueAtTime(360, now + 0.18);
+    oscillator.frequency.setValueAtTime(chirp.startHz, now);
+    oscillator.frequency.exponentialRampToValueAtTime(
+      chirp.peakHz,
+      now + chirp.peakAt,
+    );
+    oscillator.frequency.exponentialRampToValueAtTime(
+      chirp.endHz,
+      now + chirp.endAt,
+    );
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(0.16, now + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
     // Feed the custom voice through Phaser's mute and volume nodes too.
     oscillator.connect(gain).connect(this.manager.masterMuteNode);
     oscillator.start(now);
-    oscillator.stop(now + 0.21);
+    oscillator.stop(now + chirp.stopAt);
     this.voices.add(oscillator);
     oscillator.onended = () => {
       this.voices.delete(oscillator);

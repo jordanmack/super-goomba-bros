@@ -104,6 +104,7 @@ iOS system gestures are suppressed on a physical phone.
 An unwarned NPC inside the warning radius automatically makes the player speak.
 No contact is required. White pixel text with a black outline appears at the
 world position where the player spoke, and a short squeaky voice cue plays.
+The cue is one of a small pool of synthesized chirps, picked at random.
 A new shout does not replace earlier lines; each line expires on its own after
 about two seconds. The same radius warns those NPCs. Each character counts as
 warned only once. A warned NPC shows a tiny 8-bit sweat drop above its head,

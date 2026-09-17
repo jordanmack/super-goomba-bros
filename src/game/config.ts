@@ -145,6 +145,21 @@ export const PHRASES = [
   "Flee my brothers! Mario is coming!",
   "Run, brothers! The plumber is coming!",
   "Brothers, scramble or perish!",
+  "RUUUUUUUUUUUUUUUN!",
+  "Everybody run! He'll kill us all!",
+  "Hide yo kids, hide yo wife, hide everybody! He's stomping everybody out here!",
 ];
+
+export const WARNING_CHIRPS = [
+  { startHz: 520, peakHz: 940, endHz: 360, peakAt: 0.08, endAt: 0.18, stopAt: 0.21 },
+  { startHz: 700, peakHz: 1200, endHz: 520, peakAt: 0.06, endAt: 0.16, stopAt: 0.2 },
+  { startHz: 360, peakHz: 780, endHz: 240, peakAt: 0.09, endAt: 0.19, stopAt: 0.22 },
+  { startHz: 840, peakHz: 1360, endHz: 640, peakAt: 0.05, endAt: 0.14, stopAt: 0.19 },
+  { startHz: 480, peakHz: 620, endHz: 980, peakAt: 0.07, endAt: 0.17, stopAt: 0.21 },
+] as const;
+
+export function pickWarningChirp(random: () => number) {
+  return WARNING_CHIRPS[Math.floor(random() * WARNING_CHIRPS.length)]!;
+}
 
 export const MAP_TOP = TUNING.groundY - 13 * 32;
