@@ -2,6 +2,12 @@ import type Phaser from "phaser";
 import { TUNING } from "./config.ts";
 
 export type Point = { x: number; y: number };
+export type HoldSpan = {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+};
 export type ArcadeTypes = Pick<
   typeof Phaser.Physics.Arcade,
   "Body" | "StaticBody"
@@ -21,6 +27,14 @@ export class Body {
   ignoreWalls = false;
   // "top": 8x may stand on the lid; the volume is empty until smash (pipes).
   passHuge: "volume" | "top" = "volume";
+  // Feet Y, stood-on floor, and bound volume of an 8x volume-hold. Keeps
+  // that merged wall+floor after the floor AABB overlap ends. Frozen spans
+  // keep rebuild rematch on the original pair, not another column.
+  volumeHoldY?: number;
+  volumeHoldFloor?: Body;
+  volumeHoldVolume?: Body;
+  volumeHoldFloorSpan?: HoldSpan;
+  volumeHoldVolumeSpan?: HoldSpan;
   motion?: {
     x: number;
     y: number;
@@ -87,6 +101,109 @@ export function overlaps(body: Body, solids: Body[], tolerance = 0) {
   });
 }
 
+function standableHuge(solid: Body) {
+  return solid.fixed && !solid.headOnly && solid.passHuge !== "top";
+}
+
+export function holdSpanOf(body: Body): HoldSpan {
+  const b = body.bounds;
+  return { minX: b.min.x, maxX: b.max.x, minY: b.min.y, maxY: b.max.y };
+}
+
+export function clearVolumeHold(body: Body) {
+  body.volumeHoldY = undefined;
+  body.volumeHoldFloor = undefined;
+  body.volumeHoldVolume = undefined;
+  body.volumeHoldFloorSpan = undefined;
+  body.volumeHoldVolumeSpan = undefined;
+}
+
+function overlapX(
+  minA: number,
+  maxA: number,
+  minB: number,
+  maxB: number,
+) {
+  return Math.min(maxA, maxB) - Math.max(minA, minB);
+}
+
+function bodyOverlapsX(x: number, width: number, solid: Body) {
+  return x + width > solid.bounds.min.x && x < solid.bounds.max.x;
+}
+
+function gapX(x: number, width: number, solid: Body) {
+  const b = solid.bounds;
+  if (x + width > b.min.x && x < b.max.x) return 0;
+  if (x + width <= b.min.x) return b.min.x - (x + width);
+  return x - b.max.x;
+}
+
+// Replacement that still covers the armed span. Prefer a solid the body
+// overlaps; otherwise the nearest span remnant. A different pair at this Y
+// does not match: it has no overlap with the frozen span. Volume remnants
+// must still span the armed feet Y and touch the armed floor span; smash
+// may change their top or bottom.
+function rematchHold(
+  saved: Body | undefined,
+  solids: Iterable<Body>,
+  span: HoldSpan | undefined,
+  x: number | undefined,
+  width: number | undefined,
+  matchMinY: boolean,
+  partner?: HoldSpan,
+  holdY?: number,
+) {
+  if (!saved && !span) return;
+  for (const solid of solids) {
+    if (saved && solid === saved && standableHuge(solid)) return solid;
+  }
+  const sb = span ?? (saved ? holdSpanOf(saved) : undefined);
+  if (!sb) return;
+  let bestBody: Body | undefined;
+  let bestBodyScore = -1;
+  let bestNear: Body | undefined;
+  let bestNearDist = Infinity;
+  let bestNearSpan = -1;
+  for (const solid of solids) {
+    if (!standableHuge(solid)) continue;
+    const b = solid.bounds;
+    if (matchMinY && Math.abs(b.min.y - sb.minY) >= 12) continue;
+    if (matchMinY && Math.abs(b.max.y - sb.maxY) >= 12) continue;
+    if (!matchMinY) {
+      const y = holdY ?? sb.minY;
+      if (!(b.min.y < y - 6 && b.max.y >= y - 6)) continue;
+    }
+    const spanHit = overlapX(b.min.x, b.max.x, sb.minX, sb.maxX);
+    if (spanHit <= 0) continue;
+    if (partner && (b.max.x < partner.minX || b.min.x > partner.maxX)) continue;
+    if (x !== undefined && width !== undefined && bodyOverlapsX(x, width, solid)) {
+      const bodyHit = overlapX(x, x + width, b.min.x, b.max.x);
+      const score = bodyHit + spanHit;
+      if (score > bestBodyScore) {
+        bestBody = solid;
+        bestBodyScore = score;
+      }
+    }
+    if (x === undefined || width === undefined) {
+      if (spanHit > bestNearSpan) {
+        bestNear = solid;
+        bestNearSpan = spanHit;
+      }
+      continue;
+    }
+    const dist = gapX(x, width, solid);
+    if (
+      dist < bestNearDist ||
+      (dist === bestNearDist && spanHit > bestNearSpan)
+    ) {
+      bestNear = solid;
+      bestNearDist = dist;
+      bestNearSpan = spanHit;
+    }
+  }
+  return bestBody ?? bestNear;
+}
+
 // 8x volume-hold: ground, or a standable top under this body, not a neighbor.
 export function hugeFloorAt(
   y: number,
@@ -95,13 +212,161 @@ export function hugeFloorAt(
   solids: Iterable<Body>,
 ) {
   if (Math.abs(y - TUNING.groundY) < 12) return true;
+  return hugeFloorSolid(y, x, width, solids) !== undefined;
+}
+
+export function hugeFloorSolid(
+  y: number,
+  x: number,
+  width: number,
+  solids: Iterable<Body>,
+) {
+  let best: Body | undefined;
+  let bestDist = Infinity;
   for (const solid of solids) {
-    if (!solid.fixed || solid.headOnly || solid.passHuge === "top") continue;
-    if (Math.abs(solid.bounds.min.y - y) >= 12) continue;
-    if (x + width <= solid.bounds.min.x || x >= solid.bounds.max.x) continue;
+    if (!standableHuge(solid)) continue;
+    const dist = Math.abs(solid.bounds.min.y - y);
+    if (dist >= 12) continue;
+    if (!bodyOverlapsX(x, width, solid)) continue;
+    if (dist < bestDist) {
+      best = solid;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+// Bound volume at y that is flush with this stood-on floor (same bottom,
+// touching or overlapping). Another column on the same floor is not a match
+// unless it is this volume.
+export function hugeFlushWithFloor(
+  y: number,
+  x: number,
+  width: number,
+  solids: Iterable<Body>,
+  floor: Body,
+  volume?: Body,
+) {
+  if (!standableHuge(floor)) return false;
+  const fb = floor.bounds;
+  if (Math.abs(fb.min.y - y) >= 12) return false;
+  const candidates = volume ? [volume] : solids;
+  for (const vol of candidates) {
+    if (!standableHuge(vol)) continue;
+    const vb = vol.bounds;
+    if (!bodyOverlapsX(x, width, vol)) continue;
+    if (!(vb.min.y < y - 6 && vb.max.y >= y - 6)) continue;
+    if (Math.abs(vb.max.y - fb.max.y) >= 12) continue;
+    if (vb.max.x < fb.min.x || vb.min.x > fb.max.x) continue;
     return true;
   }
   return false;
+}
+
+// Overlapping wall flush with this floor. Picks the strongest x-overlap,
+// not the first solid in iteration order. The floor top itself is not a volume.
+export function hugeFlushVolume(
+  y: number,
+  x: number,
+  width: number,
+  solids: Iterable<Body>,
+  floor: Body,
+) {
+  if (!standableHuge(floor)) return;
+  const fb = floor.bounds;
+  if (Math.abs(fb.min.y - y) >= 12) return;
+  let best: Body | undefined;
+  let bestHit = -1;
+  for (const vol of solids) {
+    if (vol === floor || !standableHuge(vol)) continue;
+    const vb = vol.bounds;
+    if (!bodyOverlapsX(x, width, vol)) continue;
+    if (!(vb.min.y < y - 6 && vb.max.y >= y - 6)) continue;
+    if (Math.abs(vb.max.y - fb.max.y) >= 12) continue;
+    if (vb.max.x < fb.min.x || vb.min.x > fb.max.x) continue;
+    const hit = overlapX(x, x + width, vb.min.x, vb.max.x);
+    if (hit > bestHit) {
+      best = vol;
+      bestHit = hit;
+    }
+  }
+  return best;
+}
+
+// The stood-on floor Body, or a replacement that shares the original floor
+// span after terrain rebuild. A different pair at this Y, including an
+// abutting neighbor, is not a match.
+export function hugeHoldFloor(
+  saved: Body | undefined,
+  solids: Iterable<Body>,
+  x?: number,
+  width?: number,
+  span?: HoldSpan,
+) {
+  return rematchHold(saved, solids, span, x, width, true);
+}
+
+// The bound wall/volume, or a remnant that still covers the original span
+// and still touches the armed floor. Wall top or bottom may change after smash.
+export function hugeHoldVolume(
+  saved: Body | undefined,
+  solids: Iterable<Body>,
+  x?: number,
+  width?: number,
+  span?: HoldSpan,
+  floorSpan?: HoldSpan,
+  holdY?: number,
+) {
+  return rematchHold(
+    saved,
+    solids,
+    span,
+    x,
+    width,
+    false,
+    floorSpan,
+    holdY,
+  );
+}
+
+export function hugeHoldAt(
+  y: number,
+  x: number,
+  width: number,
+  solids: Iterable<Body>,
+  body: Body,
+) {
+  if (hugeFloorAt(y, x, width, solids)) return true;
+  if (body.volumeHoldY === undefined) return false;
+  const holdFloor = hugeHoldFloor(
+    body.volumeHoldFloor,
+    solids,
+    x,
+    width,
+    body.volumeHoldFloorSpan,
+  );
+  const holdVolume = hugeHoldVolume(
+    body.volumeHoldVolume,
+    solids,
+    x,
+    width,
+    body.volumeHoldVolumeSpan,
+    body.volumeHoldFloorSpan,
+    body.volumeHoldY,
+  );
+  return (
+    holdFloor !== undefined &&
+    holdVolume !== undefined &&
+    Math.abs(y - body.volumeHoldY) < 12 &&
+    hugeFlushWithFloor(
+      body.volumeHoldY,
+      x,
+      width,
+      solids,
+      holdFloor,
+      holdVolume,
+    )
+  );
 }
 
 export function rayBlocked(solids: Body[], start: Point, end: Point) {
@@ -230,20 +495,25 @@ export class PhysicsWorld {
           maxY: Math.max(native.position.y, native.prev.y) + native.height + 4,
         })
         .sort((a, b) => this.order.get(a)! - this.order.get(b)!);
-      if (!nearby.length) continue;
-      this.world.collide(native, nearby, undefined, (_actor, solid) => {
-        if (!wrapper.ignoreWalls) return true;
-        const top = (solid as Phaser.Physics.Arcade.StaticBody).y;
-        return (
-          native.velocity.y >= 0 && native.prev.y + native.height <= top + 6
-        );
-      });
-      if (!wrapper.ignoreWalls || native.velocity.y < 0) continue;
+      if (nearby.length) {
+        this.world.collide(native, nearby, undefined, (_actor, solid) => {
+          if (!wrapper.ignoreWalls) return true;
+          const top = (solid as Phaser.Physics.Arcade.StaticBody).y;
+          return (
+            native.velocity.y >= 0 && native.prev.y + native.height <= top + 6
+          );
+        });
+      }
+      if (!wrapper.ignoreWalls) {
+        clearVolumeHold(wrapper);
+        continue;
+      }
       // Merged wall+floor AABBs have a high top, so the lid test above will
       // not keep the floor in the same rectangle. Hold at every standable floor.
+      // Keep that hold after the floor AABB overlap ends while the body is
+      // still on that same merged pair. Jump does not drop the latch.
       const prevFeet = native.prev.y + native.height;
-      if (!hugeFloorAt(prevFeet, native.x, native.width, this.bodies)) continue;
-      const hold = nearby.some((solid) => {
+      const inVolume = nearby.some((solid) => {
         const other = this.byNative.get(solid);
         if (!other || other.headOnly || other.passHuge === "top") return false;
         const box = solid as Phaser.Physics.Arcade.StaticBody;
@@ -251,9 +521,97 @@ export class PhysicsWorld {
           return false;
         return box.y < prevFeet - 6 && box.y + box.height >= prevFeet - 6;
       });
-      if (hold) {
+      const floor = hugeFloorSolid(
+        prevFeet,
+        native.x,
+        native.width,
+        this.bodies,
+      );
+      const onFloor = hugeFloorAt(prevFeet, native.x, native.width, this.bodies);
+      const holdFloor = hugeHoldFloor(
+        wrapper.volumeHoldFloor,
+        this.bodies,
+        native.x,
+        native.width,
+        wrapper.volumeHoldFloorSpan,
+      );
+      if (holdFloor && holdFloor !== wrapper.volumeHoldFloor)
+        wrapper.volumeHoldFloor = holdFloor;
+      const holdVolume = hugeHoldVolume(
+        wrapper.volumeHoldVolume,
+        this.bodies,
+        native.x,
+        native.width,
+        wrapper.volumeHoldVolumeSpan,
+        wrapper.volumeHoldFloorSpan,
+        wrapper.volumeHoldY,
+      );
+      if (holdVolume && holdVolume !== wrapper.volumeHoldVolume)
+        wrapper.volumeHoldVolume = holdVolume;
+      const onOur =
+        holdFloor !== undefined &&
+        holdVolume !== undefined &&
+        wrapper.volumeHoldY !== undefined &&
+        hugeFlushWithFloor(
+          wrapper.volumeHoldY,
+          native.x,
+          native.width,
+          this.bodies,
+          holdFloor,
+          holdVolume,
+        );
+      if (!onFloor && !onOur) clearVolumeHold(wrapper);
+      if (native.velocity.y < 0) continue;
+      const persist =
+        wrapper.volumeHoldY !== undefined &&
+        Math.abs(prevFeet - wrapper.volumeHoldY) < 12 &&
+        onOur;
+      if (inVolume && persist && holdFloor) {
+        native.position.y = holdFloor.bounds.min.y - native.height;
+        native.velocity.y = 0;
+        wrapper.volumeHoldY = holdFloor.bounds.min.y;
+      } else if (inVolume && onFloor) {
         native.position.y = native.prev.y;
         native.velocity.y = 0;
+        if (floor) {
+          let vol = wrapper.volumeHoldVolume;
+          if (
+            !vol ||
+            vol === floor ||
+            !hugeFlushWithFloor(
+              wrapper.volumeHoldY ?? floor.bounds.min.y,
+              native.x,
+              native.width,
+              this.bodies,
+              floor,
+              vol,
+            )
+          ) {
+            vol = hugeFlushVolume(
+              floor.bounds.min.y,
+              native.x,
+              native.width,
+              this.bodies,
+              floor,
+            );
+          }
+          if (!vol) {
+            clearVolumeHold(wrapper);
+            continue;
+          }
+          const sameFloor = wrapper.volumeHoldFloor === floor;
+          wrapper.volumeHoldY = floor.bounds.min.y;
+          wrapper.volumeHoldFloor = floor;
+          if (!sameFloor) wrapper.volumeHoldFloorSpan = holdSpanOf(floor);
+          const sameVolume = wrapper.volumeHoldVolume === vol;
+          wrapper.volumeHoldVolume = vol;
+          if (!sameFloor || !sameVolume || !wrapper.volumeHoldVolumeSpan)
+            wrapper.volumeHoldVolumeSpan = holdSpanOf(vol);
+        } else {
+          clearVolumeHold(wrapper);
+        }
+      } else if (!inVolume) {
+        clearVolumeHold(wrapper);
       }
     }
     this.world.postUpdate();

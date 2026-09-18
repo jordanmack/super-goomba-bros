@@ -1,7 +1,12 @@
 import {
   Body,
   PhysicsWorld,
+  clearVolumeHold,
   hugeFloorAt,
+  hugeFlushWithFloor,
+  hugeHoldAt,
+  hugeHoldFloor,
+  hugeHoldVolume,
   overlaps,
   rayBlocked,
 } from "./physics.ts";
@@ -705,9 +710,39 @@ export class Simulation {
         a.body.bounds.min.x < s.bounds.max.x - 0.01 &&
         Math.abs(bottom - s.bounds.min.y) < 12,
     );
+    const holdFloor = hugeHoldFloor(
+      a.body.volumeHoldFloor,
+      this.solids,
+      a.body.bounds.min.x,
+      a.body.width,
+      a.body.volumeHoldFloorSpan,
+    );
+    const holdVolume = hugeHoldVolume(
+      a.body.volumeHoldVolume,
+      this.solids,
+      a.body.bounds.min.x,
+      a.body.width,
+      a.body.volumeHoldVolumeSpan,
+      a.body.volumeHoldFloorSpan,
+      a.body.volumeHoldY,
+    );
+    const persist =
+      a.body.volumeHoldY !== undefined &&
+      holdFloor !== undefined &&
+      holdVolume !== undefined &&
+      Math.abs(bottom - a.body.volumeHoldY) < 12 &&
+      hugeFlushWithFloor(
+        a.body.volumeHoldY,
+        a.body.bounds.min.x,
+        a.body.width,
+        this.solids,
+        holdFloor,
+        holdVolume,
+      );
     const inVolume =
       a.body.ignoreWalls &&
-      hugeFloorAt(bottom, a.body.bounds.min.x, a.body.width, this.solids) &&
+      (hugeFloorAt(bottom, a.body.bounds.min.x, a.body.width, this.solids) ||
+        persist) &&
       this.solids.some(
         (s) =>
           !s.headOnly &&
@@ -810,7 +845,7 @@ export class Simulation {
           (a === this.mario || !enclosedWell(solids, s.bounds))) ||
           (a.body.ignoreWalls &&
             s.passHuge !== "top" &&
-            hugeFloorAt(feet, ahead, 1, solids) &&
+            hugeHoldAt(feet, ahead, 1, this.solids, a.body) &&
             s.bounds.min.y < feet - 5 &&
             s.bounds.max.y >= feet - 5)),
     );
@@ -1501,9 +1536,11 @@ export class Simulation {
   private rebuildTerrain(room: Room) {
     const keep = this.keptSolids(room);
     const removed = room.solids.filter((s) => !keep.has(s));
+    const gone = new Set(removed);
     for (const s of removed) this.physics.remove(s);
     room.solids = room.solids.filter((s) => keep.has(s));
     this.solids = this.solids.filter((s) => !removed.includes(s));
+    const created: Body[] = [];
     for (const rect of terrainRects(room.data, room.offset, room.smashedTiles)) {
       const body = this.physics.rectangle(
         rect.x + rect.width / 2,
@@ -1512,10 +1549,52 @@ export class Simulation {
         rect.height,
         true,
       );
+      created.push(body);
       room.solids.push(body);
       this.solids.push(body);
     }
+    this.remapVolumeHolds(gone, created);
     room.clearNavigation();
+  }
+
+  private remapVolumeHolds(gone: Set<Body>, created: Body[]) {
+    if (!gone.size) return;
+    for (const a of [this.player, ...this.npcs, this.mario]) {
+      const b = a.body;
+      if (!b.volumeHoldFloor && !b.volumeHoldVolume) continue;
+      const floorGone = !!(b.volumeHoldFloor && gone.has(b.volumeHoldFloor));
+      const volumeGone = !!(b.volumeHoldVolume && gone.has(b.volumeHoldVolume));
+      if (!floorGone && !volumeGone) continue;
+      const live = (saved?: Body) =>
+        saved && this.solids.includes(saved) ? saved : undefined;
+      const floor = floorGone
+        ? hugeHoldFloor(
+            b.volumeHoldFloor,
+            created,
+            b.bounds.min.x,
+            b.width,
+            b.volumeHoldFloorSpan,
+          )
+        : live(b.volumeHoldFloor);
+      const volume = volumeGone
+        ? hugeHoldVolume(
+            b.volumeHoldVolume,
+            created,
+            b.bounds.min.x,
+            b.width,
+            b.volumeHoldVolumeSpan,
+            b.volumeHoldFloorSpan,
+            b.volumeHoldY,
+          )
+        : live(b.volumeHoldVolume);
+      if (!floor || !volume) {
+        clearVolumeHold(b);
+        continue;
+      }
+      b.volumeHoldFloor = floor;
+      b.volumeHoldY = floor.bounds.min.y;
+      b.volumeHoldVolume = volume;
+    }
   }
 
   private updateItems(dt: number) {
@@ -2000,6 +2079,11 @@ export class Simulation {
     if (c.broken || (c.kind !== "brick" && c.kind !== "pipe")) return;
     c.broken = true;
     if (c.body) {
+      for (const a of [this.player, ...this.npcs, this.mario]) {
+        const b = a.body;
+        if (b.volumeHoldFloor === c.body || b.volumeHoldVolume === c.body)
+          clearVolumeHold(b);
+      }
       this.physics.remove(c.body);
       this.solids = this.solids.filter((s) => s !== c.body);
       for (const room of this.rooms.values()) {
@@ -2559,7 +2643,7 @@ export class Simulation {
               return "walk";
             if (
               n.body.ignoreWalls &&
-              hugeFloorAt(feet, ahead, 1, this.solids) &&
+              hugeHoldAt(feet, ahead, 1, this.solids, n.body) &&
               below.some(
                 (s) =>
                   s.passHuge !== "top" &&

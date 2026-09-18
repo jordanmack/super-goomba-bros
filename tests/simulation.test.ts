@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Body, overlaps } from "../src/game/physics.ts";
+import { Body, holdSpanOf, hugeHoldAt, overlaps } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
 import {
   Simulation as RulesSimulation,
@@ -4372,6 +4372,918 @@ test("8x does not snag on a nearby ledge it does not overlap", () => {
     if (placed) break;
   }
   assert.ok(placed, "castle has a tall column beside a higher floor");
+  s.physics.clear();
+});
+
+test("8x stays on a merged wall+floor after floor-AABB overlap ends", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  assert.equal(overlapsFloor(), true);
+  assert.equal(wall.bounds.max.x, floor.bounds.min.x);
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  const heldY = body.position.y;
+  for (let i = 0; i < 24; i++) world.step(dt);
+  assert.equal(overlapsFloor(), false);
+  assert.ok(
+    body.bounds.min.x < wall.bounds.max.x &&
+      body.bounds.max.x > wall.bounds.min.x,
+  );
+  assert.ok(
+    Math.abs(body.bounds.max.y - floorY) < 2,
+    JSON.stringify({
+      floorY,
+      feet: body.bounds.max.y,
+      y: body.position.y,
+      heldY,
+      vy: body.velocity.y,
+    }),
+  );
+  assert.equal(body.velocity.y, 0);
+  assert.ok(Math.abs(heldY - body.position.y) < 2);
+  assert.equal(body.volumeHoldFloor, floor);
+  assert.equal(body.volumeHoldVolume, wall);
+  world.clear();
+});
+
+test("8x volume-hold still supports lookahead far from the stood-on floor", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(-136, floorY - 32 + wallH / 2, 1072, wallH, true);
+  assert.equal(wall.bounds.max.x, floor.bounds.min.x);
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  Body.setPosition(body, {
+    x: floor.bounds.min.x - 450,
+    y: body.position.y,
+  });
+  Body.setVelocity(body, { x: 0, y: 0 });
+  world.step(dt);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.volumeHoldFloor, floor);
+  const nearby = [...world.bodies].filter(
+    (s) =>
+      !s.headOnly &&
+      s.bounds.max.x > body.position.x - 400 &&
+      s.bounds.min.x < body.position.x + 400,
+  );
+  assert.equal(nearby.includes(floor), false);
+  const ahead = body.bounds.min.x - 8;
+  assert.equal(hugeHoldAt(floorY, ahead, 1, nearby, body), false);
+  assert.equal(hugeHoldAt(floorY, ahead, 1, world.bodies, body), true);
+  world.clear();
+});
+
+test("8x volume-hold does not snap a non-persist hold to a farther floor", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floor = world.rectangle(200, floorY + 128, 128, 256, true);
+  const higher = world.rectangle(200, floorY - 8 + 128, 128, 256, true);
+  const body = world.rectangle(
+    200,
+    floorY - 14 * T.hugeScale,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: 0, y: 1 });
+  for (let i = 0; i < 12; i++) world.step(dt);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  assert.notEqual(body.volumeHoldFloor, higher);
+  world.clear();
+});
+
+test("8x does not grab a merged wall+floor it never stood on", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(
+    200,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  assert.ok(body.bounds.max.x < wall.bounds.max.x - 8);
+  for (let i = 0; i < 12; i++) world.step(dt);
+  assert.ok(
+    Math.abs(body.bounds.max.y - floorY) > 16,
+    JSON.stringify({
+      floorY,
+      feet: body.bounds.max.y,
+      groundedY: body.position.y,
+    }),
+  );
+  world.clear();
+});
+
+test("8x volume-hold does not snag a non-overlapping ledge after latching", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const ledge = world.rectangle(700, floorY + 16, 96, 32, true);
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.volumeHoldFloor, floor);
+  const heldY = body.position.y;
+  Body.setPosition(body, {
+    x: ledge.bounds.max.x + body.width / 2 + 8,
+    y: heldY,
+  });
+  Body.setVelocity(body, { x: 0, y: 0 });
+  assert.equal(
+    body.bounds.max.x > ledge.bounds.min.x &&
+      body.bounds.min.x < ledge.bounds.max.x,
+    false,
+  );
+  for (let i = 0; i < 12; i++) world.step(dt);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) > 16);
+  assert.ok(Math.abs(body.bounds.max.y - ledge.bounds.min.y) > 16);
+  assert.equal(body.volumeHoldFloor, undefined);
+  world.clear();
+});
+
+test("8x volume-hold does not transfer across a gap to another column", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const otherFloor = world.rectangle(
+    1364,
+    floorY + floorH / 2,
+    128,
+    floorH,
+    true,
+  );
+  const otherWall = world.rectangle(
+    1100,
+    floorY - 32 + wallH / 2,
+    400,
+    wallH,
+    true,
+  );
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  Body.setPosition(body, { x: otherWall.position.x, y: body.position.y });
+  Body.setVelocity(body, { x: 0, y: 0 });
+  assert.equal(
+    body.bounds.max.x > otherFloor.bounds.min.x &&
+      body.bounds.min.x < otherFloor.bounds.max.x,
+    false,
+  );
+  for (let i = 0; i < 12; i++) world.step(dt);
+  assert.ok(
+    Math.abs(body.bounds.max.y - floorY) > 16,
+    JSON.stringify({
+      floorY,
+      feet: body.bounds.max.y,
+      otherWall: otherWall.bounds,
+      otherFloor: otherFloor.bounds,
+    }),
+  );
+  world.clear();
+});
+
+test("8x volume-hold does not transfer to another column on the same floor", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(600, floorY + floorH / 2, 400, floorH, true);
+  const wallL = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const wallR = world.rectangle(1000, floorY - 32 + wallH / 2, 400, wallH, true);
+  assert.equal(wallL.bounds.max.x, floor.bounds.min.x);
+  assert.equal(floor.bounds.max.x, wallR.bounds.min.x);
+  const body = world.rectangle(
+    floor.bounds.min.x + 32,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  assert.equal(body.volumeHoldVolume, wallL);
+  const heldY = body.position.y;
+  Body.setPosition(body, {
+    x: wallR.bounds.min.x + body.width / 2 + 8,
+    y: heldY,
+  });
+  Body.setVelocity(body, { x: 0, y: 0 });
+  assert.equal(overlapsFloor(), false);
+  assert.ok(body.bounds.min.x >= wallR.bounds.min.x);
+  for (let i = 0; i < 12; i++) world.step(dt);
+  assert.ok(
+    Math.abs(body.bounds.max.y - floorY) > 16,
+    JSON.stringify({
+      floorY,
+      feet: body.bounds.max.y,
+      hold: body.volumeHoldVolume === wallR,
+    }),
+  );
+  assert.equal(body.volumeHoldVolume, undefined);
+  assert.equal(body.volumeHoldFloor, undefined);
+  world.clear();
+});
+
+test("8x volume-hold arms the wall with the stronger overlap, not the first match", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(600, floorY + floorH / 2, 96, floorH, true);
+  const wallL = world.rectangle(352, floorY - 32 + wallH / 2, 400, wallH, true);
+  const wallR = world.rectangle(848, floorY - 32 + wallH / 2, 400, wallH, true);
+  assert.equal(wallL.bounds.max.x, floor.bounds.min.x);
+  assert.equal(floor.bounds.max.x, wallR.bounds.min.x);
+  const body = world.rectangle(
+    floor.bounds.min.x + 28,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  assert.ok(body.bounds.min.x < wallL.bounds.max.x);
+  assert.ok(body.bounds.max.x > wallR.bounds.min.x);
+  for (let i = 0; i < 12; i++) world.step(dt);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  assert.equal(body.volumeHoldVolume, wallL);
+  const heldY = body.position.y;
+  Body.setPosition(body, {
+    x: wallR.bounds.min.x + body.width / 2 + 8,
+    y: heldY,
+  });
+  Body.setVelocity(body, { x: 0, y: 0 });
+  for (let i = 0; i < 12; i++) world.step(dt);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) > 16);
+  assert.equal(body.volumeHoldVolume, undefined);
+  assert.equal(body.volumeHoldFloor, undefined);
+  world.clear();
+});
+
+test("8x volume-hold lands a jump inside the stood-on merged wall", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 416;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 160 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.ok(body.bounds.max.x > wall.bounds.min.x);
+  const landJump = () => {
+    Body.setVelocity(body, { x: 0, y: -T.jumpSpeed });
+    let peaked = false;
+    let landed = false;
+    for (let i = 0; i < 90; i++) {
+      world.step(dt);
+      if (body.bounds.max.y < floorY - 24) peaked = true;
+      if (
+        peaked &&
+        Math.abs(body.velocity.y) < 0.1 &&
+        Math.abs(body.bounds.max.y - floorY) < 2
+      ) {
+        landed = true;
+        break;
+      }
+    }
+    assert.equal(peaked, true);
+    assert.equal(landed, true);
+    for (let i = 0; i < 12; i++) world.step(dt);
+  };
+  landJump();
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  const supportY = body.bounds.max.y;
+  landJump();
+  assert.ok(Math.abs(body.bounds.max.y - supportY) < 1);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  world.clear();
+});
+
+test("8x volume-hold keeps the stood-on floor after that body is rebuilt", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  const held = {
+    x: floor.position.x,
+    y: floor.position.y,
+    w: floor.width,
+    h: floor.height,
+  };
+  world.remove(floor);
+  const far = world.rectangle(
+    held.x + held.w / 4,
+    held.y,
+    held.w / 2,
+    held.h,
+    true,
+  );
+  const rebuilt = world.rectangle(
+    held.x - held.w / 4,
+    held.y,
+    held.w / 2,
+    held.h,
+    true,
+  );
+  assert.ok(far.bounds.min.x >= rebuilt.bounds.max.x - 1);
+  assert.ok(rebuilt.bounds.max.x > held.x - held.w / 2);
+  assert.ok(far.bounds.min.x < held.x + held.w / 2);
+  for (let i = 0; i < 24; i++) world.step(dt);
+  assert.ok(
+    body.bounds.min.x < wall.bounds.max.x &&
+      body.bounds.max.x > wall.bounds.min.x,
+  );
+  assert.ok(
+    Math.abs(body.bounds.max.y - floorY) < 2,
+    JSON.stringify({
+      floorY,
+      feet: body.bounds.max.y,
+      vy: body.velocity.y,
+      hold: body.volumeHoldFloor === rebuilt,
+    }),
+  );
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, rebuilt);
+  assert.notEqual(body.volumeHoldFloor, far);
+  world.clear();
+});
+
+test("8x volume-hold does not rebind to an abutting neighbor after rebuild", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(464, floorY - 112, 24 * T.hugeScale, 28 * T.hugeScale);
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  assert.ok(
+    body.bounds.max.x > wall.bounds.min.x &&
+      body.bounds.min.x < wall.bounds.max.x,
+  );
+  const savedMax = floor.bounds.max.x;
+  world.remove(floor);
+  const neighbor = world.rectangle(
+    savedMax + 64,
+    floorY + floorH / 2,
+    128,
+    floorH,
+    true,
+  );
+  world.rectangle(savedMax + 264, floorY - 32 + wallH / 2, 400, wallH, true);
+  assert.equal(neighbor.bounds.min.x, savedMax);
+  assert.ok(body.bounds.max.x <= neighbor.bounds.min.x);
+  for (let i = 0; i < 24; i++) world.step(dt);
+  assert.ok(
+    Math.abs(body.bounds.max.y - floorY) > 16,
+    JSON.stringify({
+      floorY,
+      feet: body.bounds.max.y,
+      hold: body.volumeHoldFloor === neighbor,
+    }),
+  );
+  assert.equal(body.volumeHoldFloor, undefined);
+  assert.equal(body.volumeHoldVolume, undefined);
+  world.clear();
+});
+
+test("8x volume-hold keeps a split wall remnant that still touches the floor", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.volumeHoldVolume, wall);
+  Body.setPosition(body, { x: 200, y: body.position.y });
+  Body.setVelocity(body, { x: 0, y: 0 });
+  world.step(dt);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  const held = {
+    y: wall.position.y,
+    h: wall.height,
+  };
+  world.remove(wall);
+  const far = world.rectangle(100, held.y, 200, held.h, true);
+  const remnant = world.rectangle(316, held.y, 168, held.h, true);
+  assert.equal(far.bounds.max.x, 200);
+  assert.equal(remnant.bounds.max.x, floor.bounds.min.x);
+  assert.ok(body.bounds.max.x > remnant.bounds.min.x);
+  for (let i = 0; i < 24; i++) world.step(dt);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  assert.equal(body.volumeHoldFloor, floor);
+  assert.equal(body.volumeHoldVolume, remnant);
+  assert.notEqual(body.volumeHoldVolume, far);
+  world.clear();
+});
+
+test("8x volume-hold lands on a short wall lid instead of snapping back", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(
+    464,
+    floorY - 112,
+    24 * T.hugeScale,
+    28 * T.hugeScale,
+  );
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.volumeHoldFloor, floor);
+  assert.equal(body.volumeHoldVolume, wall);
+  const lidY = wall.bounds.min.y;
+  assert.ok(lidY < floorY - 16);
+  Body.setVelocity(body, { x: 0, y: -T.jumpSpeed });
+  let peaked = false;
+  let landed = false;
+  for (let i = 0; i < 90; i++) {
+    world.step(dt);
+    if (body.bounds.max.y < lidY - 8) peaked = true;
+    if (
+      peaked &&
+      Math.abs(body.velocity.y) < 0.1 &&
+      Math.abs(body.bounds.max.y - lidY) < 2
+    ) {
+      landed = true;
+      break;
+    }
+  }
+  assert.equal(peaked, true);
+  assert.equal(landed, true);
+  assert.ok(Math.abs(body.bounds.max.y - lidY) < 2);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) > 16);
+  assert.equal(body.volumeHoldFloor, undefined);
+  assert.equal(body.volumeHoldVolume, undefined);
+  world.clear();
+});
+
+test("8x volume-hold ends after leaving the merged volume", () => {
+  const world = physics();
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = world.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = world.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  const body = world.rectangle(464, floorY - 112, 24 * T.hugeScale, 28 * T.hugeScale);
+  body.ignoreWalls = true;
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  const overlapsFloor = () =>
+    body.bounds.max.x > floor.bounds.min.x &&
+    body.bounds.min.x < floor.bounds.max.x;
+  const inWall = () =>
+    body.bounds.max.x > wall.bounds.min.x &&
+    body.bounds.min.x < wall.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  assert.ok(Math.abs(body.bounds.max.y - floorY) < 2);
+  assert.equal(body.velocity.y, 0);
+  Body.setVelocity(body, { x: -T.walkSpeed, y: 0 });
+  let leftWall = false;
+  for (let i = 0; i < 300; i++) {
+    world.step(dt);
+    if (!inWall()) {
+      leftWall = true;
+      break;
+    }
+    assert.ok(
+      Math.abs(body.bounds.max.y - floorY) < 2,
+      JSON.stringify({
+        i,
+        floorY,
+        feet: body.bounds.max.y,
+        vy: body.velocity.y,
+      }),
+    );
+    assert.equal(body.velocity.y, 0);
+  }
+  assert.equal(leftWall, true);
+  for (let i = 0; i < 24; i++) world.step(dt);
+  assert.ok(
+    Math.abs(body.bounds.max.y - floorY) > 16,
+    JSON.stringify({
+      floorY,
+      feet: body.bounds.max.y,
+      vy: body.velocity.y,
+    }),
+  );
+  world.clear();
+});
+
+test("8x stays grounded after floor-AABB overlap ends", () => {
+  const s = game();
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = s.physics.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = s.physics.rectangle(200, floorY - 32 + wallH / 2, 400, wallH, true);
+  s.solids.push(floor, wall);
+  at(s, floor.position.x, floorY - 14 * s.player.scale);
+  const overlapsFloor = () =>
+    s.player.body.bounds.max.x > floor.bounds.min.x &&
+    s.player.body.bounds.min.x < floor.bounds.max.x;
+  assert.equal(overlapsFloor(), true);
+  tick(s, 0.15);
+  let leftFloor = false;
+  for (let i = 0; i < 120; i++) {
+    s.step(dt, { ...emptyInput(), left: true });
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.grounded, true);
+  assert.ok(Math.abs(s.player.body.bounds.max.y - floorY) < 2);
+  assert.equal(s.player.body.velocity.y, 0);
+  s.physics.clear();
+});
+
+function campaignMergedPair(s: Simulation) {
+  const solids = s.roomFor(s.player).solids.filter(
+    (sol) => !sol.headOnly && sol.passHuge !== "top",
+  );
+  for (const floor of solids) {
+    const floorY = floor.bounds.min.y;
+    if (floorY >= T.groundY - 20 || floorY <= MAP_TOP + 64) continue;
+    if (floor.width < 128) continue;
+    const wall = solids.find((sol) => {
+      if (sol === floor) return false;
+      if (Math.abs(sol.bounds.max.y - floor.bounds.max.y) >= 12) return false;
+      if (sol.bounds.min.y >= floorY - 20) return false;
+      const left = Math.abs(sol.bounds.max.x - floor.bounds.min.x) < 1;
+      const right = Math.abs(sol.bounds.min.x - floor.bounds.max.x) < 1;
+      return left || right;
+    });
+    if (wall) return { floor, wall, floorY };
+  }
+}
+
+test("8x campaign floor stays after smash rebuilds terrainRects", () => {
+  const s = new Simulation(() => 0.5, physics());
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+  s.reset();
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const pair = campaignMergedPair(s);
+  assert.ok(pair, "1-4 has a merged wall+floor above groundY");
+  const { floor, floorY } = pair;
+  const span = {
+    minX: floor.bounds.min.x,
+    maxX: floor.bounds.max.x,
+    minY: floor.bounds.min.y,
+  };
+  at(s, floor.position.x, floorY - 14 * s.player.scale);
+  tick(s, 0.15);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.grounded, true);
+  assert.ok(Math.abs(s.player.body.bounds.max.y - floorY) < 2);
+  assert.equal(s.player.body.velocity.y, 0);
+  assert.ok(s.activeRoom.smashedTiles.size > 0);
+  assert.equal(s.physics.bodies.has(floor), false);
+  const rebound = [...s.physics.bodies].find(
+    (sol) =>
+      sol.fixed &&
+      !sol.headOnly &&
+      sol.passHuge !== "top" &&
+      Math.abs(sol.bounds.min.y - span.minY) < 2 &&
+      sol.bounds.max.x > span.minX &&
+      sol.bounds.min.x < span.maxX,
+  );
+  assert.ok(rebound, "rebuilt terrain still covers the original floor span");
+  assert.ok(rebound.bounds.min.x <= span.minX + 1);
+  assert.ok(rebound.bounds.max.x >= span.maxX - 1);
+  assert.ok(
+    s.player.body.bounds.max.x > rebound.bounds.min.x &&
+      s.player.body.bounds.min.x < rebound.bounds.max.x,
+  );
+  s.physics.clear();
+});
+
+test("8x stays on campaign merged wall+floor after floor-AABB overlap ends", () => {
+  const s = new Simulation(() => 0.5, physics());
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+  s.reset();
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom8x");
+  const pair = campaignMergedPair(s);
+  assert.ok(pair, "1-4 has a merged wall+floor above groundY");
+  const { floor, wall, floorY } = pair;
+  const towardLeft = Math.abs(wall.bounds.max.x - floor.bounds.min.x) < 1;
+  const startX = towardLeft
+    ? Math.min(floor.position.x, floor.bounds.min.x + 48)
+    : Math.max(floor.position.x, floor.bounds.max.x - 48);
+  at(s, startX, floorY - 14 * s.player.scale);
+  tick(s, 0.15);
+  assert.ok(Math.abs(s.player.body.bounds.max.y - floorY) < 2);
+  assert.equal(s.player.body.velocity.y, 0);
+  const floorSpan = {
+    minX: floor.bounds.min.x,
+    maxX: floor.bounds.max.x,
+  };
+  const overlapsFloor = () =>
+    s.player.body.bounds.max.x > floorSpan.minX &&
+    s.player.body.bounds.min.x < floorSpan.maxX;
+  assert.equal(overlapsFloor(), true);
+  let leftFloor = false;
+  for (let i = 0; i < 180; i++) {
+    s.step(dt, {
+      ...emptyInput(),
+      left: towardLeft,
+      right: !towardLeft,
+    });
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  tick(s, 0.2);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.grounded, true);
+  assert.ok(
+    Math.abs(s.player.body.bounds.max.y - floorY) < 2,
+    JSON.stringify({
+      floorY,
+      feet: s.player.body.bounds.max.y,
+      vy: s.player.body.velocity.y,
+      x: s.player.body.position.x,
+    }),
+  );
+  assert.equal(s.player.body.velocity.y, 0);
+  s.physics.clear();
+});
+
+test("8x NPC stays on a merged wall+floor after floor-AABB overlap ends", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  n.warned = true;
+  n.state = "run";
+  give(s, n, "mushroom8x");
+  const floorY = T.groundY - 96;
+  const floorH = 256;
+  const wallH = 288;
+  const floor = s.physics.rectangle(464, floorY + floorH / 2, 128, floorH, true);
+  const wall = s.physics.rectangle(728, floorY - 32 + wallH / 2, 400, wallH, true);
+  s.solids.push(floor, wall);
+  assert.equal(floor.bounds.max.x, wall.bounds.min.x);
+  Body.setPosition(n.body, {
+    x: floor.position.x,
+    y: floorY - 14 * n.scale,
+  });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.body.volumeHoldY = floorY;
+  n.body.volumeHoldFloor = floor;
+  n.body.volumeHoldVolume = wall;
+  n.body.volumeHoldFloorSpan = holdSpanOf(floor);
+  n.body.volumeHoldVolumeSpan = holdSpanOf(wall);
+  tick(s, dt);
+  const overlapsFloor = () =>
+    n.body.bounds.max.x > floor.bounds.min.x &&
+    n.body.bounds.min.x < floor.bounds.max.x;
+  let leftFloor = false;
+  for (let i = 0; i < 180; i++) {
+    s.step(dt, emptyInput());
+    if (!overlapsFloor()) {
+      leftFloor = true;
+      break;
+    }
+  }
+  assert.equal(leftFloor, true);
+  for (let i = 0; i < 15; i++) {
+    s.step(dt, emptyInput());
+    assert.equal(n.grounded, true);
+    assert.equal(n.body.velocity.y, 0);
+    assert.ok(Math.abs(n.body.bounds.max.y - floorY) < 2);
+  }
+  assert.equal(n.alive, true);
+  assert.ok(n.body.volumeHoldFloor);
+  assert.ok(n.body.volumeHoldVolume);
   s.physics.clear();
 });
 
