@@ -47,11 +47,22 @@ stronger bounce. An unwarned NPC inside warning range automatically hears an
 urgent shout.
 
 On the title screen, consecutive `up up down down left right left right B A`
-unlocks a session-only power-up tray (star, 2x, 3x, 8x, flower, 1-up). Use
-arrow keys then letter B then letter A, or a gamepad D-pad plus B then A.
-WASD does not count. A click while playing drops that item in the player
+(the Konami code) unlocks two session-only buttons. Use arrow keys then
+letter B then letter A, or a gamepad D-pad plus B then A. WASD does not
+count. Completing it does not start the game.
+
+Unlimited power-ups is an on/off toggle, default off. On shows the existing
+in-play tray (star, 2x, 3x, 8x, flower, 1-up). Off hides it. Title clicks
+never spawn items. A click while playing drops that item in the player
 column. It hangs in the sky or under a ceiling, blinks, then falls straight
-down. Reload clears the tray.
+down.
+
+Choose stage opens Select world (1-8), then Choose the stage (1-4). Back
+returns to world select until a stage is picked. Picking a stage starts it
+at once, with lives reset as Start Game, the WORLD n-n intro, then play.
+Campaign continues in order through 8-4.
+
+Reload clears the unlock, the toggle, and any half-finished world pick.
 
 Each touch, mouse pointer, and key has an independent hold. Sliding changes
 actions; sliding out releases them. Pause, restart, and interruptions clear input.

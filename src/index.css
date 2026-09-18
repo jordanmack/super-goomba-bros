@@ -268,6 +268,79 @@ p {
   margin-top: 29px;
   font-size: 16px;
 }
+.title-cheats {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  width: min(420px, calc(100% - 32px));
+}
+.title-pick {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: min(420px, calc(100% - 32px));
+  margin-top: 12px;
+}
+.title-screen .title-cheat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 10px;
+  background: #000;
+  border: 3px solid #fff;
+  color: #fff5d5;
+  box-shadow: 0 4px 0 #793e43;
+}
+.title-screen .title-cheat[aria-pressed="true"] {
+  background: #e6554b;
+}
+.title-screen .title-back {
+  margin-top: 12px;
+}
+@media (max-height: 420px) {
+  .title-screen.title-unlocked {
+    top: 48px;
+  }
+  .title-screen.title-unlocked > .level-label:first-of-type {
+    display: none;
+  }
+  .title-screen.title-unlocked h1 {
+    font-size: 24px;
+    line-height: 1.2;
+  }
+  .title-screen.title-unlocked h1 span:first-child,
+  .title-screen.title-unlocked h1 span:last-child {
+    font-size: 16px;
+    margin-bottom: 0;
+  }
+  .title-screen.title-unlocked .primary {
+    margin-top: 8px;
+    min-height: 32px;
+    padding: 6px 12px;
+    font-size: 10px;
+  }
+  .title-screen.title-unlocked .title-cheats,
+  .title-screen.title-unlocked .title-pick {
+    margin-top: 6px;
+    gap: 4px;
+  }
+  .title-screen.title-unlocked .title-cheat {
+    min-height: 28px;
+    font-size: 8px;
+    padding: 4px 6px;
+    box-shadow: 0 2px 0 #793e43;
+  }
+  .title-screen.title-unlocked .title-back {
+    margin-top: 6px;
+    padding: 6px;
+  }
+}
 .counters,
 .smb-hud {
   display: flex;
@@ -964,6 +1037,16 @@ p {
   .title-screen .primary {
     margin-top: 16px;
   }
+  .title-cheats,
+  .title-pick {
+    margin-top: 8px;
+    gap: 6px;
+  }
+  .title-screen .title-cheat {
+    min-height: 36px;
+    font-size: 8px;
+    padding: 6px 8px;
+  }
 }
 @media (max-width: 700px) and (max-height: 540px) {
   .title-screen h1 {
@@ -980,6 +1063,16 @@ p {
     min-height: 48px;
     padding: 8px 17px;
     font-size: 16px;
+  }
+  .title-cheats,
+  .title-pick {
+    margin-top: 8px;
+    gap: 6px;
+  }
+  .title-screen .title-cheat {
+    min-height: 36px;
+    font-size: 8px;
+    padding: 6px 8px;
   }
 }
 @media (max-height: 540px) and (min-width: 600px) {
@@ -1019,6 +1112,16 @@ p {
     min-height: 40px;
     padding: 6px 16px;
     font-size: 16px;
+  }
+  .title-cheats,
+  .title-pick {
+    margin-top: 8px;
+    gap: 6px;
+  }
+  .title-screen .title-cheat {
+    min-height: 36px;
+    font-size: 8px;
+    padding: 6px 8px;
   }
   .in-game .topbar {
     padding: 9px 18px;

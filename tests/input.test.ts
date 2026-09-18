@@ -11,6 +11,17 @@ import {
   sonamiStepsFromPad,
 } from "../src/game/sonami.ts";
 import {
+  backTitlePick,
+  cheatTrayOpen,
+  closeTitlePick,
+  initialTitleCheat,
+  openWorldPick,
+  selectWorld,
+  titleStartAllowed,
+  toggleUnlimited,
+  unlockTitleCheat,
+} from "../src/game/title-cheat.ts";
+import {
   capturePadBinding,
   defaultPadMap,
   GAMEPAD_DEADZONE,
@@ -28,6 +39,7 @@ import {
   spawnCellBlocked,
   spawnCellCenter,
 } from "../src/game/spawn-cell.ts";
+import { campaignIndex } from "../src/game/levels.ts";
 
 function buttons(pressed: number[] = []): boolean[] {
   const list = Array.from({ length: 16 }, () => false);
@@ -100,6 +112,72 @@ test("the full Sonami sequence completes on arrows then B then A", () => {
     index = advanceSonami(index, sonamiStepFromKey(code));
   assert.equal(index, SONAMI_LENGTH);
   assert.equal(SONAMI.join(" "), "up up down down left right left right b a");
+});
+
+test("title cheat unlocks a power-up toggle and stage picker instead of a tray", () => {
+  let index = 0;
+  for (const code of [
+    "ArrowUp",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowLeft",
+    "ArrowRight",
+    "KeyB",
+    "KeyA",
+  ])
+    index = advanceSonami(index, sonamiStepFromKey(code));
+  assert.equal(index, SONAMI_LENGTH);
+  let cheat = initialTitleCheat();
+  assert.equal(cheat.unlocked, false);
+  assert.equal(cheat.unlimited, false);
+  assert.equal(cheatTrayOpen(cheat, "title"), false);
+  cheat = unlockTitleCheat(cheat);
+  assert.equal(cheat.unlocked, true);
+  assert.equal(cheat.unlimited, false);
+  assert.equal(cheat.pick, "title");
+  assert.equal(cheatTrayOpen(cheat, "title"), false);
+  assert.equal(cheatTrayOpen(cheat, "playing"), false);
+  cheat = toggleUnlimited(cheat);
+  assert.equal(cheat.unlimited, true);
+  assert.equal(cheatTrayOpen(cheat, "title"), false);
+  assert.equal(cheatTrayOpen(cheat, "playing"), true);
+  cheat = toggleUnlimited(cheat);
+  assert.equal(cheat.unlimited, false);
+  assert.equal(cheatTrayOpen(cheat, "playing"), false);
+});
+
+test("title cheat stage pick selects a world then a stage and can go back", () => {
+  let cheat = unlockTitleCheat(initialTitleCheat());
+  cheat = openWorldPick(cheat);
+  assert.equal(cheat.pick, "world");
+  assert.equal(cheat.world, null);
+  cheat = selectWorld(cheat, 7);
+  assert.equal(cheat.pick, "stage");
+  assert.equal(cheat.world, 7);
+  cheat = backTitlePick(cheat);
+  assert.equal(cheat.pick, "world");
+  assert.equal(cheat.world, null);
+  cheat = selectWorld(cheat, 1);
+  assert.equal(campaignIndex(cheat.world!, 2), 1);
+  cheat = closeTitlePick(cheat);
+  assert.equal(cheat.pick, "title");
+  assert.equal(cheat.world, null);
+});
+
+test("title Start is ignored while the stage picker is open", () => {
+  let cheat = unlockTitleCheat(initialTitleCheat());
+  assert.equal(titleStartAllowed(cheat), true);
+  cheat = openWorldPick(cheat);
+  assert.equal(titleStartAllowed(cheat), false);
+  cheat = selectWorld(cheat, 2);
+  assert.equal(titleStartAllowed(cheat), false);
+  cheat = backTitlePick(cheat);
+  assert.equal(titleStartAllowed(cheat), false);
+  cheat = backTitlePick(cheat);
+  assert.equal(titleStartAllowed(cheat), true);
 });
 
 test("WASD does not complete Sonami", () => {

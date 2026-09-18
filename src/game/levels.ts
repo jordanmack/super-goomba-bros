@@ -3,6 +3,13 @@ import campaign from "../assets/levels/campaign.json" with { type: "json" };
 import { MAP_TOP, TUNING } from "./config.ts";
 
 export const CAMPAIGN = campaign.levels;
+export function campaignIndex(world: number, stage: number) {
+  const index = CAMPAIGN.findIndex(
+    (level) => level.world === world && level.stage === stage,
+  );
+  if (index < 0) throw new Error(`Unknown stage ${world}-${stage}`);
+  return index;
+}
 export type Area = (typeof AREAS)["25"];
 export type AreaId = keyof typeof AREAS;
 export function areaData(id: string): Area {

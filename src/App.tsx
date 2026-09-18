@@ -21,7 +21,21 @@ import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
 import { GameControls, KEY_BINDINGS, type PadAction } from "./game/controls";
-import { CAMPAIGN } from "./game/levels";
+import { CAMPAIGN, campaignIndex } from "./game/levels";
+import {
+  TITLE_STAGES,
+  TITLE_WORLDS,
+  backTitlePick,
+  cheatTrayOpen,
+  closeTitlePick,
+  initialTitleCheat,
+  openWorldPick,
+  selectWorld,
+  startTitleCampaign,
+  titleStartAllowed,
+  toggleUnlimited,
+  unlockTitleCheat,
+} from "./game/title-cheat";
 import {
   bindingLabel,
   defaultPadMap,
@@ -126,7 +140,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [padLayout, setPadLayout] = useState<PadLayout>("compact");
   const [helpOpen, setHelpOpen] = useState(false);
-  const [sonamiUnlocked, setSonamiUnlocked] = useState(false);
+  const [titleCheat, setTitleCheat] = useState(initialTitleCheat);
+  const titleCheatRef = useRef(titleCheat);
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({});
   const [padMap, setPadMap] = useState(defaultPadMap);
   const [remapTarget, setRemapTarget] = useState<PadMapAction | null>(null);
@@ -139,6 +154,9 @@ export default function App() {
     else if (helpWasOpen.current) helpButton.current?.focus();
     helpWasOpen.current = helpOpen;
   }, [helpOpen]);
+  useEffect(() => {
+    titleCheatRef.current = titleCheat;
+  }, [titleCheat]);
   const startAudio = (game: Runtime) => {
     void game.audio.start().catch(() => {
       game.audio.disable();
@@ -221,7 +239,7 @@ export default function App() {
               onSonami: () => {
                 if (sonamiDone) return;
                 sonamiDone = true;
-                setSonamiUnlocked(true);
+                setTitleCheat(unlockTitleCheat);
                 void game.audio
                   .start()
                   .then(() => game.audio.event("coin"))
@@ -229,6 +247,8 @@ export default function App() {
               },
               onTitleStart: () => {
                 if (game.sim.mode !== "title") return;
+                if (!titleStartAllowed(titleCheatRef.current)) return;
+                setTitleCheat(closeTitlePick);
                 game.sim.lives = T.startingLives;
                 game.sim.reset("intro");
                 game.audio.resetMusic();
@@ -378,12 +398,7 @@ export default function App() {
     };
   }, []);
 
-  const enterLevel = (opts?: { lives?: number; levelIndex?: number }) => {
-    const game = runtime.current;
-    if (!game || !ready) return;
-    if (opts?.levelIndex !== undefined) game.sim.levelIndex = opts.levelIndex;
-    if (opts?.lives !== undefined) game.sim.lives = opts.lives;
-    game.sim.reset("intro");
+  const afterEnter = (game: Runtime) => {
     game.audio.resetMusic();
     game.clearInput();
     game.paused = false;
@@ -393,7 +408,22 @@ export default function App() {
     startAudio(game);
     (document.activeElement as HTMLElement)?.blur();
   };
+  const enterLevel = (opts?: { lives?: number; levelIndex?: number }) => {
+    const game = runtime.current;
+    if (!game || !ready) return;
+    if (opts?.levelIndex !== undefined) game.sim.levelIndex = opts.levelIndex;
+    if (opts?.lives !== undefined) game.sim.lives = opts.lives;
+    game.sim.reset("intro");
+    afterEnter(game);
+  };
   const start = () => enterLevel({ lives: T.startingLives });
+  const startStage = (world: number, stage: number) => {
+    const game = runtime.current;
+    if (!game || !ready) return;
+    startTitleCampaign(game.sim, campaignIndex(world, stage));
+    setTitleCheat(closeTitlePick);
+    afterEnter(game);
+  };
   const restartLevel = () => {
     const game = runtime.current;
     if (!game || game.sim.lives <= 0) return;
@@ -485,6 +515,7 @@ export default function App() {
     runtime.current?.renderer.resize();
   }, [ready, padOpen]);
   const overlay = paused;
+  const pickedWorld = titleCheat.world;
 
   return (
     <main
@@ -582,7 +613,7 @@ export default function App() {
           )}
         </div>
       </header>
-      {sonamiUnlocked && (
+      {cheatTrayOpen(titleCheat, state.mode) && (
         <div
           className="cheat-tray"
           role="toolbar"
@@ -608,19 +639,99 @@ export default function App() {
         </div>
       )}
       {!active && !helpOpen && (
-        <section className="title-screen" aria-label="Title screen">
+        <section
+          className={`title-screen${titleCheat.unlocked ? " title-unlocked" : ""}`}
+          aria-label="Title screen"
+        >
           <p className="level-label">A LITTLE COURAGE. A BIG MUSTACHE.</p>
           <h1 aria-label="Super Goomba Bros">
             <span>SUPER</span>GOOMBA<span>BROS</span>
           </h1>
-          <button
-            className="primary"
-            onClick={start}
-            disabled={!!error || !ready}
-          >
-            <Play size={20} fill="currentColor" />{" "}
-            {ready ? "START GAME" : "LOADING..."}
-          </button>
+          {titleCheat.pick === "title" && (
+            <>
+              <button
+                className="primary"
+                onClick={start}
+                disabled={!!error || !ready}
+              >
+                <Play size={20} fill="currentColor" />{" "}
+                {ready ? "START GAME" : "LOADING..."}
+              </button>
+              {titleCheat.unlocked && (
+                <div className="title-cheats">
+                  <button
+                    type="button"
+                    className="title-cheat"
+                    aria-pressed={titleCheat.unlimited}
+                    onClick={() => setTitleCheat(toggleUnlimited)}
+                  >
+                    Unlimited power-ups {titleCheat.unlimited ? "ON" : "OFF"}
+                  </button>
+                  <button
+                    type="button"
+                    className="title-cheat"
+                    onClick={() => setTitleCheat(openWorldPick)}
+                  >
+                    Choose stage
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {titleCheat.pick === "world" && (
+            <>
+              <p className="level-label">Select world</p>
+              <div className="title-pick" role="group" aria-label="Select world">
+                {TITLE_WORLDS.map((world) => (
+                  <button
+                    key={world}
+                    type="button"
+                    className="title-cheat"
+                    onClick={() =>
+                      setTitleCheat((cheat) => selectWorld(cheat, world))
+                    }
+                  >
+                    World {world}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="secondary title-back"
+                onClick={() => setTitleCheat(backTitlePick)}
+              >
+                Back
+              </button>
+            </>
+          )}
+          {titleCheat.pick === "stage" && pickedWorld != null && (
+            <>
+              <p className="level-label">Choose the stage</p>
+              <div
+                className="title-pick"
+                role="group"
+                aria-label="Choose the stage"
+              >
+                {TITLE_STAGES.map((stage) => (
+                  <button
+                    key={stage}
+                    type="button"
+                    className="title-cheat"
+                    onClick={() => startStage(pickedWorld, stage)}
+                  >
+                    Stage {stage}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="secondary title-back"
+                onClick={() => setTitleCheat(backTitlePick)}
+              >
+                Back
+              </button>
+            </>
+          )}
         </section>
       )}
       {active && (

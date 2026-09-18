@@ -103,14 +103,27 @@ fall back to the defaults. Reset to defaults is in Help.
 A header Key bindings button shows this keyboard list and the gamepad
 defaults in a dialog.
 
-On the title screen, the consecutive sequence up, up, down, down, left, right,
-left, right, B, A unlocks a session-only power-up tray. Extra keys before the
-sequence are fine. A wrong key in the middle starts the sequence over.
-Completing it does not press Start Game. Keyboard uses the arrow keys, then
-letter B, then letter A. Letter A is not walk. WASD does not count as the
-final A. A gamepad uses the D-pad plus B then A the same way. Unlock plays the
-coin sound. Mute still unlocks and skips the sound. Reload clears the tray.
+On the title screen, the consecutive Konami sequence up, up, down, down, left,
+right, left, right, B, A unlocks two session-only title buttons rather than
+the tray. Extra keys before the sequence are fine. A wrong key in the middle
+starts the sequence over. Completing it does not press Start Game. Keyboard
+uses the arrow keys, then letter B, then letter A. Letter A is not walk. WASD
+does not count as the final A. A gamepad uses the D-pad plus B then A the same
+way. Unlock plays the coin sound. Mute still unlocks and skips the sound.
+Reload clears the unlock, the toggle, and any half-finished world pick.
 Nothing is stored.
+
+Unlimited power-ups is a visible on/off toggle. Off is the default after
+unlock. On shows the existing in-play tray. Off hides it. Title clicks never
+spawn items.
+
+Choose stage replaces the title actions with Select world (one button per
+world 1-8). After a world, Choose the stage (one button per stage 1-4). Back
+to world select is allowed until a stage is picked. Picking a stage starts it
+immediately: lives reset as Start Game, that campaign index, the WORLD n-n
+intro, then play. Campaign then continues in order through 8-4. Pipe-intro
+stages 1-2, 2-2, 4-2, and 7-2 still play their overworld strip on that first
+arrival.
 
 The tray sits at the bottom of the playfield, above the on-screen pad, with
 star, 2x, 3x, 8x, flower, and 1-up. A click while playing spawns that item in

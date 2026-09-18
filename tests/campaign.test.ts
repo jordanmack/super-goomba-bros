@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Simulation, emptyInput } from "../src/game/simulation.ts";
 import { Body, overlaps } from "../src/game/physics.ts";
-import { CAMPAIGN } from "../src/game/levels.ts";
+import { CAMPAIGN, campaignIndex } from "../src/game/levels.ts";
+import { startTitleCampaign } from "../src/game/title-cheat.ts";
 import { physics } from "./support/arcade.ts";
 import { TUNING as T } from "../src/game/config.ts";
 import { MAP_TOP } from "../src/game/config.ts";
@@ -307,4 +308,57 @@ test("campaign tilemap screenshot wait exceeds the 30s Playwright default", () =
     source,
     /waitForFunction\(\s*\(id\) =>[\s\S]*?tilemap\.width[\s\S]*?\{ timeout: SCREENSHOT_WAIT_MS \}/,
   );
+});
+
+test("title cheat campaignIndex covers every world and stage", () => {
+  assert.equal(CAMPAIGN.length, 32);
+  for (let world = 1; world <= 8; world++) {
+    for (let stage = 1; stage <= 4; stage++) {
+      const index = campaignIndex(world, stage);
+      assert.equal(CAMPAIGN[index]!.id, `${world}-${stage}`);
+      assert.equal(CAMPAIGN[index]!.world, world);
+      assert.equal(CAMPAIGN[index]!.stage, stage);
+    }
+  }
+});
+
+test("title cheat start at a chosen stage resets lives and plays the intro", () => {
+  const sim = new Simulation(() => 0.5, physics());
+  assert.equal(sim.mode, "title");
+  sim.lives = 1;
+  startTitleCampaign(sim, campaignIndex(3, 1));
+  assert.equal(sim.mode, "intro");
+  assert.equal(sim.level.id, "3-1");
+  assert.equal(sim.levelIndex, campaignIndex(3, 1));
+  assert.equal(sim.lives, T.startingLives);
+  assert.equal(sim.pipeIntro, false);
+  assert.equal(sim.score, 0);
+  sim.physics.clear();
+});
+
+test("title cheat first arrival at pipe-intro stages still plays the overworld strip", () => {
+  for (const id of ["1-2", "2-2", "4-2", "7-2"]) {
+    const [world, stage] = id.split("-").map(Number);
+    const sim = new Simulation(() => 0.5, physics());
+    startTitleCampaign(sim, campaignIndex(world!, stage!));
+    assert.equal(sim.mode, "intro");
+    assert.equal(sim.level.id, id);
+    assert.equal(sim.lives, T.startingLives);
+    assert.equal(sim.pipeIntro, true);
+    assert.equal(sim.player.areaId, sim.level.route[0]);
+    assert.notEqual(sim.level.route[0], sim.level.main);
+    sim.physics.clear();
+  }
+});
+
+test("title cheat start continues the campaign in order through later stages", () => {
+  const sim = new Simulation(() => 0.5, physics());
+  startTitleCampaign(sim, campaignIndex(4, 2));
+  assert.equal(sim.level.id, "4-2");
+  sim.nextLevel();
+  assert.equal(sim.level.id, "4-3");
+  assert.equal(sim.mode, "intro");
+  sim.nextLevel();
+  assert.equal(sim.level.id, "4-4");
+  sim.physics.clear();
 });

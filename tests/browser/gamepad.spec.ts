@@ -205,7 +205,21 @@ test("gamepad mapping, Start on title, auto-hide, remap persist, and disconnect"
     await setPad(page, [button]);
     await setPad(page, []);
   }
-  await expect(page.getByRole("toolbar", { name: "Power-up tray" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Unlimited power-ups OFF" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose stage" })).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Power-up tray" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("button", { name: "START GAME" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Choose stage" }).click();
+  await setPad(page, [9]);
+  await setPad(page, []);
+  await expect(page.locator("main.at-title")).toBeVisible();
+  await expect(page.getByText("Select world")).toBeVisible();
+  await page.getByRole("button", { name: "Back" }).click();
   await expect(page.getByRole("button", { name: "START GAME" })).toBeVisible();
 
   await setPad(page, [9]);
