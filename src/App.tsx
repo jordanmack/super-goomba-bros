@@ -801,7 +801,7 @@ export default function App() {
                   <>
                     <div className="dpad">
                       {actionButton(
-                        "jump",
+                        "up",
                         "Up",
                         <ArrowUp />,
                         "Up / Jump (Up / W)",

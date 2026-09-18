@@ -329,6 +329,8 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     star: crop(items, 0, 48, 16, 16),
     marioFlag,
     mushroomFlag: mushroomFlag(marioFlag, mushroom),
+    vineHead: crop(items, 64, 48, 16, 16),
+    vine: crop(items, 64, 64, 16, 16),
     [SWEAT_DROP_KEY]: pixelSweatDrop(),
   };
 }

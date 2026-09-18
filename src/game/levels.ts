@@ -52,6 +52,18 @@ export function themeFor(area: Area) {
   return area.palette;
 }
 
+export function vineDestination(area: Area, column: number, world: number) {
+  return area.destinations
+    .filter((d) => d.world === world && d.column <= column + 11)
+    .at(-1);
+}
+
+export function vineExitColumn(area: Area) {
+  for (let column = 0; column < area.width; column++)
+    if (!isSolidTile(area.tiles[13][column] ?? 0)) return column;
+  return 4;
+}
+
 export type LevelRect = { x: number; y: number; width: number; height: number };
 export function terrainRects(
   area: Area,

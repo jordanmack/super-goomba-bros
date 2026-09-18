@@ -23,7 +23,7 @@ import {
   sonamiStepsFromPad,
 } from "./sonami";
 
-export type PadAction = keyof Input | "start" | "select" | "up";
+export type PadAction = keyof Input | "start" | "select";
 export type ControlHooks = {
   onSonami: () => void;
   onTitleStart: () => void;
@@ -188,6 +188,10 @@ export class GameControls {
       if (e.cancelable) e.preventDefault();
       if (pressed) this.held.set(id, action);
       else this.held.delete(id);
+      if (e.code === "ArrowUp") {
+        if (pressed) this.held.set("key:ArrowUp-up", "up");
+        else this.held.delete("key:ArrowUp-up");
+      }
       this.sync();
     };
     const keyDown = (e: Event) => key(e as KeyboardEvent, true),
@@ -364,6 +368,7 @@ export class GameControls {
     const live = this.playing();
     this.applyPadHold("left", holds.left, live);
     this.applyPadHold("right", holds.right, live);
+    this.applyPadHold("up", holds.up, live);
     this.applyPadHold("jump", holds.jump, live);
     this.applyPadHold("run", holds.run, live);
     this.applyPadHold("down", holds.down, live);
@@ -430,6 +435,7 @@ export class GameControls {
       const holds = mappedHolds(snap, this.state.padMap, GAMEPAD_DEADZONE);
       if (holds.left) this.padNeedRelease.add("left");
       if (holds.right) this.padNeedRelease.add("right");
+      if (holds.up) this.padNeedRelease.add("up");
       if (holds.jump) this.padNeedRelease.add("jump");
       if (holds.run) this.padNeedRelease.add("run");
       if (holds.down) this.padNeedRelease.add("down");
@@ -495,6 +501,14 @@ export class GameControls {
     for (const action of this.held.values()) if (action) pressed.add(action);
     for (const action of pressed)
       if (action in next) next[action as keyof Input] = true;
+    let compactUp = false;
+    for (const [id, action] of this.held)
+      if (action === "up" && id.startsWith("pointer:")) compactUp = true;
+    if (
+      compactUp &&
+      this.root.querySelector(".controls.layout-compact")
+    )
+      next.jump = true;
     const start = pressed.has("start");
     if (start && !this.startHeld) {
       if (this.state.sim.mode === "playing") {

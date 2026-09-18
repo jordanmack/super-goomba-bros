@@ -227,6 +227,7 @@ test("mapped gamepad holds use stick plus D-pad and ignore stick up for jump", (
   assert.deepEqual(idle, {
     left: false,
     right: false,
+    up: false,
     jump: false,
     run: false,
     down: false,
@@ -236,6 +237,7 @@ test("mapped gamepad holds use stick plus D-pad and ignore stick up for jump", (
   assert.equal(walk.left, true);
   assert.equal(walk.right, true);
   assert.equal(walk.down, true);
+  assert.equal(walk.up, false);
   assert.equal(walk.jump, false);
   const stick = mappedHolds(
     snap([], [-GAMEPAD_DEADZONE, GAMEPAD_DEADZONE, 0, 0]),
@@ -244,6 +246,9 @@ test("mapped gamepad holds use stick plus D-pad and ignore stick up for jump", (
   assert.equal(stick.left, true);
   assert.equal(stick.down, true);
   assert.equal(stick.jump, false);
+  const stickUp = mappedHolds(snap([], [0, -GAMEPAD_DEADZONE]), map);
+  assert.equal(stickUp.up, true);
+  assert.equal(stickUp.jump, false);
   const dead = mappedHolds(snap([], [-(GAMEPAD_DEADZONE - 0.01), -1]), map);
   assert.equal(dead.left, false);
   assert.equal(dead.jump, false);

@@ -7796,3 +7796,148 @@ test("a coupled balance lift pair moves in opposite directions under load", () =
   assert.notEqual(sine.body.position.x, sx);
 });
 
+function vineStage() {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
+  s.reset();
+  return s;
+}
+
+test("a vine block sprouts instead of breaking when hit by a large body", () => {
+  const s = vineStage();
+  const brick = s.obstacles.find((c) => c.content === "vine")!;
+  s.player.scale = T.giantScale;
+  s.hitBlock(brick, s.player);
+  assert.equal(brick.broken, false);
+  assert.equal(brick.used, true);
+  assert.equal(s.vines.length, 1);
+  const vine = s.vines[0]!;
+  const grown = vine.height;
+  tick(s, 0.25);
+  assert.ok(vine.height > grown, "vine grows upward after the hit");
+  assert.ok(vine.height <= vine.maxHeight);
+
+  const marioHit = vineStage();
+  const marioBrick = marioHit.obstacles.find((c) => c.content === "vine")!;
+  marioHit.marioActive = true;
+  marioHit.hitBlock(marioBrick, marioHit.mario);
+  assert.equal(marioBrick.broken, false);
+  assert.equal(marioBrick.used, true);
+  assert.equal(marioHit.vines.length, 1);
+
+  const fire = vineStage();
+  const fireBrick = fire.obstacles.find((c) => c.content === "vine")!;
+  isolateSolid(fire, fireBrick.body!);
+  fire.obstacles = [fireBrick];
+  const radius = 6 * T.playerFireballScale;
+  shoot(
+    fire,
+    fireBrick.body!.bounds.min.x - radius - 8,
+    fireBrick.y,
+    6,
+    T.playerFireballScale,
+  );
+  tick(fire, 6 * dt);
+  assert.equal(fireBrick.broken, false);
+  assert.equal(fireBrick.used, true);
+  assert.equal(fire.vines.length, 1);
+});
+
+test("climbing a vine reaches the destination area", () => {
+  const s = vineStage();
+  const brick = s.obstacles.find((c) => c.content === "vine")!;
+  s.hitBlock(brick, s.player);
+  const vine = s.vines[0]!;
+  while (vine.height < vine.maxHeight) s.step(dt, emptyInput());
+  Body.setPosition(s.player.body, {
+    x: vine.x,
+    y: vine.bottomY - s.player.body.height / 2 - 4,
+  });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  s.step(dt, emptyInput());
+  assert.ok(s.player.climbing, "player grabs the grown vine by contact");
+  const start = s.activeRoom.data.id;
+  let frames = 0;
+  while (s.activeRoom.data.id === start && frames++ < 600)
+    s.step(dt, { ...emptyInput(), up: true });
+  assert.equal(s.activeRoom.data.id, "2b");
+  assert.ok(s.player.climbing);
+});
+
+test("a vine brick stays used when 8x overlaps it, and jump-off does not re-grab", () => {
+  const s = vineStage();
+  const brick = s.obstacles.find((c) => c.content === "vine")!;
+  give(s, s.player, "mushroom8x");
+  Body.setPosition(s.player.body, { x: brick.x, y: brick.y });
+  tick(s, dt);
+  assert.equal(brick.broken, false);
+  assert.equal(brick.used, true);
+  assert.equal(s.vines.length, 1);
+  assert.equal(s.player.climbing, undefined);
+  assert.equal(s.player.scale, T.hugeScale);
+
+  const climb = vineStage();
+  const vineBrick = climb.obstacles.find((c) => c.content === "vine")!;
+  climb.hitBlock(vineBrick, climb.player);
+  const vine = climb.vines[0]!;
+  while (vine.height < vine.maxHeight) climb.step(dt, emptyInput());
+  Body.setPosition(climb.player.body, {
+    x: vine.x,
+    y: vine.bottomY - climb.player.body.height / 2 - 4,
+  });
+  Body.setVelocity(climb.player.body, { x: 0, y: 0 });
+  climb.step(dt, emptyInput());
+  assert.ok(climb.player.climbing);
+  climb.step(dt, { ...emptyInput(), up: true });
+  assert.ok(climb.player.climbing, "Up climbs instead of jumping off");
+  climb.step(dt, { ...emptyInput(), up: true, jump: true });
+  assert.equal(climb.player.climbing, undefined, "jump leaves while Up is held");
+  climb.step(dt, emptyInput());
+  assert.equal(climb.player.climbing, undefined, "jump-off does not re-grab");
+
+  const huge = vineStage();
+  const hugeBrick = huge.obstacles.find((c) => c.content === "vine")!;
+  huge.hitBlock(hugeBrick, huge.player);
+  const hugeVine = huge.vines[0]!;
+  while (hugeVine.height < hugeVine.maxHeight) huge.step(dt, emptyInput());
+  Body.setPosition(huge.player.body, {
+    x: hugeVine.x,
+    y: hugeVine.bottomY - huge.player.body.height / 2 - 4,
+  });
+  Body.setVelocity(huge.player.body, { x: 0, y: 0 });
+  huge.step(dt, emptyInput());
+  assert.ok(huge.player.climbing);
+  const area = huge.activeRoom.data.id;
+  give(huge, huge.player, "mushroom8x");
+  huge.step(dt, { ...emptyInput(), up: true });
+  assert.equal(huge.player.climbing, undefined);
+  assert.equal(huge.activeRoom.data.id, area);
+});
+
+test("falling from a vine cloud destination returns to the overworld page", () => {
+  const s = vineStage();
+  const brick = s.obstacles.find((c) => c.content === "vine")!;
+  s.hitBlock(brick, s.player);
+  const vine = s.vines[0]!;
+  while (vine.height < vine.maxHeight) s.step(dt, emptyInput());
+  Body.setPosition(s.player.body, {
+    x: vine.x,
+    y: vine.bottomY - s.player.body.height / 2 - 4,
+  });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  s.step(dt, emptyInput());
+  let frames = 0;
+  while (s.activeRoom.data.id === "28" && frames++ < 600)
+    s.step(dt, { ...emptyInput(), up: true });
+  assert.equal(s.activeRoom.data.id, "2b");
+  s.step(dt, { ...emptyInput(), jump: true });
+  Body.setPosition(s.player.body, {
+    x: s.player.body.position.x,
+    y: 700,
+  });
+  s.step(dt, emptyInput());
+  assert.equal(s.activeRoom.data.id, "28");
+  assert.ok(s.player.alive);
+  assert.ok(s.player.body.position.y < 640);
+});
+

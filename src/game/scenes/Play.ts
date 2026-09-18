@@ -257,6 +257,13 @@ export class Play extends Phaser.Scene {
         9,
       ).setFlipX(b.facing > 0);
     }
+    for (const vine of sim.vines) {
+      if (vine.areaId !== room.data.id || vine.height < 1) continue;
+      const top = vine.bottomY - vine.height;
+      image(vine.x, top + 16, 32, 32, "vineHead", 3).setRotation(0);
+      for (let y = top + 48; y < vine.bottomY + 16; y += 32)
+        image(vine.x, y, 32, 32, "vine", 3).setRotation(0);
+    }
     if (room.data.goal?.kind === "castle-room") {
       image(room.goalX, T.groundY - 48, 32, 32, "metatiles", 3)
         .setFrame(palette + 74)

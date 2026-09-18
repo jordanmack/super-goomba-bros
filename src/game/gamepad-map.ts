@@ -58,6 +58,7 @@ export type PadSnapshot = {
 export type PadHolds = {
   left: boolean;
   right: boolean;
+  up: boolean;
   jump: boolean;
   run: boolean;
   down: boolean;
@@ -215,6 +216,7 @@ export function mappedHolds(
   const holds: PadHolds = {
     left: bindingPressed(snap, map.left),
     right: bindingPressed(snap, map.right),
+    up: !!snap.buttons[HAT_BUTTON.up],
     jump: bindingPressed(snap, map.jump),
     run: bindingPressed(snap, map.run),
     down: bindingPressed(snap, map.down),
@@ -224,6 +226,7 @@ export function mappedHolds(
   const ay = snap.axes[1] ?? 0;
   if (ax <= -deadzone) holds.left = true;
   if (ax >= deadzone) holds.right = true;
+  if (ay <= -deadzone) holds.up = true;
   if (ay >= deadzone) holds.down = true;
   return holds;
 }

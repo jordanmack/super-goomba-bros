@@ -27,6 +27,8 @@ import {
   isSolidTile,
   stageTimer,
   terrainRects,
+  vineDestination,
+  vineExitColumn,
 } from "./levels.ts";
 import { Room, enemyRole } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
@@ -35,6 +37,7 @@ import { firstEmptySpawnCell } from "./spawn-cell.ts";
 export type Input = {
   left: boolean;
   right: boolean;
+  up: boolean;
   jump: boolean;
   fire: boolean;
   down: boolean;
@@ -43,6 +46,7 @@ export type Input = {
 export const emptyInput = (): Input => ({
   left: false,
   right: false,
+  up: false,
   jump: false,
   fire: false,
   down: false,
@@ -89,6 +93,17 @@ export type Obstacle = {
   content?: string | null;
   coinsLeft?: number;
 };
+export type Vine = {
+  id: number;
+  x: number;
+  bottomY: number;
+  height: number;
+  maxHeight: number;
+  destArea?: string;
+  destPage: number;
+  areaId: string;
+  block?: Obstacle;
+};
 export type Actor = {
   id: number;
   body: Body;
@@ -121,6 +136,9 @@ export type Actor = {
   blockedFor: number;
   lastX: number;
   areaId?: string;
+  climbing?: Vine;
+  vineIgnore?: number;
+  vineReturn?: { area: string; page: number };
   pipeWait?: number;
   pipeTravel?: {
     phase: "enter" | "exit";
@@ -309,6 +327,9 @@ export class Simulation {
   }
   private inPipe(actor: Actor) {
     return !!actor.pipeTravel;
+  }
+  private onVine(actor: Actor) {
+    return !!actor.climbing;
   }
   private pipeVisual(actor: Actor) {
     const mario = actor === this.mario;
@@ -500,6 +521,164 @@ export class Simulation {
     this.pipeIntro = false;
     for (const npc of this.npcs) Body.setFrozen(npc.body, false);
   }
+  private hostRoom(block: Obstacle) {
+    for (const room of this.rooms.values())
+      if (room.obstacles.includes(block)) return room;
+  }
+  private sproutVine(block: Obstacle) {
+    if (this.vines.some((vine) => vine.block === block)) return;
+    const room = this.hostRoom(block);
+    if (!room) return;
+    const column = Math.round((block.x - room.offset - 16) / 32);
+    const dest = vineDestination(room.data, column, this.level.world);
+    const bottomY = block.y - T.brickSize / 2;
+    this.vines.push({
+      id: this.nextId++,
+      x: block.x,
+      bottomY,
+      height: 0,
+      maxHeight: Math.max(T.brickSize, bottomY - MAP_TOP),
+      destArea: dest?.area,
+      destPage: dest?.page ?? 0,
+      areaId: room.data.id,
+      block,
+    });
+  }
+  private ensureDestVine(room: Room) {
+    const existing = this.vines.find(
+      (vine) => vine.areaId === room.data.id && !vine.block,
+    );
+    if (existing) return existing;
+    const x = room.offset + vineExitColumn(room.data) * 32 + 16;
+    const bottomY = MAP_TOP + 16 * 32;
+    const top = MAP_TOP + 10 * 32;
+    const vine: Vine = {
+      id: this.nextId++,
+      x,
+      bottomY,
+      height: bottomY - top,
+      maxHeight: bottomY - top,
+      destPage: 0,
+      areaId: room.data.id,
+    };
+    this.vines.push(vine);
+    return vine;
+  }
+  private beginClimb(actor: Actor, vine: Vine) {
+    actor.climbing = vine;
+    actor.idleDrop = undefined;
+    Body.setFrozen(actor.body, true);
+    Body.setPosition(actor.body, { x: vine.x, y: actor.body.position.y });
+  }
+  private endClimb(actor: Actor) {
+    actor.climbing = undefined;
+    Body.setFrozen(actor.body, false);
+  }
+  private jumpOffVine(actor: Actor, input: Input) {
+    this.endClimb(actor);
+    actor.vineIgnore = T.vineIgnore;
+    const dx = Number(input.right) - Number(input.left);
+    if (dx) actor.facing = dx;
+    const vx = dx * (input.run ? T.runSpeed : T.walkSpeed);
+    const arc = jumpArc(vx);
+    actor.jumpHoldG = arc.hold;
+    actor.jumpFallG = arc.fall;
+    Body.setVelocity(actor.body, { x: vx, y: -arc.impulse });
+    actor.grounded = false;
+    actor.jumpHeld = true;
+    if (actor === this.player) this.events.push("jump");
+  }
+  private enterVineDest(actor: Actor, vine: Vine) {
+    if (!vine.destArea) return;
+    const from = this.roomFor(actor);
+    actor.vineReturn = {
+      area: from.data.id,
+      page: Math.max(0, Math.floor((actor.body.position.x - from.offset) / 512)),
+    };
+    const target = this.loadRoom(vine.destArea);
+    actor.areaId = target.data.id;
+    const dest = this.ensureDestVine(target);
+    actor.climbing = dest;
+    Body.setPosition(actor.body, {
+      x: dest.x,
+      y: dest.bottomY - actor.body.height / 2 - 8,
+    });
+  }
+  private updateVines(dt: number) {
+    const grow = T.vineGrowSpeed * dt * 60;
+    for (const vine of this.vines)
+      vine.height = Math.min(vine.maxHeight, vine.height + grow);
+  }
+  private updateClimb(actor: Actor, input: Input, dt: number) {
+    const vine = actor.climbing;
+    if (!vine) return;
+    if (vine.areaId !== this.roomFor(actor).data.id || this.isHuge(actor)) {
+      this.endClimb(actor);
+      return;
+    }
+    const step = T.vineClimbSpeed * dt * 60;
+    let y = actor.body.position.y;
+    if (input.up) y -= step;
+    else if (input.down) y += step;
+    const top = vine.bottomY - vine.height + actor.body.height / 2;
+    const bottom = vine.bottomY - actor.body.height / 2;
+    y = bottom >= top ? Math.min(bottom, Math.max(top, y)) : bottom;
+    Body.setPosition(actor.body, { x: vine.x, y });
+    const jumpEdge = input.jump && !this.jumped;
+    const upEdge = input.up && !this.wasUp;
+    if (jumpEdge && !(input.up && upEdge)) this.jumpOffVine(actor, input);
+    else if (
+      bottom >= top &&
+      actor.climbing?.destArea &&
+      actor.body.bounds.min.y <= MAP_TOP + 0.5
+    )
+      this.enterVineDest(actor, vine);
+  }
+  private tryGrabVine(actor: Actor) {
+    if (
+      actor !== this.player ||
+      this.onVine(actor) ||
+      this.inPipe(actor) ||
+      (actor.vineIgnore ?? 0) > 0 ||
+      this.isHuge(actor) ||
+      !actor.alive ||
+      actor.saved
+    )
+      return;
+    const room = this.roomFor(actor);
+    for (const vine of this.vines) {
+      if (vine.areaId !== room.data.id || vine.height < 8) continue;
+      if (
+        !vine.block &&
+        actor.body.bounds.max.y > MAP_TOP + 13 * 32 + 8
+      )
+        continue;
+      if (Math.abs(actor.body.position.x - vine.x) > T.brickSize / 2 + 6)
+        continue;
+      const top = vine.bottomY - vine.height;
+      if (actor.body.bounds.max.y < top - 2) continue;
+      if (actor.body.bounds.min.y > vine.bottomY + 2) continue;
+      this.beginClimb(actor, vine);
+      return;
+    }
+  }
+  private returnFromBonus(actor: Actor) {
+    const room = this.roomFor(actor);
+    if (room.data.goal) return false;
+    const dest =
+      room.data.destinations
+        .filter((d) => d.world === this.level.world)
+        .at(-1) ?? actor.vineReturn;
+    if (!dest) return false;
+    if (this.onVine(actor)) this.endClimb(actor);
+    const target = this.loadRoom(dest.area);
+    actor.areaId = target.data.id;
+    const x = target.offset + dest.page * 512 + 100;
+    target.dropOnto(actor, x);
+    Body.setFrozen(actor.body, false);
+    actor.pipeWait = T.pipeCooldown;
+    return true;
+  }
   loadRoom(id: string) {
     let room = this.rooms.get(id);
     if (room) return room;
@@ -554,6 +733,7 @@ export class Simulation {
   bowsers: Bowser[] = [];
   bowserFlames: BowserFlame[] = [];
   items: Item[] = [];
+  vines: Vine[] = [];
   particles: Particle[] = [];
   events: GameEvent[] = [];
   mode: Mode = "title";
@@ -618,6 +798,7 @@ export class Simulation {
   private retrySpawn = false;
   private nextId = 1;
   private jumped = false;
+  private wasUp = false;
   private playerPace = T.walkSpeed as number;
   private bouncedNpcs = new Set<Actor>();
   private shellStomps = new Set<Actor>();
@@ -748,10 +929,12 @@ export class Simulation {
     this.fireballs = [];
     this.bulletBills = [];
     this.items = [];
+    this.vines = [];
     this.coinPops = [];
     this.particles = [];
     this.events = [];
     this.jumped = false;
+    this.wasUp = false;
     this.playerPace = T.walkSpeed;
     this.bouncedNpcs.clear();
     this.flagPrevPlayerX = this.player.body.position.x;
@@ -833,6 +1016,8 @@ export class Simulation {
       shell: "none",
       wakeLeft: 0,
       kickIgnore: 0,
+      vineIgnore: 0,
+      vineReturn: undefined,
       shellKicker: 0,
       blockedFor: 0,
       lastX: x,
@@ -1248,6 +1433,7 @@ export class Simulation {
     if (!a.alive || a.saved || (a === this.player && this.mode !== "playing"))
       return;
     if (this.inPipe(a)) this.endPipeTravel(a);
+    if (this.onVine(a)) this.endClimb(a);
     a.alive = false;
     if (bloody) {
       this.burst(a.body.position.x, a.body.position.y, true);
@@ -1333,7 +1519,10 @@ export class Simulation {
     if (c.broken || c.kind !== "brick" || c.bounce > 0) return;
     this.collectCoinsOnBlock(c, hitter);
     this.bumpActorsOnBlock(c, hitter);
-    const prize = c.content === "1-up" || (c.hidden && c.content === "coin");
+    const prize =
+      c.content === "1-up" ||
+      c.content === "vine" ||
+      (c.hidden && c.content === "coin");
     if (
       !c.question &&
       !prize &&
@@ -1356,6 +1545,12 @@ export class Simulation {
       this.reveal(c);
       this.events.push("bump");
       this.spawnItem(c, "oneUp", hitter.facing);
+      return;
+    }
+    if (c.content === "vine") {
+      this.reveal(c);
+      this.sproutVine(c);
+      this.events.push("bump");
       return;
     }
     this.events.push("bump");
@@ -1639,7 +1834,14 @@ export class Simulation {
   }
 
   private smashHuge(a: Actor) {
-    if (a.scale < T.hugeScale || !a.alive || a.saved || this.inPipe(a)) return;
+    if (
+      a.scale < T.hugeScale ||
+      !a.alive ||
+      a.saved ||
+      this.inPipe(a) ||
+      this.onVine(a)
+    )
+      return;
     const room = this.roomFor(a);
     for (const c of [...this.obstacles]) {
       if (c.broken || !c.body) continue;
@@ -1647,6 +1849,7 @@ export class Simulation {
       if (this.isGoalPipe(room, c)) continue;
       if (!this.smashContact(a, c)) continue;
       this.yieldSmashPrize(c, a);
+      if (c.content === "vine") continue;
       this.breakSolid(c);
     }
     this.smashHugeTerrain(a, room);
@@ -1676,7 +1879,15 @@ export class Simulation {
   }
 
   private yieldSmashPrize(c: Obstacle, hitter: Actor) {
-    if (c.kind !== "brick" || c.used || c.broken) return;
+    if (c.kind !== "brick" || c.broken) return;
+    if (c.content === "vine") {
+      if (!c.used) {
+        this.sproutVine(c);
+        this.reveal(c);
+      }
+      return;
+    }
+    if (c.used) return;
     this.collectCoinsOnBlock(c, hitter);
     if (c.content === "coins") {
       const n = c.coinsLeft ?? T.multiCoinCount;
@@ -2691,6 +2902,7 @@ export class Simulation {
         this.expireHuge(a);
       a.exclaimLeft = Math.max(0, a.exclaimLeft - dt);
       if (!this.inPipe(a)) a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
+      a.vineIgnore = Math.max(0, (a.vineIgnore ?? 0) - dt);
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
       a.swimRepath = Math.max(0, (a.swimRepath ?? 0) - dt);
       const water = this.roomFor(a).data.type === "water";
@@ -2728,54 +2940,63 @@ export class Simulation {
       }
     }
     this.updatePipeTravel(dt);
+    this.updateVines(dt);
     if (this.mode === "playing" && !this.inPipe(this.player)) {
       const play = this.pipeIntro
         ? { ...emptyInput(), right: true }
         : input;
-      const dx = Number(play.right) - Number(play.left);
-      const p = this.player.body.position;
-      const water = this.activeRoom.data.type === "water";
-      if (water) this.playerPace = T.walkSpeed;
-      else if (this.player.grounded)
-        this.playerPace = play.run ? T.runSpeed : T.walkSpeed;
-      this.move(this.player, dx * this.playerPace);
-      if (play.jump && !this.jumped)
-        this.jump(
-          this.player,
-          this.roomFor(this.player).onSpring(this.player)
-            ? T.springImpulse
-            : undefined,
-        );
-      this.player.jumpHeld = play.jump;
-      this.jumped = play.jump;
-      if (play.fire && this.player.flower && this.canThrowFireball("player")) {
-        this.fireballs.push({
-          id: this.nextId++,
-          x: p.x + this.player.facing * (this.player.body.width / 2 + 10),
-          y: p.y,
-          vx: this.player.facing * 6,
-          vy: 0,
-          age: 0,
-          owner: "player",
-          scale: fireballScaleFor(this.player.scale),
-        });
-        this.events.push("fire");
-      }
-      const room = this.activeRoom;
-      if (p.x < room.offset + 20)
-        Body.setPosition(this.player.body, { x: room.offset + 20, y: p.y });
-      const traveled = this.tryPipe(this.player, play.down, play.right);
-      if (
-        !traveled &&
-        room.data.goal &&
-        room.data.goal.kind !== "pipe" &&
-        p.x >= room.goalX
-      ) {
-        if (room.atDoor(this.player)) {
-          this.expireHuge(this.player, false);
-          this.finish();
+      if (this.onVine(this.player)) {
+        this.updateClimb(this.player, play, dt);
+        this.player.jumpHeld = play.jump;
+        this.jumped = play.jump;
+        this.wasUp = play.up;
+      } else {
+        const dx = Number(play.right) - Number(play.left);
+        const p = this.player.body.position;
+        const water = this.activeRoom.data.type === "water";
+        if (water) this.playerPace = T.walkSpeed;
+        else if (this.player.grounded)
+          this.playerPace = play.run ? T.runSpeed : T.walkSpeed;
+        this.move(this.player, dx * this.playerPace);
+        if (play.jump && !this.jumped)
+          this.jump(
+            this.player,
+            this.roomFor(this.player).onSpring(this.player)
+              ? T.springImpulse
+              : undefined,
+          );
+        this.player.jumpHeld = play.jump;
+        this.jumped = play.jump;
+        this.wasUp = play.up;
+        if (play.fire && this.player.flower && this.canThrowFireball("player")) {
+          this.fireballs.push({
+            id: this.nextId++,
+            x: p.x + this.player.facing * (this.player.body.width / 2 + 10),
+            y: p.y,
+            vx: this.player.facing * 6,
+            vy: 0,
+            age: 0,
+            owner: "player",
+            scale: fireballScaleFor(this.player.scale),
+          });
+          this.events.push("fire");
         }
-        else Body.setPosition(this.player.body, { x: room.goalX - 1, y: p.y });
+        const room = this.activeRoom;
+        if (p.x < room.offset + 20)
+          Body.setPosition(this.player.body, { x: room.offset + 20, y: p.y });
+        const traveled = this.tryPipe(this.player, play.down, play.right);
+        if (
+          !traveled &&
+          room.data.goal &&
+          room.data.goal.kind !== "pipe" &&
+          p.x >= room.goalX
+        ) {
+          if (room.atDoor(this.player)) {
+            this.expireHuge(this.player, false);
+            this.finish();
+          }
+          else Body.setPosition(this.player.body, { x: room.goalX - 1, y: p.y });
+        }
       }
     } else if (this.mode === "playing") this.jumped = true;
     if (!scripted) {
@@ -2784,6 +3005,10 @@ export class Simulation {
     }
     if (!scripted) this.updateMario(dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
+      if (this.onVine(a)) {
+        a.body.gravityScale = 0;
+        continue;
+      }
       if (this.roomFor(a).data.type === "water") continue;
       const hold = !!a.jumpHeld && a.body.velocity.y < 0 && !a.grounded;
       const holdG = a.jumpHoldG ?? T.jumpHoldGravity;
@@ -2814,6 +3039,7 @@ export class Simulation {
     const prevNpcTops = new Map<Actor, number>();
     for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
     this.physics.step(dt);
+    this.tryGrabVine(this.player);
     for (const n of [...this.npcs, this.mario]) {
       if (n.navHoldX === undefined) continue;
       // Keep takeoff x so delayed air speed can match ground pace without extra travel.
@@ -2871,11 +3097,13 @@ export class Simulation {
         a.alive &&
         !a.saved &&
         !this.inPipe(a) &&
+        !this.onVine(a) &&
         a.body.position.y > 640 &&
-        !this.isHuge(a) &&
         !(a === this.player && this.pipeIntro)
-      )
-        this.kill(a, false);
+      ) {
+        if (a === this.player && this.returnFromBonus(a)) continue;
+        if (!this.isHuge(a)) this.kill(a, false);
+      }
     this.updateFireballs(dt);
     this.updateCannons();
     this.updateBulletBills(
@@ -3589,7 +3817,12 @@ export class Simulation {
                 !c.question &&
                 !c.used,
             );
-            if (brick) this.breakBrick(brick);
+            if (brick?.content === "vine") {
+              this.sproutVine(brick);
+              this.reveal(brick);
+              brick.bounce = T.blockBounceSeconds;
+              this.events.push("bump");
+            } else if (brick) this.breakBrick(brick);
           }
           f.age = 6;
         }

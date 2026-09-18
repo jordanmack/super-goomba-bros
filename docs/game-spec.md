@@ -41,8 +41,8 @@ settings unless a rule below explicitly fixes their relationship.
   main. The script is not a death. Death with lives left, Pause Restart, and
   other retries of that stage skip the strip and spawn at the start of main.
 - Preserve source warp/vine commands in the data. Campaign progression remains
-  sequential; the custom power-up system does not recreate the original vine
-  and world-skip rules.
+  sequential; climbing a vine goes to that vine's named destination and does
+  not skip worlds. See [Vines](#vines).
 - No logs or hiding spots are added. Bushes are scenery.
 - The goal is the castle doorway. Castle interiors use a visible inverted-white
   rescue doorway after the original bridge. On stages with a flagpole, the first of the player or
@@ -433,6 +433,26 @@ break. Question blocks, used blocks, and unbreakable tiles are not broken this
 way. Player fireballs do not harm NPCs. A Mario fireball is a normal hit: it
 shrinks 2x or 3x to 1x and kills only 1x, matching a stomp or moving shell.
 Stars and 8x ignore that fireball.
+
+## Vines
+
+A brick whose contents are a vine sprouts a climbable vine when hit from
+below. A large player or Mario never destroys that brick before it has
+sprouted; the brick becomes a used block. The vine grows upward from the
+block with the original head and body art.
+
+The player grabs a grown vine by touching it. Up and Down climb. Jump leaves
+the vine with a hop. Climbing off the top of the screen goes to the vine's
+latched destination area, using the same world-specific area command the
+pipes use. TIME, powers, and the rest of the stage stay as they are. The
+player arrives still climbing the vine that comes up through the destination
+floor hole, then can climb onto that area and jump off. Falling out of a
+goal-less vine destination returns to that area's latched overworld page.
+
+NPCs and Mario ignore vines. They do not grab, climb, or block them.
+
+Warp-zone pipes at a vine destination follow the same pipe rules as other
+areas.
 
 ## Cannons and Bullet Bills
 

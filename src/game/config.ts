@@ -69,6 +69,10 @@ export const TUNING = {
   areaSpacing: 20000,
   pipeCooldown: 0.8,
   pipeSpeed: 2,
+  // NES vine grow/climb are 1 px/frame; 2x tiles use 2 px/frame.
+  vineGrowSpeed: 2,
+  vineClimbSpeed: 2,
+  vineIgnore: 0.4,
   springImpulse: 17,
   swimImpulse: 4.5,
   swimGravity: 0.25,
