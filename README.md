@@ -31,7 +31,7 @@ starts at World 1-1 and progresses in order.
 | Jump; swim upward in water | Space, Up, W, or K | A; Compact Up | A (South) |
 | Enter a pipe | Down or S; walk into side entrances | D-pad Down | Down |
 | Shoot with a flower | Shift, Z, or J (press) | B (press) | B (East) press |
-| Pause | Escape | Pause; NES Start | Start |
+| Pause | Escape | Pause; NES Start | Start (pause in play; Start Game on title) |
 | Select | | NES Select | Unused |
 
 The header Key bindings button shows this keyboard list and the gamepad
