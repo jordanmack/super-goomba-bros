@@ -196,7 +196,10 @@ Saved NPCs stay safe and cannot return to danger.
 The in-play header is one non-wrapping SMB1 status block: `GOOMBA`, SCORE, `COINS`,
 WORLD, and TIME. Icon tools stay on the right and must not wrap over the
 playfield. Lives appear only on the WORLD n-n intro (`× 03`), not the in-play
-bar. There is no in-world elapsed WORLD overlay.
+bar. WORLD intro text, the life portrait, and GAME OVER scale with the
+playfield so they stay in proportion at phone and desktop widths, stay
+pixelated, and do not clip or overflow. There is no in-world elapsed WORLD
+overlay.
 
 TIME counts down from the original per-stage timer (`header.timer`: 0=400, 1=300,
 2=200) at the original 24-frame tick. TIME starts when the player has control on
@@ -377,9 +380,9 @@ unprotected player. 2x and 3x form shrinks on the first damaging stomp, shell,
 or fireball hit; that size is not full immunity. 8x ignores those hits.
 Falling out of the level also kills, except 8x. TIME 0 still kills 8x. Stars
 grant full immunity. Death spends a life. If lives remain, the original-style
-black intro shows WORLD n-n and the player Goomba × remaining lives, then the
-current stage restarts with cleared counters, powers, items, speech, used
-blocks, and pursuit state. Pipe-intro stages skip the overworld strip and
+black intro shows WORLD n-n and the player Goomba × remaining lives at
+playfield scale, then the current stage restarts with cleared counters,
+powers, items, speech, used blocks, and pursuit state. Pipe-intro stages skip the overworld strip and
 spawn on main. The intro is silent; area music starts with play.
 Start Game, auto-continue after a castle tally, and Pause Restart Level go
 through that intro when lives remain. The title screen stays the title screen.

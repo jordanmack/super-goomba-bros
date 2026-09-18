@@ -27,21 +27,28 @@
 .game .scanlines {
   opacity: 0;
 }
-.intro-world {
-  font-size: 16px;
+.overlay.interstitial-overlay .intro-world {
+  font-size: round(nearest, calc(var(--play-h) * 16 / 540), 1px);
   color: #fff;
-  letter-spacing: 2px;
+  letter-spacing: 0.125em;
+  max-width: 100%;
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
 }
-.intro-lives {
+.overlay.interstitial-overlay .intro-lives {
   display: flex;
   align-items: center;
-  gap: 20px;
-  font-size: 16px;
+  gap: round(nearest, calc(var(--play-h) * 20 / 540), 1px);
+  font-size: round(nearest, calc(var(--play-h) * 16 / 540), 1px);
   color: #fff;
+  max-width: 100%;
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
 }
-.intro-lives img {
-  width: 32px;
-  height: 32px;
+.overlay.interstitial-overlay .intro-lives img {
+  flex-shrink: 0;
+  width: round(nearest, calc(var(--play-h) * 32 / 540), 1px);
+  height: round(nearest, calc(var(--play-h) * 32 / 540), 1px);
   image-rendering: pixelated;
 }
 .game.at-intro .topbar {
@@ -646,10 +653,12 @@ p {
   padding: 30px;
 }
 .overlay.interstitial-overlay {
+  --play-h: max(100dvh, 340px);
   background: #000;
   z-index: 5;
   pointer-events: none;
-  gap: 40px;
+  gap: round(nearest, calc(var(--play-h) * 40 / 540), 1px);
+  padding: 8px;
 }
 .help-overlay {
   z-index: 13;
@@ -717,10 +726,17 @@ p {
   text-shadow: 3px 3px #92534a;
 }
 .overlay.interstitial-overlay h2 {
-  font-size: 24px;
+  font-size: round(
+    nearest,
+    min(calc(var(--play-h) * 24 / 540), 9vw),
+    1px
+  );
   color: #fff;
   text-shadow: none;
-  letter-spacing: 2px;
+  letter-spacing: 0.083em;
+  max-width: 100%;
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
 }
 .overlay > p:not(.level-label) {
   font-size: 10px;

@@ -327,3 +327,128 @@ test("start shows a silent world intro, and 0 lives shows game over then title",
     timeout: 8000,
   });
 });
+
+const introViewports = [
+  { name: "phone", width: 390, height: 844 },
+  { name: "desktop", width: 1280, height: 720 },
+] as const;
+
+function playfieldScale(height: number) {
+  return height / 540;
+}
+
+for (const viewport of introViewports) {
+  test(`WORLD intro and GAME OVER scale with the playfield at ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "START GAME" }).click();
+    const intro = page.getByRole("region", { name: "World intro" });
+    await expect(intro).toBeVisible();
+    await page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      s.introLeft = 1e6;
+    });
+    await expect(page.getByTestId("lives")).toContainText("03");
+    await expect(page.getByTestId("lives")).toHaveText(/×\s*03/);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      const img = document.querySelector(".intro-lives img");
+      if (img instanceof HTMLImageElement && !img.complete)
+        await img.decode().catch(() => {});
+    });
+    const introMetrics = await page.evaluate(() => {
+      const playfield = document.querySelector(".playfield")!;
+      const canvas = document.querySelector(".world canvas")!;
+      const world = document.querySelector(".intro-world")!;
+      const lives = document.querySelector(".intro-lives")!;
+      const img = lives.querySelector("img")!;
+      const play = playfield.getBoundingClientRect();
+      const canvasBox = canvas.getBoundingClientRect();
+      const worldBox = world.getBoundingClientRect();
+      const livesBox = lives.getBoundingClientRect();
+      const imgBox = img.getBoundingClientRect();
+      return {
+        playHeight: play.height,
+        canvasHeight: canvasBox.height,
+        worldFont: parseFloat(getComputedStyle(world).fontSize),
+        livesFont: parseFloat(getComputedStyle(lives).fontSize),
+        imgWidth: imgBox.width,
+        imgHeight: imgBox.height,
+        imgRendering: getComputedStyle(img).imageRendering,
+        worldLeft: worldBox.left,
+        worldRight: worldBox.right,
+        livesLeft: livesBox.left,
+        livesRight: livesBox.right,
+        worldOverflow: world.scrollWidth - world.clientWidth,
+        livesOverflow: lives.scrollWidth - lives.clientWidth,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      };
+    });
+    expect(introMetrics.playHeight).toBeCloseTo(
+      introMetrics.viewportHeight,
+      0,
+    );
+    const scale = playfieldScale(introMetrics.viewportHeight);
+    expect(introMetrics.worldFont).toBe(Math.round(16 * scale));
+    expect(introMetrics.livesFont).toBe(Math.round(16 * scale));
+    expect(introMetrics.imgWidth).toBe(Math.round(32 * scale));
+    expect(introMetrics.imgHeight).toBe(Math.round(32 * scale));
+    expect(
+      Math.abs(
+        introMetrics.imgWidth - (32 * introMetrics.canvasHeight) / 540,
+      ),
+    ).toBeLessThan(1);
+    expect(introMetrics.imgRendering).toMatch(/pixelated|crisp-edges/);
+    expect(introMetrics.worldLeft).toBeGreaterThanOrEqual(0);
+    expect(introMetrics.worldRight).toBeLessThanOrEqual(
+      introMetrics.viewportWidth,
+    );
+    expect(introMetrics.livesLeft).toBeGreaterThanOrEqual(0);
+    expect(introMetrics.livesRight).toBeLessThanOrEqual(
+      introMetrics.viewportWidth,
+    );
+    expect(introMetrics.worldOverflow).toBeLessThanOrEqual(0);
+    expect(introMetrics.livesOverflow).toBeLessThanOrEqual(0);
+    expect(introMetrics.worldFont).not.toBe(16);
+    expect(introMetrics.worldFont).not.toBe(10);
+
+    await page.evaluate(() => {
+      const s = (window as any).__game.sim;
+      s.mode = "gameover";
+      s.gameoverLeft = 1e6;
+    });
+    const gameOver = page.getByRole("region", { name: "Game over" });
+    await expect(gameOver).toBeVisible();
+    const overMetrics = await page.evaluate(() => {
+      const playfield = document.querySelector(".playfield")!;
+      const heading = document.querySelector(
+        ".overlay.interstitial-overlay h2",
+      )!;
+      const play = playfield.getBoundingClientRect();
+      const box = heading.getBoundingClientRect();
+      return {
+        playHeight: play.height,
+        font: parseFloat(getComputedStyle(heading).fontSize),
+        left: box.left,
+        right: box.right,
+        overflow: heading.scrollWidth - heading.clientWidth,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    const overScale = playfieldScale(overMetrics.playHeight);
+    const widthCap = (overMetrics.viewportWidth * 9) / 100;
+    expect(overMetrics.font).toBe(
+      Math.round(Math.min(24 * overScale, widthCap)),
+    );
+    expect(overMetrics.left).toBeGreaterThanOrEqual(0);
+    expect(overMetrics.right).toBeLessThanOrEqual(overMetrics.viewportWidth);
+    expect(overMetrics.overflow).toBeLessThanOrEqual(0);
+    expect(overMetrics.font).not.toBe(24);
+  });
+}
