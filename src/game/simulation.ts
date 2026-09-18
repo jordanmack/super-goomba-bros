@@ -19,6 +19,7 @@ import {
   jumpArc,
 } from "./config.ts";
 import {
+  areaData,
   CAMPAIGN,
   isSmashExemptTile,
   isSolidTile,
@@ -178,7 +179,8 @@ export type GameEvent =
   | "appear"
   | "tally"
   | "hurry"
-  | "ending";
+  | "ending"
+  | "firework";
 export type Particle = {
   x: number;
   y: number;
@@ -190,6 +192,7 @@ export type Particle = {
   color: string;
   settled: boolean;
   blood: boolean;
+  firework?: boolean;
 };
 export type Fireball = {
   id: number;
@@ -520,6 +523,10 @@ export class Simulation {
   marioKills = 0;
   tallyPhase: TallyPhase = "";
   tallyHold = 0;
+  fireworksTotal = 0;
+  private fireworksLeft = 0;
+  private fireworkWait = 0;
+  private fireworksArmed = false;
   private finishElapsed = 0;
   deadLeft = 0;
   marioActive = false;
@@ -651,6 +658,10 @@ export class Simulation {
     this.marioKills = 0;
     this.tallyPhase = "";
     this.tallyHold = 0;
+    this.fireworksTotal = 0;
+    this.fireworksLeft = 0;
+    this.fireworkWait = 0;
+    this.fireworksArmed = false;
     this.finishElapsed = 0;
     this.awarded = { warned: 0, saved: 0, died: 0, flag: false, mario: 0 };
     this.introLeft = mode === "intro" ? T.introSeconds : 0;
@@ -2271,7 +2282,7 @@ export class Simulation {
       p.age += dt;
       if (p.settled) continue;
       const oldY = p.y;
-      p.vy += 520 * dt;
+      p.vy += (p.firework ? 220 : 520) * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (!p.blood) continue;
@@ -2288,7 +2299,7 @@ export class Simulation {
       }
     }
     this.particles = this.particles.filter((p) =>
-      p.blood ? p.age < p.life : p.y < 540,
+      p.firework || p.blood ? p.age < p.life : p.y < 540,
     );
   }
   save(n: Actor) {
@@ -2309,6 +2320,85 @@ export class Simulation {
     this.tallyPhase = this.timeLeft > 0 ? "time" : "warned";
     this.tallyHold = this.timeLeft > 0 ? 0 : T.tallyLineSeconds;
     this.applyTallyDeltas();
+    if (this.tallyPhase !== "time") this.armFireworks();
+  }
+
+  fireworkCount() {
+    if (areaData(this.level.main).goal?.kind !== "castle-door") return 0;
+    if (this.saved >= T.fireworkStrong) return 6;
+    if (this.saved >= T.fireworkGood) return 3;
+    if (this.saved >= T.fireworkModest) return 1;
+    return 0;
+  }
+
+  private armFireworks() {
+    if (this.fireworksArmed) return;
+    this.fireworksArmed = true;
+    this.fireworksTotal = this.fireworkCount();
+    this.fireworksLeft = this.fireworksTotal;
+    this.fireworkWait = 0;
+  }
+
+  private fireworkBurst(x: number, y: number) {
+    const colors = ["#fffce0", "#ffd21a", "#ff5a18", "#ffffff"];
+    for (let i = 0; i < T.fireworkBurst; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 40 + Math.random() * 140;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        age: 0,
+        life: 0.55,
+        size: 3 + Math.floor(Math.random() * 4),
+        color: colors[i % colors.length]!,
+        settled: false,
+        blood: false,
+        firework: true,
+      });
+    }
+    if (this.particles.length > 1200)
+      this.particles.splice(0, this.particles.length - 1200);
+  }
+
+  private castleRoofY(room: Room) {
+    const col = room.data.goal?.column ?? room.data.width - 3;
+    for (let row = 0; row < 13; row++) {
+      const tiles = room.data.tiles[row];
+      if (!tiles) continue;
+      const start = Math.max(0, col - 6);
+      const end = Math.min(tiles.length - 1, col + 1);
+      for (let c = start; c <= end; c++) {
+        const tile = tiles[c]!;
+        if (tile >= 69 && tile <= 75) return MAP_TOP + row * 32;
+      }
+    }
+    return MAP_TOP + 8 * 32;
+  }
+
+  private fireFirework() {
+    const room = this.rooms.get(this.level.main) ?? this.activeRoom;
+    const roof = this.castleRoofY(room);
+    const spots = [
+      { dx: -48, dy: -56 },
+      { dx: 24, dy: -88 },
+      { dx: -8, dy: -32 },
+    ] as const;
+    const spot = spots[(this.fireworksTotal - this.fireworksLeft) % spots.length]!;
+    this.fireworkBurst(room.goalX + spot.dx, Math.max(24, roof + spot.dy));
+    this.score += T.fireworkScore;
+    this.events.push("firework");
+  }
+
+  private stepFireworks(dt: number) {
+    if (!this.fireworksArmed) return;
+    this.fireworkWait -= dt;
+    while (this.fireworksLeft > 0 && this.fireworkWait <= 0) {
+      this.fireFirework();
+      this.fireworksLeft--;
+      this.fireworkWait += T.fireworkInterval;
+    }
   }
 
   playerClaimedFlag() {
@@ -2403,6 +2493,7 @@ export class Simulation {
       this.timeLeft = 0;
       this.tallyPhase = "warned";
       this.tallyHold = T.tallyLineSeconds;
+      this.armFireworks();
     }
     this.applyTallyDeltas();
     this.tallyHold -= dt;
@@ -2679,7 +2770,10 @@ export class Simulation {
       marioFalling,
     );
     this.updateFlagpoles(dt);
-    if (this.mode === "finishing") this.stepTally(dt);
+    if (this.mode === "finishing") {
+      this.stepTally(dt);
+      if (this.mode === "finishing") this.stepFireworks(dt);
+    }
   }
 
   private updateFlagpoles(dt: number) {

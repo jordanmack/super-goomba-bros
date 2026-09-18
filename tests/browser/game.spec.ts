@@ -13,7 +13,7 @@ test("Starman music follows only player and Mario stars and respects death cues"
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 22,
+    () => (window as any).__game.audio.buffers.size === 23,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -98,7 +98,7 @@ test("area music resumes after Mario death from the saved seek", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 22,
+    () => (window as any).__game.audio.buffers.size === 23,
   );
   await page.evaluate(() => {
     const g = (window as any).__game;
@@ -289,7 +289,7 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
   await skipIntro(page);
   await expect(page.getByRole("button", { name: "B", exact: true })).toBeVisible();
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 22,
+    () => (window as any).__game.audio.buffers.size === 23,
   );
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -1333,7 +1333,7 @@ test("death restart, open castle door, tally, and no finish banner", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 22,
+    () => (window as any).__game.audio.buffers.size === 23,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -1623,7 +1623,7 @@ test("original recordings decode and play as effects, with level clear replacing
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 22,
+    () => (window as any).__game.audio.buffers.size === 23,
   );
   await page.waitForFunction(
     () => !!(window as any).__game?.audio?.music?.markers?.loop,
@@ -1640,6 +1640,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "splat",
       "appear",
       "kick",
+      "firework",
     ];
     const names = [
       "jump",
@@ -1651,6 +1652,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "stomp",
       "appear",
       "kick",
+      "fireworks",
     ];
     const valid = effects.every((event, i) => {
       a.event(event);

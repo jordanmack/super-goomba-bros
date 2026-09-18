@@ -7280,6 +7280,132 @@ test("SCORE may go negative from died penalties", () => {
   assert.ok(s.score < 0);
 });
 
+function rescue(s: Simulation, count: number) {
+  parkNpcs(s, s.npcs.slice(0, count));
+  for (const n of s.npcs.slice(0, count)) s.save(n);
+}
+
+function playFireworks(s: Simulation) {
+  s.timeLeft = 0;
+  s.events.length = 0;
+  for (let i = 0; i < Math.round((T.fireworkInterval * 6 + 3 * dt) * 60); i++) {
+    s.tallyHold = 99;
+    s.step(dt, emptyInput());
+  }
+  return s.events.filter((event) => event === "firework").length;
+}
+
+test("flagpole fireworks match each rescue threshold and add 500 each", () => {
+  const cases = [
+    [T.fireworkModest - 1, 0],
+    [T.fireworkModest, 1],
+    [T.fireworkGood - 1, 1],
+    [T.fireworkGood, 3],
+    [T.fireworkStrong - 1, 3],
+    [T.fireworkStrong, 6],
+  ] as const;
+  for (const [saved, count] of cases) {
+    const s = game();
+    rescue(s, saved);
+    s.timeLeft = 0;
+    s.score = 0;
+    s.finish();
+    assert.equal(s.fireworksTotal, count, `saved ${saved}`);
+    assert.equal(s.fireworkCount(), count);
+    s.tallyHold = 99;
+    s.events.length = 0;
+    const before = s.score;
+    tick(s, dt);
+    if (count === 0) {
+      assert.equal(s.events.filter((event) => event === "firework").length, 0);
+      assert.equal(s.score, before);
+      continue;
+    }
+    assert.equal(s.events.filter((event) => event === "firework").length, 1);
+    assert.equal(s.score, before + T.fireworkScore);
+    const sky = s.particles.filter((p) => p.firework);
+    assert.ok(sky.length >= T.fireworkBurst);
+    assert.ok(sky.every((p) => p.y > 0 && p.y < MAP_TOP + 8 * 32));
+    assert.ok(sky.every((p) => Math.abs(p.x - s.goalX) < 120));
+    tick(s, T.fireworkInterval * 6 + 2 * dt);
+    assert.equal(
+      s.events.filter((event) => event === "firework").length,
+      count,
+      `saved ${saved} fired`,
+    );
+    assert.equal(s.score, before + count * T.fireworkScore);
+    assert.equal(s.mode, "finishing");
+  }
+});
+
+test("castle-room and pipe-goal stages produce no fireworks", () => {
+  const castle = new Simulation(() => 0.5);
+  castle.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+  castle.reset();
+  castle.marioReturn = 1e6;
+  rescue(castle, T.fireworkStrong);
+  castle.timeLeft = 0;
+  castle.finish();
+  assert.equal(castle.activeRoom.data.goal?.kind, "castle-room");
+  assert.equal(castle.fireworkCount(), 0);
+  assert.equal(castle.fireworksTotal, 0);
+  assert.equal(playFireworks(castle), 0);
+
+  const pipe = new Simulation(() => 0.5);
+  pipe.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  pipe.reset();
+  pipe.marioReturn = 1e6;
+  rescue(pipe, T.fireworkStrong);
+  pipe.timeLeft = 0;
+  pipe.finish();
+  assert.equal(areaData(pipe.level.main).goal?.kind, "pipe");
+  assert.equal(pipe.fireworkCount(), 0);
+  assert.equal(pipe.fireworksTotal, 0);
+  assert.equal(playFireworks(pipe), 0);
+});
+
+test("tall castle-door fireworks burst above the roof against the sky", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-3");
+  s.reset();
+  s.marioReturn = 1e6;
+  rescue(s, T.fireworkModest);
+  s.timeLeft = 0;
+  s.finish();
+  s.tallyHold = 99;
+  tick(s, dt);
+  const roof = MAP_TOP + 2 * 32;
+  const sky = s.particles.filter((p) => p.firework);
+  assert.equal(s.activeRoom.data.goal?.kind, "castle-door");
+  assert.ok(sky.length >= T.fireworkBurst);
+  assert.ok(sky.every((p) => p.y < roof), `burst at ${sky[0]?.y} vs roof ${roof}`);
+  assert.ok(sky.every((p) => p.y > 0));
+});
+
+test("flagpole fireworks start after leftover TIME and do not hold auto-advance", () => {
+  const s = game();
+  rescue(s, T.fireworkStrong);
+  s.timeLeft = 3;
+  s.score = 0;
+  s.finish();
+  assert.equal(s.tallyPhase, "time");
+  assert.equal(s.fireworksTotal, 0);
+  while (s.tallyPhase === "time") tick(s, dt);
+  assert.equal(s.tallyPhase, "warned");
+  assert.equal(s.fireworksTotal, 6);
+  let fired = s.events.filter((event) => event === "firework").length;
+  assert.equal(fired, 1);
+  s.events.length = 0;
+  for (let i = 0; i < 60 * 10 && s.mode === "finishing"; i++) {
+    tick(s, dt);
+    fired += s.events.filter((event) => event === "firework").length;
+    s.events.length = 0;
+  }
+  assert.equal(s.mode, "intro");
+  assert.equal(s.level.id, "1-2");
+  assert.equal(fired, 6);
+});
+
 test("8x mushroom draw shares the 32px item's visible bottom", () => {
   const s = game();
   const box = s.obstacles.find((c) => c.question && !c.hidden && !c.used)!;

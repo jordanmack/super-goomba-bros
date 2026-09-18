@@ -250,7 +250,11 @@ The castle door is always open. Reaching it completes the stage:
 4. Then outlined white-on-black lines, no box: WARNED, SAVED, DIED, FLAG, MARIO.
    Each line is count × points, then SCORE updates. Saves, deaths, and Mario
    finishes during the tally still count.
-5. Pause and Escape are ignored until the tally ends. Mute still works.
+5. On castle-door (flagpole) stages, fireworks start when leftover TIME hits 0
+   and overlap those lines. They do not wait for the lines to finish, and they
+   do not hold auto-advance. castle-room and pipe-goal stages produce none.
+   Pause and Escape stay ignored for the whole finishing sequence. Mute still
+   works.
 6. Auto-advance to the next WORLD n-n intro. There is no NEXT LEVEL button.
    After 8-4, play the short world-clear cue, then return to the title.
 
@@ -262,6 +266,14 @@ Castle breakdown points:
 - Player beat Mario to the flag: +2000 (0 if Mario was first)
 - Each time the player finishes Mario: +1000
 - Leftover TIME: +50 per unit
+- Flagpole fireworks, from NPCs saved when leftover TIME hits 0 (saves during
+  the TIME drain count; later tally saves do not change the count):
+  - 20 or more saved: 6 fireworks
+  - 12 to 19 saved: 3 fireworks
+  - 6 to 11 saved: 1 firework
+  - 5 or fewer: 0
+- Each firework: +500, added to SCORE as that firework fires, with the original
+  fireworks cue. Fireworks burst above the castle against the sky.
 
 Pipe travel still does not rescue. The player may backtrack to find more NPCs.
 

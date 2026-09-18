@@ -97,6 +97,7 @@ test("bundled WAV cues share the documented peak target and do not clip", () => 
   assert.ok(files.includes("world_clear.wav"));
   assert.ok(files.includes("stage_clear.wav"));
   assert.ok(files.includes("pipe.wav"));
+  assert.ok(files.includes("fireworks.wav"));
   const levels = new Map<string, { peak: number; rms: number }>();
   for (const name of files) {
     const measured = wavLevels(readFileSync(join(audioDir, name)));

@@ -23,6 +23,7 @@ import pause from "../assets/audio/pause.wav?inline";
 import appear from "../assets/audio/powerup_appears.wav?inline";
 import warning from "../assets/audio/warning.wav?inline";
 import worldClear from "../assets/audio/world_clear.wav?inline";
+import fireworks from "../assets/audio/fireworks.wav?inline";
 
 export const RECORDINGS = {
   overworld,
@@ -47,6 +48,7 @@ export const RECORDINGS = {
   appear,
   warning,
   worldClear,
+  fireworks,
 };
 const MUSIC_LOOPS: Record<
   string,
@@ -89,6 +91,7 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   tally: "coin",
   hurry: "warning",
   ending: "worldClear",
+  firework: "fireworks",
 };
 
 export class GameAudio {

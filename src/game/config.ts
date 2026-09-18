@@ -27,6 +27,13 @@ export const TUNING = {
   diedScore: -2000,
   flagScore: 2000,
   marioScore: 1000,
+  fireworkScore: 500,
+  // Castle-door fireworks from NPCs saved when leftover TIME hits 0.
+  fireworkModest: 6,
+  fireworkGood: 12,
+  fireworkStrong: 20,
+  fireworkInterval: 0.4,
+  fireworkBurst: 18,
   timeScore: 50,
   coinsForLife: 100,
   tallyLineSeconds: 0.7,
