@@ -27,6 +27,8 @@ function crop(
 export function characterSprites({ mario, enemies }: SpriteSources) {
   const goomba = crop(enemies, 0, 4, 16, 16);
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
+  const fish = crop(enemies, 0, 32, 16, 16, true);
+  const fishWalk = crop(enemies, 32, 32, 16, 16, true);
   const koopa = crop(enemies, 150, 0, 16, 24, true);
   const koopaWalk = crop(enemies, 180, 0, 16, 24, true);
   const koopaShell = crop(enemies, 360, 4, 16, 16);
@@ -46,12 +48,16 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
   return {
     goomba,
     goombaWalk,
+    fish,
+    fishWalk,
     koopa,
     koopaWalk,
     koopaShell,
     koopaShellWake,
     fireGoomba: firePalette(goomba),
     fireGoombaWalk: firePalette(goombaWalk),
+    fireFish: firePalette(fish),
+    fireFishWalk: firePalette(fishWalk),
     fireKoopa: firePalette(koopa),
     fireKoopaWalk: firePalette(koopaWalk),
     fireKoopaShell: firePalette(koopaShell),
@@ -252,6 +258,55 @@ function mushroomFlag(flag: HTMLCanvasElement, mushroom: HTMLCanvasElement) {
   return canvas;
 }
 
+function pixelRope() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 2;
+  canvas.height = 8;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = "#7c4c18";
+  context.fillRect(0, 0, 2, 8);
+  context.fillStyle = "#d09040";
+  context.fillRect(0, 0, 1, 8);
+  return canvas;
+}
+
+function pixelPulley() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 16;
+  canvas.height = 10;
+  const context = canvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  const pixels = context.createImageData(16, 10);
+  const d = pixels.data;
+  const put = (x: number, y: number, r: number, g: number, b: number) => {
+    const i = (y * 16 + x) * 4;
+    d[i] = r;
+    d[i + 1] = g;
+    d[i + 2] = b;
+    d[i + 3] = 255;
+  };
+  for (let x = 4; x <= 11; x++) {
+    put(x, 0, 0, 0, 0);
+    put(x, 9, 0, 0, 0);
+  }
+  for (let y = 1; y <= 8; y++) {
+    put(3, y, 0, 0, 0);
+    put(12, y, 0, 0, 0);
+  }
+  for (let y = 1; y <= 8; y++)
+    for (let x = 4; x <= 11; x++) {
+      const rim = y === 1 || y === 8 || x === 4 || x === 11;
+      if (rim) put(x, y, 188, 188, 188);
+      else put(x, y, 252, 252, 252);
+    }
+  put(7, 4, 0, 0, 0);
+  put(8, 4, 0, 0, 0);
+  put(7, 5, 0, 0, 0);
+  put(8, 5, 0, 0, 0);
+  context.putImageData(pixels, 0, 0);
+  return canvas;
+}
+
 export function scenerySprites({ enemies, items }: SpriteSources) {
   const marioFlag = crop(items, 128, 0, 16, 16);
   const mushroom = crop(items, 0, 0, 16, 16);
@@ -259,6 +314,8 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     fireball: crop(enemies, 364, 188, 8, 8),
     bulletBill: crop(enemies, 304, 96, 16, 16),
     platform: crop(items, 80, 24, 48, 8),
+    rope: pixelRope(),
+    pulley: pixelPulley(),
     coin: crop(items, 0, 80, 16, 16),
     mushroom,
     oneUp: crop(items, 16, 0, 16, 16),

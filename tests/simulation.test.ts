@@ -9,6 +9,7 @@ import {
 import { MAP_TOP, PHRASES, TUNING as T, blockDrawY } from "../src/game/config.ts";
 import { firstEmptySpawnCell, spawnCellCenter } from "../src/game/spawn-cell.ts";
 import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
+import { ENEMY_BALANCE_LIFT, ENEMY_FISH } from "../src/game/room.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
 const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
@@ -156,8 +157,10 @@ test("a delayed NPC launch takes off at ground pace and never speeds up in the a
   Body.setPosition(n.body, { x: 400, y: T.groundY - 14 });
   Body.setVelocity(n.body, { x: 0, y: 0 });
   n.navBackoff = { x: 400, vx: T.runSpeed, delay: 8 };
+  const startX = n.body.position.x;
   let takeoff = 0;
   let leftGround = false;
+  let delayFrames = 0;
   const air: number[] = [];
   for (let i = 0; i < 40; i++) {
     const wasGrounded = n.grounded;
@@ -166,13 +169,22 @@ test("a delayed NPC launch takes off at ground pace and never speeds up in the a
       leftGround = true;
       takeoff = Math.abs(n.body.velocity.x);
     }
-    if (!n.grounded) air.push(Math.abs(n.body.velocity.x));
+    if (!n.grounded) {
+      air.push(Math.abs(n.body.velocity.x));
+      if (delayFrames < 8) {
+        assert.ok(
+          Math.abs(n.body.position.x - startX) < 1,
+          `moved during delay frame ${delayFrames}`,
+        );
+        delayFrames++;
+      }
+    }
   }
   assert.ok(leftGround, "NPC left the ground");
-  assert.ok(takeoff > 0, `takeoff ${takeoff}`);
+  assert.equal(delayFrames, 8);
   assert.ok(takeoff <= T.runSpeed + 0.05, `takeoff ${takeoff} above run`);
   for (const vx of air)
-    assert.ok(vx <= takeoff + 0.05, `air ${vx} > takeoff ${takeoff}`);
+    assert.ok(vx <= T.runSpeed + 0.05, `air ${vx} above run`);
 });
 
 test("active Mario collects a star by contact and its immunity expires", () => {
@@ -1982,6 +1994,7 @@ test("a pipe-heavy stage spawns NPCs on pipe lids", () => {
   s.marioReturn = 1e6;
   let onLid = 0;
   for (const n of s.npcs) {
+    if (n.kind === "fish") continue;
     const support = supportUnder(s, n);
     assert.ok(support, "NPC feet rest on a solid");
     if (
@@ -7641,5 +7654,145 @@ test("cheat drop ignores title, intro, dead, finishing, and pipe travel", () => 
   assert.equal(s.dropCheatItem("star"), null);
   s.mode = "gameover";
   assert.equal(s.dropCheatItem("star"), null);
+});
+
+test("balance lifts are not land NPC spawn lids", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "3-3");
+  s.reset();
+  const lifts = new Set(
+    s.activeRoom.platforms
+      .filter((p) => p.kind === ENEMY_BALANCE_LIFT)
+      .map((p) => p.body),
+  );
+  assert.ok(lifts.size >= 2);
+  for (const n of s.npcs) {
+    assert.equal(
+      lifts.has(
+        s.solids.find(
+          (solid) =>
+            !solid.headOnly &&
+            n.body.position.x + n.body.width / 2 > solid.bounds.min.x &&
+            n.body.position.x - n.body.width / 2 < solid.bounds.max.x &&
+            Math.abs(n.body.bounds.max.y - solid.bounds.min.y) < 4,
+        )!,
+      ),
+      false,
+      "NPC started on a coupled lift",
+    );
+  }
+});
+
+test("water stages spawn type-7 fish and land stages do not", () => {
+  const land = game();
+  assert.equal(
+    land.npcs.filter((n) => n.kind === "fish").length,
+    0,
+  );
+  const water = game();
+  water.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-2");
+  water.reset();
+  const fish = water.npcs.filter((n) => n.kind === "fish");
+  const placed = areaData("01").enemies.filter((e) => e.type === ENEMY_FISH);
+  assert.equal(fish.length, placed.length);
+  assert.ok(fish.length >= 14);
+  assert.equal(water.npcs.length, T.population + fish.length);
+  assert.equal(
+    water.died() + water.saved + water.living(),
+    water.npcs.length,
+  );
+  for (const n of water.npcs.filter((npc) => npc.kind !== "fish"))
+    assert.ok(n.kind === "goomba" || n.kind === "koopa");
+  const side = game();
+  side.levelIndex = CAMPAIGN.findIndex((level) => level.id === "5-2");
+  side.reset();
+  const fromBonus = areaData("00").enemies.filter((e) => e.type === ENEMY_FISH);
+  assert.equal(
+    side.npcs.filter((n) => n.kind === "fish").length,
+    fromBonus.length,
+  );
+  assert.equal(side.npcs.length, T.population + fromBonus.length);
+});
+
+test("a warned fish reaches the 2-2 rescue door", { timeout: 20000 }, () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  const fish = s.npcs
+    .filter((n) => n.kind === "fish" && n.alive)
+    .sort((a, b) => b.body.position.x - a.body.position.x)[0];
+  assert.ok(fish, "2-2 has fish");
+  parkNpcs(s, [fish]);
+  at(s, fish.body.position.x, fish.body.position.y);
+  tick(s, 0.2);
+  assert.equal(fish.warned, true);
+  assert.ok(s.warned >= 1);
+  fish.wait = 0;
+  fish.state = "run";
+  const room = s.roomFor(fish);
+  let frames = 0;
+  for (
+    ;
+    frames < 60 * 90 && fish.alive && !fish.saved;
+    frames++
+  )
+    s.step(dt, emptyInput());
+  assert.equal(fish.saved, true, JSON.stringify({
+    frames,
+    pos: fish.body.position,
+    area: fish.areaId,
+    goal: room.goalX,
+    alive: fish.alive,
+  }));
+  assert.ok(s.saved >= 1);
+});
+
+test("a coupled balance lift pair moves in opposite directions under load", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "3-3");
+  s.reset();
+  const room = s.activeRoom;
+  const lift = room.platforms.find(
+    (p) => p.kind === ENEMY_BALANCE_LIFT && p.partner != null,
+  );
+  assert.ok(lift, "3-3 has a paired balance lift");
+  const partner = room.platforms[lift.partner!]!;
+  assert.equal(partner.kind, ENEMY_BALANCE_LIFT);
+  assert.ok(room.balanceRopes.length >= 1);
+  const rider = s.player;
+  Body.setPosition(rider.body, {
+    x: lift.body.position.x,
+    y: lift.body.bounds.min.y - rider.body.height / 2,
+  });
+  Body.setVelocity(rider.body, { x: 0, y: 0 });
+  const yA = lift.body.position.y;
+  const yB = partner.body.position.y;
+  room.updatePlatforms(0, [rider]);
+  room.updatePlatforms(0.5, [rider]);
+  assert.ok(lift.body.position.y > yA + 8, "weighted lift lowers");
+  assert.ok(partner.body.position.y < yB - 8, "partner rises");
+  assert.ok(
+    Math.abs(lift.body.position.y - yA + (partner.body.position.y - yB)) < 0.01,
+  );
+  for (const rope of room.balanceRopes) {
+    assert.ok(rope.pulleyY < lift.body.bounds.min.y);
+    assert.ok(rope.pulleyY < partner.body.bounds.min.y);
+    assert.ok(rope.leftY - rope.pulleyY > 8);
+    assert.ok(rope.rightY - rope.pulleyY > 8);
+  }
+  const loadedA = lift.body.position.y;
+  const loadedB = partner.body.position.y;
+  room.updatePlatforms(1.0, []);
+  assert.ok(lift.body.position.y < loadedA, "unloaded lift reverses");
+  assert.ok(partner.body.position.y > loadedB, "partner reverses");
+  const sine = room.platforms.find((p) => p.kind === 40);
+  assert.ok(sine, "3-3 still has ordinary moving platforms");
+  const sx = sine.body.position.x;
+  const sy = sine.origin.y;
+  room.updatePlatforms(1.0 + Math.PI / 2, []);
+  assert.equal(sine.body.position.y, sy);
+  assert.notEqual(sine.body.position.x, sx);
 });
 

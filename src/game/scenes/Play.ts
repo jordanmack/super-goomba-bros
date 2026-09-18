@@ -220,6 +220,13 @@ export class Play extends Phaser.Scene {
     }
     for (const pop of sim.coinPops)
       image(pop.x, pop.y - 48 * Math.min(1, pop.age / 0.5), 32, 32, "coin", 6).setRotation(0);
+    for (const rope of room.balanceRopes) {
+      const leftH = Math.max(2, rope.leftY - rope.pulleyY);
+      const rightH = Math.max(2, rope.rightY - rope.pulleyY);
+      image(rope.leftX, rope.pulleyY + leftH / 2, 4, leftH, "rope", 3);
+      image(rope.rightX, rope.pulleyY + rightH / 2, 4, rightH, "rope", 3);
+      image(rope.pulleyX, rope.pulleyY, 16, 12, "pulley", 5);
+    }
     for (const platform of room.platforms)
       image(
         platform.body.position.x,
@@ -367,9 +374,14 @@ export class Play extends Phaser.Scene {
       : actor.flower
         ? actor.kind === "goomba"
           ? "fireGoomba"
-          : "fireKoopa"
+          : actor.kind === "koopa"
+            ? "fireKoopa"
+            : "fireFish"
         : actor.kind;
-    const moving = actor.grounded && Math.abs(actor.body.velocity.x) > 0.1;
+    const moving =
+      actor.kind === "fish"
+        ? Math.hypot(actor.body.velocity.x, actor.body.velocity.y) > 0.1
+        : actor.grounded && Math.abs(actor.body.velocity.x) > 0.1;
     const skid =
       mario &&
       sim.marioChase > 0 &&

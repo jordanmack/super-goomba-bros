@@ -22,6 +22,38 @@ export type Cannon = {
   timer: number;
 };
 
+/** SMB1 enemy IDs from the bundled disassembly InitEnemyRoutines table. */
+export const ENEMY_FISH = 7;
+export const ENEMY_BALANCE_LIFT = 36;
+export const ENEMY_PLATFORM_MIN = 36;
+export const ENEMY_PLATFORM_MAX = 44;
+
+export type EnemyRole = "fish" | "balance-lift" | "platform" | "other";
+
+export function enemyRole(type: number): EnemyRole {
+  if (type === ENEMY_FISH) return "fish";
+  if (type === ENEMY_BALANCE_LIFT) return "balance-lift";
+  if (type >= ENEMY_PLATFORM_MIN && type <= ENEMY_PLATFORM_MAX) return "platform";
+  return "other";
+}
+
+export type BalanceRope = {
+  pulleyX: number;
+  pulleyY: number;
+  leftX: number;
+  leftY: number;
+  rightX: number;
+  rightY: number;
+};
+
+export type Platform = {
+  body: Body;
+  origin: { x: number; y: number };
+  kind: number;
+  phase: number;
+  partner?: number;
+};
+
 export class Room {
   data: Area;
   offset: number;
@@ -31,13 +63,11 @@ export class Room {
   gaps: [number, number][];
   goalX: number;
   flagpole?: Flagpole;
-  platforms: {
-    body: Body;
-    origin: { x: number; y: number };
-    kind: number;
-    phase: number;
-  }[] = [];
+  platforms: Platform[] = [];
   cannons: Cannon[] = [];
+  balanceRopes: BalanceRope[] = [];
+  spawnedActors = false;
+  private platformElapsed?: number;
   private swimFields = new Map<string, (point: Point) => Point[]>();
   coins: { x: number; y: number; collected: boolean }[] = [];
 
@@ -137,27 +167,32 @@ export class Room {
         body,
       });
     }
-    for (const enemy of this.data.enemies)
-      if (enemy.type >= 36 && enemy.type <= 44) {
-        const width = enemy.type >= 43 ? 48 : 96;
-        const origin = {
-          x: offset + enemy.column * 32 + width / 2,
-          y: MAP_TOP + enemy.row * 32 + 8,
-        };
-        const body = physics.rectangle(origin.x, origin.y, width, 16, true);
-        this.solids.push(body);
-        this.platforms.push({
-          body,
-          origin,
-          kind: enemy.type,
-          phase: enemy.column % 7,
-        });
-      }
+    for (const enemy of this.data.enemies) {
+      const role = enemyRole(enemy.type);
+      if (role !== "platform" && role !== "balance-lift") continue;
+      const width = enemy.type >= 43 ? 48 : 96;
+      const origin = {
+        x: offset + enemy.column * 32 + width / 2,
+        y: MAP_TOP + enemy.row * 32 + 8,
+      };
+      const body = physics.rectangle(origin.x, origin.y, width, 16, true);
+      this.solids.push(body);
+      this.platforms.push({
+        body,
+        origin,
+        kind: enemy.type,
+        phase: enemy.column % 7,
+      });
+    }
+    this.pairBalanceLifts();
+    this.refreshBalanceRopes();
   }
 
   private spawnKind(solid: Body) {
     if (solid.headOnly) return;
-    if (this.platforms.some((p) => p.body === solid)) return "platform";
+    const platform = this.platforms.find((p) => p.body === solid);
+    if (platform)
+      return platform.kind === ENEMY_BALANCE_LIFT ? "lift" : "platform";
     const obstacle = this.obstacles.find((o) => o.body === solid);
     if (!obstacle || obstacle.hidden) return;
     if (obstacle.kind === "brick" || obstacle.kind === "pipe")
@@ -188,6 +223,7 @@ export class Room {
       : this.data.width;
     const matches = (solid: Body) => {
       const kind = this.spawnKind(solid);
+      if (kind === "lift") return false;
       if (support === "brick") return kind === "brick";
       if (support === "lid") return kind === "pipe" || kind === "platform";
       return true;
@@ -293,22 +329,134 @@ export class Room {
     actor.grounded = true;
   }
 
+  private pairBalanceLifts() {
+    const lifts: number[] = [];
+    for (let i = 0; i < this.platforms.length; i++)
+      if (this.platforms[i].kind === ENEMY_BALANCE_LIFT) lifts.push(i);
+    for (let i = 0; i + 1 < lifts.length; i += 2) {
+      const a = lifts[i]!,
+        b = lifts[i + 1]!;
+      this.platforms[a]!.partner = b;
+      this.platforms[b]!.partner = a;
+    }
+  }
+
+  private ridersOn(platform: Platform, actors: Actor[]) {
+    const body = platform.body;
+    return actors.filter(
+      (a) =>
+        a.alive &&
+        !a.saved &&
+        a.body.velocity.y >= 0 &&
+        Math.abs(a.body.bounds.max.y - body.bounds.min.y) < 3 &&
+        a.body.bounds.max.x > body.bounds.min.x &&
+        a.body.bounds.min.x < body.bounds.max.x,
+    );
+  }
+
+  private carryRiders(riders: Actor[], dx: number, dy: number) {
+    for (const actor of riders)
+      Body.setPosition(actor.body, {
+        x: actor.body.position.x + dx,
+        y: actor.body.position.y + dy,
+      });
+  }
+
+  private updateBalancePair(
+    a: Platform,
+    b: Platform,
+    dt: number,
+    actors: Actor[],
+  ) {
+    const minY = MAP_TOP + 80;
+    const maxY = T.groundY - 8;
+    const ridersA = this.ridersOn(a, actors);
+    const ridersB = this.ridersOn(b, actors);
+    const wA = ridersA.length,
+      wB = ridersB.length;
+    let dy: number;
+    if (wA !== wB) {
+      dy = Math.sign(wA - wB) * T.platformSpeed * dt;
+    } else {
+      const remain = a.origin.y - a.body.position.y;
+      dy =
+        Math.abs(remain) < 0.5
+          ? 0
+          : Math.sign(remain) *
+            Math.min(T.platformSpeed * dt, Math.abs(remain));
+    }
+    const lo = Math.max(minY - a.body.position.y, b.body.position.y - maxY);
+    const hi = Math.min(maxY - a.body.position.y, b.body.position.y - minY);
+    dy = Math.min(hi, Math.max(lo, dy));
+    const beforeA = { ...a.body.position };
+    const beforeB = { ...b.body.position };
+    a.body.position.x = a.origin.x;
+    b.body.position.x = b.origin.x;
+    a.body.position.y += dy;
+    b.body.position.y -= dy;
+    a.body.motion = undefined;
+    b.body.motion = undefined;
+    this.carryRiders(
+      ridersA,
+      a.body.position.x - beforeA.x,
+      a.body.position.y - beforeA.y,
+    );
+    this.carryRiders(
+      ridersB,
+      b.body.position.x - beforeB.x,
+      b.body.position.y - beforeB.y,
+    );
+  }
+
+  refreshBalanceRopes() {
+    const ropes: BalanceRope[] = [];
+    const seen = new Set<number>();
+    for (let i = 0; i < this.platforms.length; i++) {
+      const p = this.platforms[i]!;
+      if (p.kind !== ENEMY_BALANCE_LIFT || p.partner == null || seen.has(i))
+        continue;
+      seen.add(i);
+      seen.add(p.partner);
+      const q = this.platforms[p.partner]!;
+      const left = p.body.position.x <= q.body.position.x ? p : q;
+      const right = left === p ? q : p;
+      ropes.push({
+        pulleyX: (left.origin.x + right.origin.x) / 2,
+        pulleyY: MAP_TOP + 64,
+        leftX: left.body.position.x,
+        leftY: left.body.bounds.min.y,
+        rightX: right.body.position.x,
+        rightY: right.body.bounds.min.y,
+      });
+    }
+    this.balanceRopes = ropes;
+  }
+
   updatePlatforms(elapsed: number, actors: Actor[]) {
+    const dt =
+      this.platformElapsed === undefined
+        ? 0
+        : Math.max(0, elapsed - this.platformElapsed);
+    this.platformElapsed = elapsed;
+    const moved = new Set<Platform>();
     for (const platform of this.platforms) {
+      if (moved.has(platform)) continue;
+      if (
+        platform.kind === ENEMY_BALANCE_LIFT &&
+        platform.partner != null
+      ) {
+        const partner = this.platforms[platform.partner]!;
+        this.updateBalancePair(platform, partner, dt, actors);
+        moved.add(platform);
+        moved.add(partner);
+        continue;
+      }
+      if (platform.kind === ENEMY_BALANCE_LIFT) continue;
       const { body, origin, kind, phase } = platform;
       const before = { ...body.position };
-      const riding = actors.filter(
-        (a) =>
-          a.alive &&
-          !a.saved &&
-          a.body.velocity.y >= 0 &&
-          Math.abs(a.body.bounds.max.y - body.bounds.min.y) < 3 &&
-          a.body.bounds.max.x > body.bounds.min.x &&
-          a.body.bounds.min.x < body.bounds.max.x,
-      );
+      const riding = this.ridersOn(platform, actors);
       const angle = (elapsed * T.platformSpeed) / T.platformTravel + phase;
       const vertical =
-        kind === 36 ||
         kind === 37 ||
         kind === 38 ||
         kind === 39 ||
@@ -325,12 +473,13 @@ export class Room {
         origin.x + (vertical ? 0 : Math.sin(angle) * T.platformTravel);
       body.position.y =
         origin.y + (vertical ? Math.sin(angle) * T.platformTravel : 0);
-      for (const actor of riding)
-        Body.setPosition(actor.body, {
-          x: actor.body.position.x + body.position.x - before.x,
-          y: actor.body.position.y + body.position.y - before.y,
-        });
+      this.carryRiders(
+        riding,
+        body.position.x - before.x,
+        body.position.y - before.y,
+      );
     }
+    this.refreshBalanceRopes();
   }
   onSpring(actor: Actor) {
     const half = actor.body.width / 2;

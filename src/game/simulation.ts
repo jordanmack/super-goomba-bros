@@ -26,7 +26,7 @@ import {
   stageTimer,
   terrainRects,
 } from "./levels.ts";
-import { Room } from "./room.ts";
+import { Room, enemyRole } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
 import { firstEmptySpawnCell } from "./spawn-cell.ts";
 
@@ -90,7 +90,7 @@ export type Obstacle = {
 export type Actor = {
   id: number;
   body: Body;
-  kind: "goomba" | "koopa" | "mario";
+  kind: "goomba" | "koopa" | "mario" | "fish";
   alive: boolean;
   saved: boolean;
   warned: boolean;
@@ -490,6 +490,7 @@ export class Simulation {
     this.rooms.set(id, room);
     this.solids.push(...room.solids);
     this.obstacles.push(...room.obstacles);
+    if (this.npcs.length) this.spawnLevelActors(room);
     return room;
   }
   solids: Body[] = [];
@@ -588,6 +589,7 @@ export class Simulation {
     this.solids = [];
     this.obstacles = [];
     this.rooms.clear();
+    this.npcs = [];
     this.terrainId = 0;
     const retry =
       mode !== "title" &&
@@ -603,6 +605,7 @@ export class Simulation {
     const entry = this.loadRoom(
       skipStrip ? this.level.main : this.level.route[0],
     );
+    this.loadStageWaterRooms();
     this.player.areaId = entry.data.id;
     entry.place(this.player, entry.offset + 100);
     this.npcs = [];
@@ -633,6 +636,7 @@ export class Simulation {
         if (!actor.grounded) main.place(actor, actor.homeX, "low", occupied);
       }
     }
+    for (const room of this.rooms.values()) this.spawnLevelActors(room);
     if (this.pipeIntro)
       for (const npc of this.npcs) Body.setFrozen(npc.body, true);
     this.mario = this.actor(entry.offset - 200, "mario");
@@ -700,6 +704,44 @@ export class Simulation {
     this.shellStomps.clear();
   }
 
+  private loadStageWaterRooms() {
+    const world = this.level.world;
+    for (const room of [...this.rooms.values()]) {
+      for (const dest of room.data.destinations) {
+        if (dest.world !== world) continue;
+        if (areaData(dest.area).type === "water") this.loadRoom(dest.area);
+      }
+    }
+  }
+
+  private spawnLevelActors(room: Room) {
+    if (room.spawnedActors) return;
+    room.spawnedActors = true;
+    if (room.data.type !== "water") return;
+    for (const enemy of room.data.enemies) {
+      if (enemyRole(enemy.type) !== "fish") continue;
+      const x = room.offset + enemy.column * 32 + 16;
+      const y = MAP_TOP + enemy.row * 32 + 16;
+      const fish = this.actor(x, "fish");
+      fish.areaId = room.data.id;
+      Body.setPosition(fish.body, { x, y });
+      Body.setVelocity(fish.body, { x: 0, y: 0 });
+      fish.homeX = x;
+      fish.grounded = false;
+      if (overlaps(fish.body, room.solids, 0.01).length) this.fitActor(fish);
+      for (let nudge = 0; nudge < 4; nudge++) {
+        if (!this.npcs.some((other) => this.overlapActors(fish, other))) break;
+        Body.setPosition(fish.body, {
+          x: fish.body.position.x + 32,
+          y: fish.body.position.y,
+        });
+        fish.homeX = fish.body.position.x;
+        if (overlaps(fish.body, room.solids, 0.01).length) this.fitActor(fish);
+      }
+      this.npcs.push(fish);
+    }
+  }
+
   private actor(x: number, kind: Actor["kind"]): Actor {
     const body = this.physics.rectangle(
       x,
@@ -749,7 +791,7 @@ export class Simulation {
     return this.npcs.filter((n) => n.alive && !n.saved).length;
   }
   died() {
-    return T.population - this.saved - this.living();
+    return this.npcs.length - this.saved - this.living();
   }
   private ground(a: Actor) {
     const bottom = a.body.bounds.max.y;
@@ -828,11 +870,12 @@ export class Simulation {
     );
   }
   private launchJump(a: Actor, vx: number, impulse: number, delay = 0) {
-    this.move(a, vx);
-    this.jump(a, impulse);
     a.navVx = vx;
     a.navDelay = delay;
     if (delay > 0) a.navHoldX = a.body.position.x;
+    this.move(a, vx);
+    this.jump(a, impulse);
+    this.move(a, delay > 0 ? 0 : vx);
   }
   setMarioStage(stage: 0 | 1 | 2, blink = false) {
     if (!this.mario) {
@@ -1029,21 +1072,26 @@ export class Simulation {
         }
       }
       a.navRetry = 0.15;
-      if (support && !support.motion && !this.roomFor(a).onSpring(a))
+      if (support && !support.motion && !this.roomFor(a).onSpring(a)) {
+        const fromX =
+          direction > 0
+            ? Math.min(p.x, support.bounds.max.x - half - 1)
+            : Math.max(p.x, support.bounds.min.x + half + 1);
         for (let distance = 32; distance <= 256; distance += 32) {
-          const x = p.x - direction * distance;
+          const x = fromX - direction * distance;
           if (
             x - half < support.bounds.min.x ||
             x + half > support.bounds.max.x
           )
             break;
           const probe = new Body(x, p.y, a.body.width, a.body.height);
-          if (overlaps(probe, solids, 0.1).length) continue;
+          if (overlaps(probe, solids, 0.1).some((s) => s !== support)) continue;
           if (
             solids.some(
               (s) =>
-                x + half + 4 > s.bounds.min.x &&
-                x - half - 4 < s.bounds.max.x &&
+                s !== support &&
+                x + half > s.bounds.min.x &&
+                x - half < s.bounds.max.x &&
                 s.bounds.max.y < feet - 2 &&
                 s.bounds.min.y > p.y - 240,
             )
@@ -1058,6 +1106,7 @@ export class Simulation {
             break;
           }
         }
+      }
       if (!a.navBackoff && !a.navDetourBelow) {
         const reverse = planJump(
           a.body,
@@ -2879,8 +2928,22 @@ export class Simulation {
         continue;
       }
       if (!n.warned) {
-        const feet = n.body.bounds.max.y;
         const speed = T.idleSpeed * (0.8 + n.fear * 0.4);
+        if (n.kind === "fish") {
+          n.idleWait -= dt;
+          if (n.idleWait <= 0) {
+            n.idleWalking = !n.idleWalking;
+            n.idleWait = n.idleWalking
+              ? 1.2 + this.random() * 1.8
+              : 0.3 + this.random() * 0.6;
+            if (n.idleWalking && this.random() < 0.5) n.facing *= -1;
+          }
+          if ((p.x - n.homeX) * n.facing >= T.idleRadius) n.facing *= -1;
+          this.move(n, n.idleWalking ? n.facing * speed : 0);
+          n.body.velocity.y = 0;
+          continue;
+        }
+        const feet = n.body.bounds.max.y;
         if (n.idleDrop || !n.grounded) {
           n.idleDrop ??= { airborne: !n.grounded };
           n.idleDrop.airborne ||= !n.grounded;

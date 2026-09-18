@@ -24,8 +24,11 @@ settings unless a rule below explicitly fixes their relationship.
 - Keep the original gaps, pipe dimensions, block rows, stairs, ledges, and castle
   locations. Keep the custom NPC population and rescue rules.
 - Include underground, water, and castle areas with their corresponding art and
-  music. Moving platforms carry characters. Original springs give a stronger
-  bounce.
+  music. Moving platforms carry characters. Balance-lift pairs (original enemy
+  type 36 / $24) are coupled: weight on one lowers it and raises its partner,
+  and removing the weight reverses that motion. A rope and pulley are drawn and
+  move with the pair. Ordinary moving platforms keep their independent motion.
+  Original springs give a stronger bounce.
 - Enterable pipes use world-specific destinations and entrance pages. Side
   entrances work when approached at their opening. Decorative pipes stay solid.
 - Pipe travel preserves elapsed time, powers, NPC states, broken blocks, items,
@@ -171,12 +174,18 @@ grant safety.
 
 ## NPCs
 
-Use a fixed population per stage. Do not replace dead or saved NPCs. Randomize
-safe starting positions and hidden traits for fear, reaction time, and speed.
-About one in three NPCs start on a nearby brick, question block, pipe lid, or
-moving platform when those tops exist. The rest start on the floor. Unrevealed
-hidden blocks are not standable starts. Two NPCs do not share a spawn cell.
-These traits stay fixed during an attempt.
+Use a fixed land population per stage (`population` in tuning). Do not replace
+dead or saved NPCs. Randomize safe starting positions and hidden traits for
+fear, reaction time, and speed. About one in three land NPCs start on a nearby
+brick, question block, pipe lid, or moving platform when those tops exist. The
+rest start on the floor. Unrevealed hidden blocks are not standable starts.
+Two NPCs do not share a spawn cell. These traits stay fixed during an attempt.
+
+Water areas also spawn fish from original type-7 enemy placements. Those fish
+are rescue NPCs, not a synthetic extra population and not SMB1 chase-the-player
+Cheep Cheeps. They use Cheep Cheep art from the enemy sheet. Fish appear only
+in water areas. WARNED, SAVED, and DIED count every NPC including fish, so the
+tally uses the actual NPC count rather than the land population alone.
 
 Unwarned NPCs patrol, pause, turn, and step off safe surfaces. They avoid lethal
 gaps and do not rapidly flip direction on a small block. A warning starts their
@@ -184,7 +193,8 @@ reaction delay and then their escape.
 
 Warned NPCs move toward a rescue door. They plan landings, use platforms and
 springs, back up for higher routes, and find lower paths through castle passages.
-Swimmers route around coral and pipes. NPCs keep moving and can collect items
+Swimmers, including warned fish, route around coral and pipes toward the rescue
+door. NPCs keep moving and can collect items
 outside the camera view, including while the player is in another area.
 
 NPCs collect items by contact without seeking them or intentionally attacking

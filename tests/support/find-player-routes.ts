@@ -21,6 +21,7 @@ type State = {
   pipeWait: number;
   hidden: number[];
   pace: number;
+  liftY: number[];
 };
 type Node = {
   state: State;
@@ -98,11 +99,20 @@ function capture(sim: Simulation): State {
     pipeWait: sim.player.pipeWait ?? 0,
     hidden: sim.obstacles.filter((c) => c.hidden && c.used).map((c) => c.id),
     pace: flags.playerPace,
+    liftY: sim.activeRoom.platforms.map((p) => p.body.position.y),
   };
 }
 function restore(sim: Simulation, state: State) {
   sim.physics.remove(sim.player.body);
-  for (const room of sim.rooms.values()) room.updatePlatforms(state.time, []);
+  for (const room of sim.rooms.values()) {
+    room.updatePlatforms(state.time, []);
+    for (let i = 0; i < room.platforms.length; i++) {
+      const y = state.liftY[i];
+      if (y === undefined) continue;
+      room.platforms[i]!.body.position.y = y;
+    }
+    room.refreshBalanceRopes();
+  }
   sim.player.body = sim.physics.rectangle(state.x, state.y, 24, 28);
   Body.setVelocity(sim.player.body, { x: state.vx, y: state.vy });
   Object.assign(sim.player, {
@@ -330,11 +340,11 @@ function search(index: number) {
         return { route: pack(parts.reverse().flat()), nodes: count };
       }
       const phase = room.platforms.length
-        ? Math.floor(
+        ? `${state.liftY.map((y) => Math.round(y / 8)).join(",")}:${Math.floor(
             (state.time %
               ((Math.PI * 2 * T.platformTravel) / T.platformSpeed)) *
               2,
-          )
+          )}`
         : 0;
       const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${state.hidden.join(",")}`;
       if ((visited.get(key) ?? Infinity) <= cost) continue;

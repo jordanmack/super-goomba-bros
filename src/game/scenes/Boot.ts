@@ -50,8 +50,10 @@ export class Boot extends Phaser.Scene {
     for (const base of [
       "goomba",
       "koopa",
+      "fish",
       "fireGoomba",
       "fireKoopa",
+      "fireFish",
       "smallMario",
       "mario",
       "fireMario",

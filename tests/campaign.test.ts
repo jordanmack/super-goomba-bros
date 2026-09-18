@@ -29,7 +29,8 @@ for (const [index, level] of CAMPAIGN.entries()) {
     sim.levelIndex = index;
     sim.reset();
     sim.marioReturn = 1e6;
-    assert.equal(sim.npcs.length, 30);
+    const fish = sim.npcs.filter((n) => n.kind === "fish").length;
+    assert.equal(sim.npcs.length, T.population + fish);
     for (const actor of [sim.player, ...sim.npcs])
       assert.equal(
         overlaps(actor.body, sim.solids, 0.1).length,
