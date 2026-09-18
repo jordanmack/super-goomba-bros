@@ -294,3 +294,18 @@ test("end-of-stage castles stay 5-wide and do not fill terrain to the right edge
   assert.equal(area28.tiles[7][5], 69);
   assert.equal(area28.tiles[8][5], 71);
 });
+
+test("castle-room goals overlay the inverted door rather than punching a hole", () => {
+  const rooms = areas.filter((area) => area.goal?.kind === "castle-room");
+  assert.ok(rooms.length >= 6, "every castle interior has a rescue door");
+  for (const area of rooms) {
+    assert.equal(area.palette, "castle", `${area.id}: castle-room uses castle art`);
+    const used = new Set(area.tiles.flat());
+    assert.equal(
+      used.has(74) || used.has(75),
+      false,
+      `${area.id}: rescue door is not a tilemap hole of 74/75`,
+    );
+    assert.equal(area.goal.row, 12, `${area.id}: door sits on the same two-tile row`);
+  }
+});

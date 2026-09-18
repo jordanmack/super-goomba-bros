@@ -41,8 +41,8 @@ settings unless a rule below explicitly fixes their relationship.
   sequential; the custom power-up system does not recreate the original vine
   and world-skip rules.
 - No logs or hiding spots are added. Bushes are scenery.
-- The goal is the castle doorway. Castle interiors use a rescue doorway after
-  the original bridge. On stages with a flagpole, the first of the player or
+- The goal is the castle doorway. Castle interiors use a visible inverted-white
+  rescue doorway after the original bridge. On stages with a flagpole, the first of the player or
   Mario to pass it raises a matching flag. The player flag stamps mushroom art
   onto the original flag silhouette. Mario keeps the original flag. NPCs do
   not claim it. The pole and flag never add collision or change velocity. The

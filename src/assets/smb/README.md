@@ -48,5 +48,7 @@ original faces and outlines.
 Items, coins, platforms, fireballs, and flagpole flags also use original sprite
 frames. The player flag stamps mushroom art onto the original flag cloth.
 Mario keeps the original flag.
-Small fireballs use the native eight-pixel fireball image. Castle doors use
-original metatiles. No log graphics or hiding places are included.
+Small fireballs use the native eight-pixel fireball image. Overworld castle
+doors use original metatiles. Castle-room rescue doors invert those same two
+tiles in the castle palette so they read as a white door on the black interior.
+No log graphics or hiding places are included.

@@ -233,6 +233,79 @@ test("atlas tiles 103 and 104 hold trampoline art, not empty or brick fills", ()
   }
 });
 
+test("castle-room rescue door is an inverted white door, not a black hole", () => {
+  const atlas = join(root, "src/assets/smb/metatiles.png");
+  const meta = JSON.parse(
+    readFileSync(join(root, "src/assets/smb/metatiles.json"), "utf8"),
+  );
+  const extract = readFileSync(
+    join(root, "scripts/extract-metatiles.mjs"),
+    "utf8",
+  );
+  const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
+  const castleIndex = meta.themes.indexOf("castle");
+  assert.ok(castleIndex >= 0);
+  const tileRgba = (themeIndex: number, id: number) => {
+    const x = (id % 16) * 16;
+    const y = themeIndex * 256 + Math.floor(id / 16) * 16;
+    return atlasRgba(atlas, `16x16+${x}+${y}`);
+  };
+  const stats = (tile: Buffer) => {
+    let opaque = 0,
+      lum = 0;
+    const colors = new Set<string>();
+    for (let i = 0; i < tile.length; i += 4) {
+      if (tile[i + 3] < 128) continue;
+      opaque++;
+      lum += (tile[i] + tile[i + 1] + tile[i + 2]) / 3;
+      colors.add(tile.subarray(i, i + 3).toString("hex"));
+    }
+    return { opaque, mean: opaque ? lum / opaque / 255 : 0, colors };
+  };
+  for (const id of [74, 75]) {
+    assert.ok(
+      meta.coverage.castle.includes(id),
+      `castle: tile ${id} is covered`,
+    );
+    const door = stats(tileRgba(castleIndex, id));
+    assert.equal(
+      door.opaque,
+      256,
+      `castle ${id}: rescue door is a solid door, not a hole`,
+    );
+    assert.ok(
+      door.mean >= 0.85,
+      `castle ${id}: rescue door is light against black (mean ${door.mean.toFixed(3)})`,
+    );
+  }
+  const top = stats(tileRgba(castleIndex, 74));
+  const bottom = stats(tileRgba(castleIndex, 75));
+  assert.ok(top.colors.size >= 2, "castle 74: inverted door keeps its frame");
+  assert.ok(
+    bottom.mean > top.mean,
+    "castle 75: lower door is the inverted black fill",
+  );
+  const dayIndex = meta.themes.indexOf("day");
+  const overworld = stats(tileRgba(dayIndex, 75));
+  assert.ok(
+    overworld.mean < 0.1,
+    "day 75: overworld castle door stays the original dark opening",
+  );
+  assert.match(
+    extract,
+    /theme === "castle" && \(id === 74 \|\| id === 75\)/,
+  );
+  assert.match(extract, /255 - image\[p\]/);
+  const draw = play.slice(
+    play.indexOf('goal?.kind === "castle-room"'),
+    play.indexOf("const pole = room.flagpole"),
+  );
+  assert.match(draw, /palette \+ 74/);
+  assert.match(draw, /palette \+ 75/);
+  assert.match(draw, /T\.groundY - 48/);
+  assert.match(draw, /T\.groundY - 16/);
+});
+
 test("Play draws the sweat drop unscaled, never a scaling exclaim bang", () => {
   const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
   const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
