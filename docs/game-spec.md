@@ -151,8 +151,10 @@ Every phrase must urge escape from incoming Mario. Use the phrase pool in
 [tuning](../src/game/config.ts), with lines such as “Run! Mario is coming!”
 and “Run my brothers or perish!” Avoid unrelated jokes.
 
-Warnings have a limited range. Mario can hear them too.
-A closer warning is more likely to draw him. Speaking does not grant safety.
+Warnings have a limited range measured from body edges, so a larger player
+still warns an NPC that is touching or standing beside them. Mario can hear
+them too. A closer warning is more likely to draw him. Speaking does not
+grant safety.
 
 ## NPCs
 
@@ -179,7 +181,8 @@ When the player and Mario overlap in the air, compare feet
 feet (within a tiny epsilon) are a side and not a stomp. A small player with
 higher feet does not hurt Mario and does not take that hit.
 A falling player that lands on an NPC does not bounce upward. That landing does
-not kill or warn the NPC. Side contact is not a bounce.
+not kill or warn the NPC. Side contact is not a bounce. After the landing
+contact ends, the NPC can be warned without leaving the warning radius.
 A stomp on a walking Koopa, from the player or Mario, turns the Koopa into a
 stationary shell. Mario bounces from that stomp. The player does not hop.
 That is not a death and has no blood.

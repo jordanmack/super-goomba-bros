@@ -1625,6 +1625,9 @@ test("original recordings decode and play as effects, with level clear replacing
   await page.waitForFunction(
     () => (window as any).__game.audio.buffers.size === 22,
   );
+  await page.waitForFunction(
+    () => !!(window as any).__game?.audio?.music?.markers?.loop,
+  );
   const playback = await page.evaluate(() => {
     const a = (window as any).__game.audio;
     const effects = [

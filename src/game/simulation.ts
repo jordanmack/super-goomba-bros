@@ -1822,9 +1822,17 @@ export class Simulation {
   }
 
   private withinWarningRange(n: Actor) {
-    const p = this.player.body.position,
-      q = n.body.position;
-    return Math.hypot(q.x - p.x, q.y - p.y) <= T.warningRange;
+    const p = this.player.body,
+      q = n.body;
+    const dx = Math.max(
+      0,
+      Math.abs(p.position.x - q.position.x) - (p.width + q.width) / 2,
+    );
+    const dy = Math.max(
+      0,
+      Math.abs(p.position.y - q.position.y) - (p.height + q.height) / 2,
+    );
+    return Math.hypot(dx, dy) <= T.warningRange;
   }
 
   private npcTop(n: Actor) {
@@ -1849,11 +1857,7 @@ export class Simulation {
 
   private pruneBouncedNpcs() {
     for (const n of this.bouncedNpcs) {
-      if (
-        !n.alive ||
-        n.saved ||
-        (this.player.grounded && !this.withinWarningRange(n))
-      )
+      if (!n.alive || n.saved || !this.overlapNpcX(n))
         this.bouncedNpcs.delete(n);
     }
   }
@@ -2498,7 +2502,13 @@ export class Simulation {
       else if (this.player.grounded)
         this.playerPace = play.run ? T.runSpeed : T.walkSpeed;
       this.move(this.player, dx * this.playerPace);
-      if (play.jump && !this.jumped) this.jump(this.player);
+      if (play.jump && !this.jumped)
+        this.jump(
+          this.player,
+          this.roomFor(this.player).onSpring(this.player)
+            ? T.springImpulse
+            : undefined,
+        );
       this.player.jumpHeld = play.jump;
       this.jumped = play.jump;
       if (play.fire && this.player.flower && this.canThrowFireball("player")) {

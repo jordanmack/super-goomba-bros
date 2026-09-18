@@ -1005,12 +1005,49 @@ function troopa(s: Simulation) {
   return s.npcs.find((n) => n.kind === "koopa")!;
 }
 
+function bodiesOverlap(a: Actor, b: Actor) {
+  return (
+    Math.abs(a.body.position.x - b.body.position.x) <
+      (a.body.width + b.body.width) / 2 &&
+    Math.abs(a.body.position.y - b.body.position.y) <
+      (a.body.height + b.body.height) / 2
+  );
+}
+
+function edgeGap(a: Actor, b: Actor) {
+  const dx = Math.max(
+    0,
+    Math.abs(a.body.position.x - b.body.position.x) -
+      (a.body.width + b.body.width) / 2,
+  );
+  const dy = Math.max(
+    0,
+    Math.abs(a.body.position.y - b.body.position.y) -
+      (a.body.height + b.body.height) / 2,
+  );
+  return Math.hypot(dx, dy);
+}
+
+function standBeside(s: Simulation, n: Actor, edge = 4) {
+  const dx = (s.player.body.width + n.body.width) / 2 + edge;
+  at(
+    s,
+    n.body.position.x - dx,
+    n.body.bounds.max.y - s.player.body.height / 2,
+  );
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.idleWalking = false;
+  n.wait = 99;
+}
+
 test("a falling player lands on an NPC without hopping, killing, or warning it", () => {
   const s = game();
   const n = s.npcs[0];
   parkNpcs(s, [n]);
   Body.setPosition(n.body, { x: 200, y: 415 });
   Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.idleWalking = false;
+  n.wait = 99;
   at(s, 200, 415 - 30);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
@@ -1018,12 +1055,7 @@ test("a falling player lands on an NPC without hopping, killing, or warning it",
   assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   tick(s, 0.8);
   assert.ok(s.player.grounded);
-  assert.ok(
-    Math.hypot(
-      n.body.position.x - s.player.body.position.x,
-      n.body.position.y - s.player.body.position.y,
-    ) <= T.warningRange,
-  );
+  assert.ok(edgeGap(s.player, n) <= T.warningRange);
   assert.ok(n.alive);
   assert.equal(n.warned, false);
   assert.equal(s.warned, 0);
@@ -1031,50 +1063,46 @@ test("a falling player lands on an NPC without hopping, killing, or warning it",
   assert.equal(s.events.includes("splat"), false);
 });
 
-test("a landed-on NPC can be warned after the player leaves range", () => {
+test("a landed-on NPC can be warned after contact ends without leaving range", () => {
   const s = game();
   const n = s.npcs[0];
-  const other = s.npcs[1];
-  parkNpcs(s, [n, other]);
+  parkNpcs(s, [n]);
   Body.setPosition(n.body, { x: 200, y: 415 });
-  Body.setPosition(other.body, { x: 260, y: 415 });
   Body.setVelocity(n.body, { x: 0, y: 0 });
-  Body.setVelocity(other.body, { x: 0, y: 0 });
   n.idleWalking = false;
   n.wait = 99;
-  other.idleWalking = false;
-  other.wait = 99;
   at(s, 200, 415 - 30);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
   assert.ok(s.player.body.velocity.y > 0);
   tick(s, 0.8);
   assert.equal(n.warned, false);
-  assert.equal(other.warned, true);
-  tick(s, 1, { left: true });
+  assert.equal(s.warned, 0);
+  let separated = false;
+  for (let i = 0; i < 40; i++) {
+    tick(s, dt, { right: true });
+    if (!bodiesOverlap(s.player, n)) {
+      separated = true;
+      break;
+    }
+  }
+  assert.ok(separated);
   assert.ok(s.player.grounded);
-  assert.ok(
-    Math.hypot(
-      n.body.position.x - s.player.body.position.x,
-      n.body.position.y - s.player.body.position.y,
-    ) > T.warningRange,
-  );
-  tick(s, 1.2, { right: true });
+  assert.ok(edgeGap(s.player, n) <= T.warningRange);
+  tick(s, dt);
   assert.equal(n.warned, true);
 });
 
-test("falling onto an NPC from above warning range does not hop or warn it", () => {
+test("falling onto an NPC from high above does not hop or warn it", () => {
   const s = game();
   const n = s.npcs[0];
   parkNpcs(s, [n]);
   Body.setPosition(n.body, { x: 200, y: 415 });
   Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.idleWalking = false;
+  n.wait = 99;
   at(s, 200, 300);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
-  assert.ok(
-    Math.hypot(0, n.body.position.y - s.player.body.position.y) >
-      T.warningRange,
-  );
   let landed = false;
   for (let i = 0; i < 50; i++) {
     const playerBottom = s.player.body.bounds.max.y;
@@ -1536,17 +1564,14 @@ function overlapX(s: Simulation, n: Actor) {
   return (n.body.width + s.player.body.width) / 2 + 1;
 }
 
-test("an unwarned NPC inside 96px is warned without overlap", () => {
+test("an unwarned NPC near the player is warned without overlap", () => {
   const s = game();
   const n = s.npcs[0];
   Body.setPosition(n.body, { x: 400, y: 415 });
   const gap = overlapX(s, n) + 20;
   at(s, n.body.position.x - gap);
   assert.ok(gap > overlapX(s, n));
-  assert.ok(
-    Math.hypot(gap, n.body.position.y - s.player.body.position.y) <=
-      T.warningRange,
-  );
+  assert.ok(edgeGap(s.player, n) <= T.warningRange);
   tick(s, dt);
   assert.equal(n.warned, true);
   assert.equal(s.warned, 1);
@@ -1562,15 +1587,112 @@ test("an unwarned NPC inside 96px is warned without overlap", () => {
   assert.equal(n.warned, true);
 });
 
-test("an unwarned NPC outside 96px is not warned", () => {
+test("an unwarned NPC beyond the edge-gap range is not warned", () => {
   const s = game();
   const n = s.npcs[0];
   Body.setPosition(n.body, { x: 400, y: 415 });
-  at(s, n.body.position.x - T.warningRange - 12);
+  const reach =
+    T.warningRange + (s.player.body.width + n.body.width) / 2 + 12;
+  at(s, n.body.position.x - reach);
+  assert.ok(edgeGap(s.player, n) > T.warningRange);
   tick(s, dt);
   assert.equal(n.warned, false);
   assert.equal(s.warned, 0);
   assert.equal(s.bubble, "");
+});
+
+test("an adjacent NPC is warned at 2x, 3x, and 8x", () => {
+  for (const scale of [T.mushroomScale, T.giantScale, T.hugeScale]) {
+    const s = game();
+    const n = s.npcs[0];
+    parkNpcs(s, [n]);
+    give(s, s.player, mushroomKind(scale));
+    Body.setPosition(n.body, { x: 400, y: 415 });
+    standBeside(s, n, 2);
+    assert.ok(!bodiesOverlap(s.player, n), `scale ${scale}: overlapping`);
+    assert.ok(edgeGap(s.player, n) <= T.warningRange, `scale ${scale}: range`);
+    tick(s, dt);
+    assert.equal(n.warned, true, `scale ${scale}: not warned`);
+    assert.equal(s.warned, 1, `scale ${scale}: warned count`);
+  }
+});
+
+function springPad(s: Simulation) {
+  const room = s.activeRoom;
+  const spring = room.data.objects.find((o) => o.opcode === 33)!;
+  return {
+    x: room.offset + spring.column * 32 + 16,
+    y: MAP_TOP + spring.row * 32,
+  };
+}
+
+function standOnSpring(s: Simulation, xOffset = 0) {
+  const pad = springPad(s);
+  at(s, pad.x + xOffset, pad.y - s.player.body.height / 2);
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+}
+
+function world21() {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
+  s.reset();
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  return s;
+}
+
+function launchVy(s: Simulation) {
+  tick(s, 0.15);
+  assert.ok(s.player.grounded, "player should stand before jumping");
+  s.events.length = 0;
+  tick(s, dt, { jump: true });
+  assert.ok(s.events.includes("jump"));
+  return s.player.body.velocity.y;
+}
+
+test("a player jumping from a World 2-1 spring uses the spring impulse", () => {
+  const spring = world21();
+  standOnSpring(spring);
+  const springVy = launchVy(spring);
+  assert.ok(
+    springVy < -T.springImpulse + 1,
+    `spring launch ${springVy}`,
+  );
+  assert.ok(springVy < -T.jumpSpeed - 4, `spring vs walk jump ${springVy}`);
+
+  const floor = world21();
+  at(floor, 120, T.groundY - floor.player.body.height / 2);
+  const floorVy = launchVy(floor);
+  assert.ok(floorVy > -T.jumpSpeed - 1, `floor launch ${floorVy}`);
+  assert.ok(springVy < floorVy - 4);
+});
+
+test("spring detection still launches 2x, 3x, and 8x players, including off-centre", () => {
+  for (const scale of [T.mushroomScale, T.giantScale, T.hugeScale]) {
+    const s = world21();
+    give(s, s.player, mushroomKind(scale));
+    const offset = 32;
+    standOnSpring(s, offset);
+    const vy = launchVy(s);
+    assert.ok(
+      vy < -T.springImpulse + 1,
+      `scale ${scale} offset ${offset}: launch ${vy}`,
+    );
+  }
+});
+
+test("small Mario still detects a spring 26px off-centre", () => {
+  const s = world21();
+  s.setMarioStage(0);
+  const pad = springPad(s);
+  Body.setPosition(s.mario.body, {
+    x: pad.x + 26,
+    y: pad.y - s.mario.body.height / 2,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  assert.equal(s.mario.scale, 0.5);
+  assert.equal(s.mario.body.width, 12);
+  assert.equal(s.activeRoom.onSpring(s.mario), true);
 });
 
 test("warning cooldown and one-count still hold", () => {
@@ -2121,6 +2243,7 @@ test("warning cooldown and distance limit", () => {
   Body.setVelocity(a.body, { x: 0, y: 0 });
   Body.setVelocity(b.body, { x: 0, y: 0 });
   assert.equal(T.warningRange, 96);
+  at(s, 40);
   s.warn();
   assert.equal(s.warned, 0);
   at(s, a.body.position.x);
@@ -2133,7 +2256,13 @@ test("warning cooldown and distance limit", () => {
   s.warn();
   assert.equal(b.warned, true);
   assert.equal(s.warned, 2);
-  at(s, a.body.position.x - T.warningRange - 12);
+  at(
+    s,
+    a.body.position.x -
+      T.warningRange -
+      (s.player.body.width + a.body.width) / 2 -
+      12,
+  );
   tick(s, dt);
   assert.equal(s.warned, 2);
 });
@@ -6418,7 +6547,7 @@ test("a stopped shell wakes on the original timer and keeps warned or idle", () 
     Body.setVelocity(s.player.body, { x: 0, y: 4 });
     tick(s, dt);
     assert.equal(n.shell, "stopped");
-    at(s, 80, 415);
+    at(s, 40, 415);
     tick(s, T.shellWake - 0.05);
     assert.equal(n.shell, "stopped");
     assert.ok(n.wakeLeft <= T.shellShake);
