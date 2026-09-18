@@ -1,10 +1,24 @@
 import { Body, PhysicsWorld, overlaps } from "./physics.ts";
-import { areaData, areaGaps, isCannonBarrel, terrainRects } from "./levels.ts";
+import {
+  areaData,
+  areaGaps,
+  isCannonBarrel,
+  isSolidTile,
+  terrainRects,
+} from "./levels.ts";
 import type { Area } from "./levels.ts";
 import { MAP_TOP, TUNING as T } from "./config.ts";
 import type { Actor, Obstacle } from "./simulation.ts";
 import { swimField } from "./navigation.ts";
 import type { Point } from "./physics.ts";
+import {
+  AXE_OPCODE,
+  FIREBAR_TYPE,
+  castleActorPos,
+  isBowserType,
+  isFirebarType,
+  type Firebar,
+} from "./castle.ts";
 
 export type FlagClaim = "goomba" | "mario";
 export type Flagpole = {
@@ -28,10 +42,18 @@ export const ENEMY_BALANCE_LIFT = 36;
 export const ENEMY_PLATFORM_MIN = 36;
 export const ENEMY_PLATFORM_MAX = 44;
 
-export type EnemyRole = "fish" | "balance-lift" | "platform" | "other";
+export type EnemyRole =
+  | "fish"
+  | "balance-lift"
+  | "platform"
+  | "firebar"
+  | "bowser"
+  | "other";
 
 export function enemyRole(type: number): EnemyRole {
   if (type === ENEMY_FISH) return "fish";
+  if (isFirebarType(type)) return "firebar";
+  if (isBowserType(type)) return "bowser";
   if (type === ENEMY_BALANCE_LIFT) return "balance-lift";
   if (type >= ENEMY_PLATFORM_MIN && type <= ENEMY_PLATFORM_MAX) return "platform";
   return "other";
@@ -67,6 +89,10 @@ export class Room {
   cannons: Cannon[] = [];
   balanceRopes: BalanceRope[] = [];
   spawnedActors = false;
+  firebars: Firebar[] = [];
+  bowserSpawn?: { x: number; y: number };
+  axe?: { x: number; y: number };
+  bridgeDropped = false;
   private platformElapsed?: number;
   private swimFields = new Map<string, (point: Point) => Point[]>();
   coins: { x: number; y: number; collected: boolean }[] = [];
@@ -169,23 +195,61 @@ export class Room {
     }
     for (const enemy of this.data.enemies) {
       const role = enemyRole(enemy.type);
-      if (role !== "platform" && role !== "balance-lift") continue;
-      const width = enemy.type >= 43 ? 48 : 96;
-      const origin = {
-        x: offset + enemy.column * 32 + width / 2,
-        y: MAP_TOP + enemy.row * 32 + 8,
-      };
-      const body = physics.rectangle(origin.x, origin.y, width, 16, true);
-      this.solids.push(body);
-      this.platforms.push({
-        body,
-        origin,
-        kind: enemy.type,
-        phase: enemy.column % 7,
-      });
+      if (role === "platform" || role === "balance-lift") {
+        const width = enemy.type >= 43 ? 48 : 96;
+        const origin = {
+          x: offset + enemy.column * 32 + width / 2,
+          y: MAP_TOP + enemy.row * 32 + 8,
+        };
+        const body = physics.rectangle(origin.x, origin.y, width, 16, true);
+        this.solids.push(body);
+        this.platforms.push({
+          body,
+          origin,
+          kind: enemy.type,
+          phase: enemy.column % 7,
+        });
+        continue;
+      }
+      if (role === "firebar" && isFirebarType(enemy.type)) {
+        const spec = FIREBAR_TYPE[enemy.type];
+        const pos = castleActorPos(offset, enemy.column, enemy.row, 32, 32);
+        this.firebars.push({
+          x: pos.x,
+          y: pos.y,
+          type: enemy.type,
+          length: spec.length,
+          nesSpeed: spec.nesSpeed,
+          clockwise: spec.clockwise,
+        });
+        continue;
+      }
+      if (role === "bowser") {
+        this.bowserSpawn = castleActorPos(
+          offset,
+          enemy.column,
+          enemy.row,
+          T.bowserWidth,
+          T.bowserHeight,
+        );
+      }
     }
     this.pairBalanceLifts();
     this.refreshBalanceRopes();
+    const axe = this.data.objects.find((o) => o.opcode === AXE_OPCODE);
+    if (axe) {
+      const x = offset + axe.column * 32 + 16;
+      this.axe = { x, y: this.axeStandY(axe.column) - 16 };
+    }
+  }
+
+  private axeStandY(column: number) {
+    for (let row = 3; row <= 13; row++) {
+      const tile = this.data.tiles[row]?.[column] ?? 0;
+      const above = this.data.tiles[row - 1]?.[column] ?? 0;
+      if (isSolidTile(tile) && !isSolidTile(above)) return MAP_TOP + row * 32;
+    }
+    return T.groundY;
   }
 
   private spawnKind(solid: Body) {

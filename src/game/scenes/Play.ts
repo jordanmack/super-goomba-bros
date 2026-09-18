@@ -236,6 +236,27 @@ export class Play extends Phaser.Scene {
         "platform",
         4,
       ).setRotation(0);
+    if (room.axe && !room.bridgeDropped)
+      image(room.axe.x, room.axe.y, 32, 32, "axe", 6).setRotation(0);
+    for (const ball of sim.firebarBalls(room))
+      image(ball.x, ball.y, 16, 16, "fireball", 10).setRotation(
+        ((Math.floor(sim.elapsed * 12) % 4) * Math.PI) / 2,
+      );
+    for (const flame of sim.bowserFlames)
+      if (flame.areaId === room.data.id)
+        image(flame.x, flame.y, 48, 16, "bowserFlame", 10).setFlipX(flame.vx < 0);
+    for (const b of sim.bowsers) {
+      if (b.areaId !== room.data.id || !b.alive) continue;
+      const walking = !sim.marioActive || sim.mario.areaId !== b.areaId;
+      image(
+        b.x,
+        b.y,
+        T.bowserWidth,
+        T.bowserHeight,
+        walking && Math.floor(sim.elapsed * 6) % 2 ? "bowserWalk" : "bowser",
+        9,
+      ).setFlipX(b.facing > 0);
+    }
     if (room.data.goal?.kind === "castle-room") {
       image(room.goalX, T.groundY - 48, 32, 32, "metatiles", 3)
         .setFrame(palette + 74)

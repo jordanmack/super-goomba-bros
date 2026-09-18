@@ -168,7 +168,10 @@ function macros(sim: Simulation, state: State): Macro[] {
           add("jump", direction, 110, delay, 1, run);
       for (const delay of [0, 12, 24]) add("drop", direction, 100, delay);
     }
-    if (sim.activeRoom.platforms.length) add("wait", 0, 30);
+    if (sim.activeRoom.platforms.length || sim.activeRoom.firebars.length) {
+      add("wait", 0, 20);
+      add("wait", 0, 40);
+    }
   } else {
     for (const direction of [1, 0, -1]) {
       add("walk", direction, 8);
@@ -305,7 +308,7 @@ function search(index: number) {
     visited = new Map<string, number>();
   push(queue, { state: initial, cost: 0, priority: 0, inputs: [] });
   let count = 0;
-  while (queue.length && count++ < 40000) {
+  while (queue.length && count++ < 80000) {
     const node = pop(queue);
     restore(sim, node.state);
     for (const macro of macros(sim, node.state)) {
@@ -346,7 +349,12 @@ function search(index: number) {
               2,
           )}`
         : 0;
-      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${state.hidden.join(",")}`;
+      const firePhase = room.firebars.some(
+        (bar) => Math.abs(state.x - bar.x) < 220,
+      )
+        ? Math.floor((((state.time * 60 * 0x28) / 256) % 32) / 4)
+        : 0;
+      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${state.hidden.join(",")}`;
       if ((visited.get(key) ?? Infinity) <= cost) continue;
       visited.set(key, cost);
       const dx =

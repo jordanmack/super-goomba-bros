@@ -126,6 +126,17 @@ export const TUNING = {
   groundY: 430,
   bloodBurst: 64,
   brickBurst: 12,
+  // NES firebar: 8 px between balls, 8 px ball, spin bytes $28/$38 per frame.
+  firebarSpacing: 16,
+  firebarBallRadius: 8,
+  bowserWidth: 64,
+  bowserHeight: 64,
+  bowserWalkSpeed: 1.2,
+  bowserFlameSpeed: 2.4,
+  bowserFlamePeriod: 2.2,
+  bowserFlameLife: 3.2,
+  bowserShoutRange: 240,
+  bowserShoutCooldown: 3.2,
 } as const;
 
 export function blockDrawY(y: number, bounce: number) {
@@ -174,6 +185,14 @@ export const PHRASES = [
   "RUUUUUUUUUUUUUUUN!",
   "Everybody run! He'll kill us all!",
   "Hide yo kids, hide yo wife, hide everybody! He's stomping everybody out here!",
+];
+
+export const BOWSER_PHRASES = [
+  "Run! I will hold Mario off!",
+  "Go! I will stop the plumber!",
+  "Escape! Mario will not pass me!",
+  "Keep running! I have the plumber!",
+  "Get to the door! I will stall Mario!",
 ];
 
 export const WARNING_CHIRPS = [

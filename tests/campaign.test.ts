@@ -60,7 +60,7 @@ for (const [index, level] of CAMPAIGN.entries()) {
       } else stalled++;
     }
     assert.ok(
-      runner.saved,
+      runner.saved || !runner.alive,
       JSON.stringify({
         level: level.id,
         area: runner.areaId,

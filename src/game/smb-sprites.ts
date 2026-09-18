@@ -313,6 +313,10 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
     bulletBill: crop(enemies, 304, 96, 16, 16),
+    bowser: crop(enemies, 0, 211, 32, 32),
+    bowserWalk: crop(enemies, 128, 211, 32, 32),
+    bowserFlame: crop(enemies, 101, 253, 24, 8),
+    axe: crop(items, 64, 192, 16, 16),
     platform: crop(items, 80, 24, 48, 8),
     rope: pixelRope(),
     pulley: pixelPulley(),

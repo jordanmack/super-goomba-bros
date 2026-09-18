@@ -323,6 +323,28 @@ only by collecting an item. Elapsed stage time can affect the form in which
 he returns; it cannot spontaneously change his active power. Restarting a
 stage resets its timer.
 
+## Castle interiors
+
+Castle areas spawn the original rotating firebars from the enemy tables. Each
+bar is a chain of fireballs about a fixed block, at the original length and
+spin speed, including both rotation directions. Contact uses the same hurt and
+kill rules as other lethal hits. It kills or shrinks the player and NPCs, adds
+NPC deaths to DIED, and can damage Mario. A star makes the player immune. 8x
+does not smash a firebar. Warned NPCs path around a bar when they can. They
+may still die on one.
+
+Bowser stands on the bridge at the end of every castle, placed from that
+area's enemy data. He is an ally. He never harms the player or NPCs. He blocks
+Mario and delays or damages him with ground fire breath along the bridge. He
+does not throw fireballs. He shouts with the existing shout system when the
+player or NPCs approach, and every line urges them to run.
+
+The axe sits at the original castle ending (the row-13 axe command, on the
+block at the end of the bridge). Only Mario triggers it. That drops the bridge
+and kills Bowser. The player touching the axe does nothing. With the bridge
+gone, falling is a normal death and spends a life. 8x does not smash Bowser or
+the axe.
+
 ## Blocks and items
 
 Floating bricks and question blocks are solid. A small-player head hit bounces

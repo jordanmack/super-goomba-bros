@@ -11,6 +11,7 @@ import {
   rayBlocked,
 } from "./physics.ts";
 import {
+  BOWSER_PHRASES,
   MAP_TOP,
   PHRASES,
   TUNING as T,
@@ -18,6 +19,7 @@ import {
   blockDrawY,
   jumpArc,
 } from "./config.ts";
+import { firebarBalls, firebarHits } from "./castle.ts";
 import {
   areaData,
   CAMPAIGN,
@@ -211,6 +213,27 @@ export type BulletBill = {
   vx: number;
   areaId: string;
   cannonX: number;
+};
+export type Bowser = {
+  id: number;
+  areaId: string;
+  x: number;
+  y: number;
+  facing: number;
+  alive: boolean;
+  fireWait: number;
+  shoutWait: number;
+  blockWait: number;
+  minX: number;
+  maxX: number;
+};
+export type BowserFlame = {
+  id: number;
+  areaId: string;
+  x: number;
+  y: number;
+  vx: number;
+  age: number;
 };
 export type MushroomKind = "mushroom" | "mushroom3x" | "mushroom8x";
 export type ItemKind = "star" | "flower" | "oneUp" | MushroomKind;
@@ -491,7 +514,35 @@ export class Simulation {
     this.solids.push(...room.solids);
     this.obstacles.push(...room.obstacles);
     if (this.npcs.length) this.spawnLevelActors(room);
+    this.spawnBowser(room);
     return room;
+  }
+
+  private spawnBowser(room: Room) {
+    const spawn = room.bowserSpawn;
+    if (!spawn || this.bowsers.some((b) => b.areaId === room.data.id)) return;
+    let minX = spawn.x - 80,
+      maxX = spawn.x + 80;
+    for (let column = 0; column < room.data.width; column++)
+      for (let row = 0; row < room.data.height; row++)
+        if (room.data.tiles[row][column] === 137) {
+          const x = room.offset + column * 32 + 16;
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+        }
+    this.bowsers.push({
+      id: this.nextId++,
+      areaId: room.data.id,
+      x: spawn.x,
+      y: spawn.y,
+      facing: -1,
+      alive: true,
+      fireWait: T.bowserFlamePeriod * 0.4,
+      shoutWait: 0,
+      blockWait: 0,
+      minX: minX + T.bowserWidth / 2,
+      maxX: maxX - T.bowserWidth / 2,
+    });
   }
   solids: Body[] = [];
   player!: Actor;
@@ -500,6 +551,8 @@ export class Simulation {
   obstacles: Obstacle[] = [];
   fireballs: Fireball[] = [];
   bulletBills: BulletBill[] = [];
+  bowsers: Bowser[] = [];
+  bowserFlames: BowserFlame[] = [];
   items: Item[] = [];
   particles: Particle[] = [];
   events: GameEvent[] = [];
@@ -591,6 +644,8 @@ export class Simulation {
     this.rooms.clear();
     this.npcs = [];
     this.terrainId = 0;
+    this.bowsers = [];
+    this.bowserFlames = [];
     const retry =
       mode !== "title" &&
       this.retrySpawn &&
@@ -944,6 +999,10 @@ export class Simulation {
             s.bounds.max.y >= feet - 5)),
     );
     const wall = this.wallAhead(a, direction, solids);
+    if (a !== this.mario && this.firebarSoon(a, direction)) {
+      this.move(a, 0);
+      return;
+    }
     if (supported && !wall && (a === this.mario || !inWell)) return;
     if (a === this.mario) {
       if (wall) {
@@ -1035,7 +1094,15 @@ export class Simulation {
       direction,
       pace,
       impulse,
-      undefined,
+      (landing) =>
+        a === this.mario ||
+        !this.firebarBlocks(
+          this.roomFor(a),
+          landing.x,
+          landing.y,
+          half,
+          a.body.height / 2,
+        ),
       this.roomFor(a).data.type === "castle",
     );
     if (launch) {
@@ -2818,6 +2885,7 @@ export class Simulation {
       marioBottom,
       marioFalling,
     );
+    this.updateCastleHazards(dt);
     this.updateFlagpoles(dt);
     if (this.mode === "finishing") {
       this.stepTally(dt);
@@ -2977,6 +3045,16 @@ export class Simulation {
                 (s) =>
                   s.bounds.min.y < feet - 5 &&
                   s.bounds.max.y > n.body.bounds.min.y,
+              )
+            )
+              return "blocked";
+            if (
+              this.firebarBlocks(
+                this.roomFor(n),
+                ahead,
+                p.y,
+                n.body.width / 2,
+                n.body.height / 2,
               )
             )
               return "blocked";
@@ -3706,5 +3784,226 @@ export class Simulation {
       if (!hit) keep.push(b);
     }
     this.bulletBills = keep;
+  }
+
+  private firebarBlocks(
+    room: Room,
+    x: number,
+    y: number,
+    halfW: number,
+    halfH: number,
+  ) {
+    for (const bar of room.firebars)
+      if (firebarHits(bar, this.elapsed, x, y, halfW, halfH)) return true;
+    return false;
+  }
+
+  private firebarSoon(a: Actor, direction: number) {
+    const room = this.roomFor(a);
+    if (!room.firebars.length) return false;
+    const p = a.body.position;
+    const half = a.body.width / 2 + 6,
+      tall = a.body.height / 2 + 8;
+    const speed = this.runSpeedFor(a);
+    for (let step = 0; step <= 36; step += 3) {
+      const x = p.x + direction * speed * step;
+      const time = this.elapsed + step / 60;
+      for (const bar of room.firebars)
+        if (firebarHits(bar, time, x, p.y, half, tall)) return true;
+    }
+    return false;
+  }
+
+  firebarBalls(room: Room) {
+    return room.firebars.flatMap((bar) => firebarBalls(bar, this.elapsed));
+  }
+
+  private updateCastleHazards(dt: number) {
+    this.updateBowsers(dt);
+    this.updateBowserFlames(dt);
+    this.collideFirebars();
+    this.checkAxes();
+  }
+
+  private collideFirebars() {
+    const actors = [
+      this.player,
+      ...this.npcs,
+      ...(this.marioActive ? [this.mario] : []),
+    ];
+    for (const a of actors) {
+      if (!a.alive || a.saved || this.inPipe(a)) continue;
+      const room = this.roomFor(a);
+      if (
+        !this.firebarBlocks(
+          room,
+          a.body.position.x,
+          a.body.position.y,
+          a.body.width / 2,
+          a.body.height / 2,
+        )
+      )
+        continue;
+      if (a === this.mario) {
+        if (this.marioStun > 0) continue;
+        this.hitMarioByFireball(false);
+      } else this.hurt(a);
+    }
+  }
+
+  private bowserBox(b: Bowser) {
+    return {
+      x: b.x,
+      y: b.y,
+      w: T.bowserWidth,
+      h: T.bowserHeight,
+    };
+  }
+
+  private overlapBowser(a: Actor, b: Bowser) {
+    const box = this.bowserBox(b);
+    return (
+      Math.abs(a.body.position.x - box.x) < a.body.width / 2 + box.w / 2 &&
+      Math.abs(a.body.position.y - box.y) < a.body.height / 2 + box.h / 2
+    );
+  }
+
+  private updateBowsers(dt: number) {
+    for (const b of this.bowsers) {
+      if (!b.alive) continue;
+      const room = this.rooms.get(b.areaId);
+      if (!room || room.bridgeDropped) continue;
+      b.shoutWait = Math.max(0, b.shoutWait - dt);
+      b.fireWait = Math.max(0, b.fireWait - dt);
+      b.blockWait = Math.max(0, b.blockWait - dt);
+      const marioHere =
+        this.marioActive &&
+        this.mario.alive &&
+        this.mario.areaId === b.areaId &&
+        !this.inPipe(this.mario);
+      if (marioHere) {
+        b.facing = Math.sign(this.mario.body.position.x - b.x) || b.facing;
+        if (this.overlapBowser(this.mario, b) && b.blockWait === 0) {
+          this.marioPause = Math.max(this.marioPause, 0.3);
+          b.blockWait = 1;
+        }
+        if (b.fireWait === 0) {
+          this.bowserFlames.push({
+            id: this.nextId++,
+            areaId: b.areaId,
+            x: b.x + b.facing * (T.bowserWidth / 2),
+            y: b.y + T.bowserHeight / 2 - 10,
+            vx: b.facing * T.bowserFlameSpeed,
+            age: 0,
+          });
+          b.fireWait = T.bowserFlamePeriod;
+        }
+      } else {
+        b.x += b.facing * T.bowserWalkSpeed * dt * 60;
+        if (b.x <= b.minX) {
+          b.x = b.minX;
+          b.facing = 1;
+        } else if (b.x >= b.maxX) {
+          b.x = b.maxX;
+          b.facing = -1;
+        }
+      }
+      if (b.shoutWait === 0 && this.bowserShouldShout(b)) {
+        this.shouts.push({
+          id: this.nextId++,
+          text: BOWSER_PHRASES[Math.floor(this.random() * BOWSER_PHRASES.length)]!,
+          left: T.bubbleTime,
+          x: b.x,
+          y: b.y - T.bowserHeight / 2 - 24,
+        });
+        this.events.push("warn");
+        b.shoutWait = T.bowserShoutCooldown;
+      }
+    }
+  }
+
+  private bowserShouldShout(b: Bowser) {
+    const near = (a: Actor) =>
+      a.alive &&
+      !a.saved &&
+      (a.areaId ?? this.level.main) === b.areaId &&
+      Math.hypot(a.body.position.x - b.x, a.body.position.y - b.y) <=
+        T.bowserShoutRange;
+    if (near(this.player)) return true;
+    return this.npcs.some(near);
+  }
+
+  private updateBowserFlames(dt: number) {
+    for (const f of this.bowserFlames) {
+      f.age += dt;
+      f.x += f.vx * dt * 60;
+      if (
+        this.marioActive &&
+        this.mario.alive &&
+        this.marioStun === 0 &&
+        this.mario.areaId === f.areaId &&
+        !this.inPipe(this.mario) &&
+        Math.abs(this.mario.body.position.x - f.x) <
+          this.mario.body.width / 2 + 24 &&
+        Math.abs(this.mario.body.position.y - f.y) <
+          this.mario.body.height / 2 + 8
+      ) {
+        this.hitMarioByFireball(false);
+        f.age = T.bowserFlameLife;
+      }
+    }
+    this.bowserFlames = this.bowserFlames.filter((f) => f.age < T.bowserFlameLife);
+  }
+
+  private checkAxes() {
+    if (!this.marioActive || !this.mario.alive || this.inPipe(this.mario))
+      return;
+    const room = this.roomFor(this.mario);
+    if (!room.axe || room.bridgeDropped) return;
+    if (!this.overlapAxe(this.mario, room.axe)) return;
+    this.dropBridge(room);
+  }
+
+  private overlapAxe(a: Actor, axe: { x: number; y: number }) {
+    return (
+      Math.abs(a.body.position.x - axe.x) < a.body.width / 2 + 16 &&
+      Math.abs(a.body.position.y - axe.y) < a.body.height / 2 + 16
+    );
+  }
+
+  private dropBridge(room: Room) {
+    if (room.bridgeDropped) return;
+    room.bridgeDropped = true;
+    const keys: string[] = [];
+    const smashTile = (column: number, row: number) => {
+      if (row < 0 || row >= room.data.height) return;
+      if (column < 0 || column >= room.data.width) return;
+      const key = `${column},${row}`;
+      if (room.smashedTiles.has(key)) return;
+      room.smashedTiles.add(key);
+      keys.push(key);
+      this.burst(
+        room.offset + column * 32 + 16,
+        MAP_TOP + row * 32 + 16,
+        false,
+      );
+    };
+    for (let column = 0; column < room.data.width; column++)
+      for (let row = 0; row < room.data.height; row++)
+        if (room.data.tiles[row][column] === 137) smashTile(column, row);
+    if (room.axe) {
+      const column = Math.floor((room.axe.x - room.offset) / 32);
+      smashTile(column, 8);
+      const rope = room.data.objects.find((o) => o.opcode === 37);
+      if (rope) smashTile(rope.column, 9);
+    }
+    if (keys.length) this.rebuildTerrain(room);
+    for (const b of this.bowsers) {
+      if (b.areaId !== room.data.id || !b.alive) continue;
+      b.alive = false;
+      this.burst(b.x, b.y, true);
+      this.events.push("splat");
+    }
+    this.bowserFlames = this.bowserFlames.filter((f) => f.areaId !== room.data.id);
   }
 }
