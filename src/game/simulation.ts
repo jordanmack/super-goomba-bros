@@ -1176,9 +1176,7 @@ export class Simulation {
     }
     if (c.hidden && c.content === "coin") {
       this.reveal(c);
-      if (hitter === this.player) this.addPlayerCoin();
-      else this.events.push("coin");
-      this.coinPops.push({ x: c.x, y: c.y, age: 0 });
+      this.popCoin(hitter, c.x, c.y);
       return;
     }
     if (c.content === "1-up") {
@@ -1258,16 +1256,20 @@ export class Simulation {
     }
   }
 
-  private claimSmashCoin(hitter: Actor, c: Obstacle) {
-    if (hitter === this.player) this.addPlayerCoin();
+  private creditCoin(owner: Actor) {
+    if (owner === this.player) this.addPlayerCoin();
     else this.events.push("coin");
-    this.coinPops.push({ x: c.x, y: c.y, age: 0 });
+  }
+
+  private popCoin(owner: Actor, x: number, y: number) {
+    this.creditCoin(owner);
+    this.coinPops.push({ x, y, age: 0 });
   }
 
   private collectCoin(coin: { collected: boolean }, collector: Actor) {
     if (coin.collected || !collector.alive || collector.saved) return;
     coin.collected = true;
-    if (collector === this.player) this.addPlayerCoin();
+    this.creditCoin(collector);
   }
 
   private collectCoinsOnBlock(block: Obstacle, collector: Actor) {
@@ -1283,7 +1285,6 @@ export class Simulation {
         this.collectCoin(coin, collector);
         if (!coin.collected) continue;
         this.coinPops.push({ x: coin.x, y: coin.y, age: 0 });
-        if (collector !== this.player) this.events.push("coin");
       }
   }
 
@@ -1453,7 +1454,7 @@ export class Simulation {
     this.collectCoinsOnBlock(c, hitter);
     if (c.content === "coins") {
       const n = c.coinsLeft ?? T.multiCoinCount;
-      for (let i = 0; i < n; i++) this.claimSmashCoin(hitter, c);
+      for (let i = 0; i < n; i++) this.popCoin(hitter, c.x, c.y);
       c.coinsLeft = 0;
       c.used = true;
       return;
@@ -1470,7 +1471,7 @@ export class Simulation {
     }
     if (c.content === "coin") {
       this.reveal(c);
-      this.claimSmashCoin(hitter, c);
+      this.popCoin(hitter, c.x, c.y);
       return;
     }
     if (c.question || c.content === "power-up") {

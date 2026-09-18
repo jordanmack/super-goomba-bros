@@ -56,7 +56,7 @@ Gameplay remains available. Reloading retries sound initialization.
 The in-play header is one SMB1 line: GOOMBA, SCORE, coins, WORLD, and TIME.
 Lives stay on the WORLD intro. TIME counts down from the stage timer and kills
 at 0. At 100 it hurries the music. SCORE lasts the campaign, keeps across lives,
-and zeros on title and GAME OVER. A coin is +200. A same-size or smaller mushroom
+and zeros on title and GAME OVER. A player-collected coin is +200. A same-size or smaller mushroom
 is +1000. 100 coins are a 1-up.
 
 The castle door is always open. At the door the player vanishes, leftover TIME

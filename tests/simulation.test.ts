@@ -658,11 +658,14 @@ test("head hits collect coins sitting on the bumped block", () => {
   assert.equal(broken.coin.collected, true);
   assert.equal(broken.block.broken, true);
   assert.equal(s.coins, 3);
+  assert.equal(s.score, 3 * T.coinScore);
   assert.equal(s.coinPops.length, 3);
   s.events.length = 0;
+  const score = s.score;
   s.hitBlock(marioHit.block, s.mario);
   assert.equal(marioHit.coin.collected, true);
   assert.equal(s.coins, 3);
+  assert.equal(s.score, score);
   assert.ok(s.events.includes("coin"));
   assert.equal(s.coinPops.length, 4);
   assert.equal(s.coinPops[3].x, marioHit.coin.x);
@@ -781,6 +784,7 @@ test("player coins increment a counter without changing rescue scores", () => {
   tick(s, dt);
   assert.equal(coin.collected, true);
   assert.equal(s.coins, 1);
+  assert.equal(s.score, T.coinScore);
   assert.ok(s.events.includes("coin"));
   assert.equal(s.warned, 0);
   assert.equal(s.saved, 0);
@@ -791,14 +795,31 @@ test("player coins increment a counter without changing rescue scores", () => {
   second.y = p.y;
   tick(s, dt);
   assert.equal(s.coins, 2);
+  assert.equal(s.score, 2 * T.coinScore);
   const npcCoin = room.coins.find((c) => !c.collected);
   assert.ok(npcCoin);
   const n = s.npcs[0];
   npcCoin.x = n.body.position.x;
   npcCoin.y = n.body.position.y;
+  s.events.length = 0;
   tick(s, dt);
   assert.equal(npcCoin.collected, true);
   assert.equal(s.coins, 2);
+  assert.equal(s.score, 2 * T.coinScore);
+  assert.ok(s.events.includes("coin"));
+  s.marioActive = true;
+  Body.setFrozen(s.mario.body, false);
+  const marioCoin = room.coins.find((c) => !c.collected);
+  assert.ok(marioCoin);
+  Body.setPosition(s.mario.body, { x: 280, y: 411 });
+  marioCoin.x = s.mario.body.position.x;
+  marioCoin.y = s.mario.body.position.y;
+  s.events.length = 0;
+  tick(s, dt);
+  assert.equal(marioCoin.collected, true);
+  assert.equal(s.coins, 2);
+  assert.equal(s.score, 2 * T.coinScore);
+  assert.ok(s.events.includes("coin"));
   s.reset();
   assert.equal(s.coins, 0);
   assert.equal(s.died(), 0);
@@ -4056,20 +4077,23 @@ test("8x smash launches each item kind on a real step without emerge", () => {
   }
 });
 
-test("8x smash claims all remaining multi-coins and NPCs use the same rule", () => {
+test("8x smash claims remaining multi-coins for the player; NPC smash pops without scoring", () => {
   const s = game();
   parkNpcs(s, []);
   const multi = s.obstacles.find((c) => c.content === "coins")!;
   const coins = s.coins;
+  const score = s.score;
   at(s, multi.x, T.groundY - 14);
   give(s, s.player, "mushroom8x");
   assert.equal(multi.broken, true);
   assert.equal(s.coins, coins + T.multiCoinCount);
+  assert.equal(s.score, score + T.coinScore * T.multiCoinCount);
   assert.ok(!s.solids.includes(multi.body!));
 
   const s2 = game();
   const n = s2.npcs[0];
   parkNpcs(s2, [n]);
+  const npcMulti = s2.obstacles.find((c) => c.content === "coins")!;
   const brick = s2.obstacles.find(
     (c) =>
       c.kind === "brick" &&
@@ -4078,24 +4102,58 @@ test("8x smash claims all remaining multi-coins and NPCs use the same rule", () 
       !c.content &&
       c.y > 300,
   )!;
-  const box = s2.obstacles.find(
+  s2.score = 0;
+  s2.coins = 0;
+  Body.setPosition(n.body, { x: npcMulti.x, y: T.groundY - 14 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  s2.events.length = 0;
+  give(s2, n, "mushroom8x");
+  assert.equal(npcMulti.broken, true);
+  assert.equal(s2.coins, 0);
+  assert.equal(s2.score, 0);
+  assert.ok(s2.events.includes("coin"));
+  assert.ok(s2.coinPops.length >= T.multiCoinCount);
+  const coinBox = s2.obstacles.find(
     (c) =>
       c.question &&
-      !c.used &&
+      c.content === "coin" &&
       !c.hidden &&
-      c.content !== "1-up" &&
+      !c.used &&
+      !c.broken &&
       c.y > 300,
   )!;
-  Body.setPosition(n.body, { x: brick.x, y: T.groundY - 14 });
-  Body.setVelocity(n.body, { x: 0, y: 0 });
-  give(s2, n, "mushroom8x");
-  assert.equal(brick.broken, true);
+  const pops = s2.coinPops.length;
+  s2.events.length = 0;
   Body.setPosition(n.body, {
-    x: box.x,
+    x: coinBox.x,
     y: T.groundY - 14 * n.scale,
   });
   tick(s2, dt);
-  assert.equal(box.broken, true);
+  assert.equal(coinBox.broken, true);
+  assert.equal(s2.coins, 0);
+  assert.equal(s2.score, 0);
+  assert.ok(s2.events.includes("coin"));
+  assert.ok(s2.coinPops.length > pops);
+  Body.setPosition(n.body, { x: brick.x, y: T.groundY - 14 * n.scale });
+  tick(s2, dt);
+  assert.equal(brick.broken, true);
+
+  const s3 = game();
+  s3.marioActive = true;
+  parkNpcs(s3, []);
+  const marioMulti = s3.obstacles.find((c) => c.content === "coins")!;
+  s3.score = 0;
+  s3.coins = 0;
+  Body.setFrozen(s3.mario.body, false);
+  Body.setPosition(s3.mario.body, { x: marioMulti.x, y: T.groundY - 19 });
+  Body.setVelocity(s3.mario.body, { x: 0, y: 0 });
+  s3.events.length = 0;
+  give(s3, s3.mario, "mushroom8x");
+  assert.equal(marioMulti.broken, true);
+  assert.equal(s3.coins, 0);
+  assert.equal(s3.score, 0);
+  assert.ok(s3.events.includes("coin"));
+  assert.ok(s3.coinPops.length >= T.multiCoinCount);
 });
 
 test("8x does not smash floors, flagpole, goal pipe, springs, or castle bridges", () => {

@@ -174,6 +174,9 @@ SCORE is campaign-long. Title and GAME OVER zero it. A lost life keeps SCORE and
 coins. SCORE may go negative; the HUD shows a minus. 100 coins grant a 1-up and
 wrap coins to 0.
 
+Only coins the player Goomba acquires add to the coin count and SCORE. A Mario
+or NPC hit, collection, or smash may still pop and play sound.
+
 Live scoring during play:
 
 - Coin: +200
@@ -249,7 +252,8 @@ Floating bricks and question blocks are solid. A small-player head hit bounces
 a brick without breaking it. A giant-player or Mario head hit breaks an ordinary
 brick and removes its collision. A bounce or break from a head hit collects each
 coin sitting on that block, with the same coin pop and sound as a hidden coin
-block. It knocks up each NPC standing on the block. A player bounce or break
+block. Only the player Goomba adds that coin to the count and SCORE. It knocks
+up each NPC standing on the block. A player bounce or break
 does not kill that NPC. Mario's bounce or break kills them, including Koopas,
 unless they are 8x; this is not a stomp into a shell.
 
@@ -257,9 +261,11 @@ Visible question blocks that are not hidden 1-up or hidden coin blocks release
 one random star, mushroom, or flower and become a used block. Original hidden
 blocks are revealed by a head hit. An unrevealed hidden block does not support
 a character landing from above. Hidden coin blocks release a coin, then stay as
-a used platform. Hidden 1-up blocks and the original non-hidden 1-up bricks
-release the green 1-up mushroom, not a red mushroom or other power. The omitted
-castle stop block stays omitted so the rescue door remains open.
+a used platform. A player head hit adds that coin to the count and SCORE. A
+Mario head hit pops and plays sound only. Hidden 1-up blocks and the original
+non-hidden 1-up bricks release the green 1-up mushroom, not a red mushroom or
+other power. The omitted castle stop block stays omitted so the rescue door
+remains open.
 
 An item emerges before it can be collected. While it rises, only the part above
 the block is visible. Mushrooms and 1-up mushrooms move
@@ -294,7 +300,8 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   breakable bricks, question and content blocks, pipes, and unbreakable wall
   tiles that are not floors. Destroyed solids play the brick-break burst and
   lose collision. A question or content block yields its prize first, then
-  breaks. Coin contents add to the coin count. An 8x smash on a multi-coin
+  breaks. Player coin contents add to the coin count. Mario or NPC coin
+  contents pop and play sound only. An 8x smash on a multi-coin
   brick claims all remaining coins at once, then the brick is gone. An item
   spawns already free (`emerge` 0, not frozen) and flies out; it does not use
   the emerge rise or the appear cue. Unrevealed hidden blocks stay hidden.
