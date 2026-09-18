@@ -1620,32 +1620,53 @@ test("warning phrases stay urgent and include brotherhood lines", () => {
   }
 });
 
-test("stars block Mario fireballs, while giant characters are still vulnerable", () => {
-  for (const kind of ["star", "mushroom"] as const) {
+test("Mario fireball shrinks 2x and 3x, kills 1x, and ignores star", () => {
+  for (const kind of ["mushroom", "mushroom3x"] as const) {
     const s = game();
     give(s, s.player, kind);
+    parkNpcs(s, []);
     s.fireballs.push({
       id: 999,
       x: s.player.body.position.x,
       y: s.player.body.position.y,
       vx: 0,
       age: 0,
+      owner: "mario",
+      vy: 0,
     });
     tick(s, dt);
-    assert.equal(s.player.alive, kind === "star");
-    if (kind === "star") {
-      s.player.starLeft = dt;
-      s.fireballs.push({
-        id: 1000,
-        x: s.player.body.position.x,
-        y: s.player.body.position.y,
-        vx: 0,
-        age: 0,
-      });
-      tick(s, dt);
-      assert.equal(s.player.alive, false);
-    }
+    assert.equal(s.player.alive, true, kind);
+    assert.equal(s.player.scale, 1, kind);
+    assert.ok(s.events.includes("shrink"), kind);
   }
+  const small = game();
+  parkNpcs(small, []);
+  small.fireballs.push({
+    id: 1,
+    x: small.player.body.position.x,
+    y: small.player.body.position.y,
+    vx: 0,
+    age: 0,
+    owner: "mario",
+    vy: 0,
+  });
+  tick(small, dt);
+  assert.equal(small.player.alive, false);
+  const starred = game();
+  give(starred, starred.player, "star");
+  parkNpcs(starred, []);
+  starred.fireballs.push({
+    id: 2,
+    x: starred.player.body.position.x,
+    y: starred.player.body.position.y,
+    vx: 0,
+    age: 0,
+    owner: "mario",
+    vy: 0,
+  });
+  tick(starred, dt);
+  assert.equal(starred.player.alive, true);
+  assert.ok(starred.player.starLeft > 0);
 });
 
 test("fixed population and unique traits per character across a run", () => {
@@ -3800,17 +3821,55 @@ test("question blocks keep star and flower and roll rarer 3x and 8x mushrooms", 
   }
 });
 
-test("Mario still uses original small and big from any mushroom", () => {
+test("Mario 8x uses player size, smash, and timer, then expires to Super", () => {
   const s = game();
   s.marioActive = true;
+  parkNpcs(s, []);
   s.setMarioStage(0);
+  const brick = s.obstacles.find(
+    (c) =>
+      c.kind === "brick" &&
+      !c.question &&
+      !c.hidden &&
+      !c.content &&
+      c.y > 300,
+  )!;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: brick.x, y: T.groundY - 19 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
   give(s, s.mario, "mushroom8x");
+  assert.equal(s.mario.scale, T.hugeScale);
+  assert.equal(s.mario.hugeLeft, T.hugeSeconds);
   assert.equal(s.marioStage, 1);
+  assert.equal(s.mario.body.ignoreWalls, true);
+  assert.equal(brick.broken, true);
+  tick(s, 0.5);
+  const left = s.mario.hugeLeft;
+  assert.ok(left > 0 && left < T.hugeSeconds);
+  const score = s.score;
+  give(s, s.mario, "mushroom");
+  assert.equal(s.mario.scale, T.hugeScale);
+  assert.equal(s.mario.hugeLeft, left);
+  assert.equal(s.score, score + 1000);
+  give(s, s.mario, "mushroom8x");
+  assert.equal(s.mario.hugeLeft, left);
+  tick(s, T.hugeSeconds);
   assert.equal(s.mario.scale, 1);
-  assert.equal(s.mario.hugeLeft, 0);
-  give(s, s.mario, "mushroom3x");
   assert.equal(s.marioStage, 1);
-  assert.equal(s.score, 1000);
+  assert.equal(s.mario.flower, false);
+  assert.equal(s.mario.hugeLeft, 0);
+  assert.equal(s.mario.body.ignoreWalls, false);
+
+  const fire = game();
+  fire.marioActive = true;
+  fire.setMarioStage(2);
+  give(fire, fire.mario, "mushroom8x");
+  assert.equal(fire.mario.scale, T.hugeScale);
+  assert.equal(fire.marioStage, 2);
+  tick(fire, T.hugeSeconds);
+  assert.equal(fire.mario.scale, 1);
+  assert.equal(fire.marioStage, 1);
+  assert.equal(fire.mario.flower, false);
 });
 
 function cellSolid(s: Simulation, column: number, row: number) {
@@ -4134,6 +4193,8 @@ test("8x does not smash floors, flagpole, goal pipe, springs, or castle bridges"
   assert.ok(
     underground.player.pipeTravel || underground.events.includes("pipe"),
   );
+  assert.equal(underground.player.scale, T.giantScale);
+  assert.equal(underground.player.hugeLeft, 0);
   underground.physics.clear();
 
   const springLevel = new Simulation(() => 0.5);
@@ -5347,7 +5408,8 @@ test("8x player survives a Mario stomp with the same scale and vy", () => {
   assert.equal(s.player.body.ignoreWalls, true);
   assert.notEqual(s.mario.body.velocity.y, -T.stompBounce);
   assert.ok(s.mario.body.velocity.y > 0);
-  assert.equal(s.events.includes("shrink"), false);
+  assert.equal(s.marioStage, 0);
+  assert.ok(s.events.includes("shrink"));
   assert.equal(s.events.includes("splat"), false);
 });
 
@@ -5375,7 +5437,8 @@ test("8x NPC survives a Mario stomp with the same scale and vy", () => {
     assert.equal(n.shell, "none", kind);
     assert.notEqual(s.mario.body.velocity.y, -T.stompBounce, kind);
     assert.ok(s.mario.body.velocity.y > 0, kind);
-    assert.equal(s.events.includes("shrink"), false, kind);
+    assert.equal(s.marioStage, 0, kind);
+    assert.ok(s.events.includes("shrink"), kind);
     assert.equal(s.events.includes("splat"), false, kind);
   }
 });
@@ -5417,17 +5480,20 @@ test("first damaging stomp still shrinks 2x and 3x", () => {
   }
 });
 
-test("8x still stomps Mario, stays hunted, dies in a pit, then 3x is vulnerable", () => {
-  const stomp = game();
-  give(stomp, stomp.player, "mushroom8x");
-  parkNpcs(stomp, []);
-  assert.equal(stomp.invincible(stomp.player), false);
-  giantStompMario(stomp);
-  tick(stomp, dt);
-  assert.equal(stomp.marioStage, 0);
-  assert.ok(stomp.player.alive && stomp.mario.alive);
-  assert.equal(stomp.player.scale, T.hugeScale);
-  assert.ok(stomp.player.body.velocity.y < 0);
+test("8x contact is one hit, stays hunted, survives a pit, then 3x is vulnerable", () => {
+  const hit = game();
+  give(hit, hit.player, "mushroom8x");
+  parkNpcs(hit, []);
+  assert.equal(hit.invincible(hit.player), false);
+  stillMario(hit);
+  Body.setPosition(hit.mario.body, { ...hit.player.body.position });
+  Body.setVelocity(hit.mario.body, { x: 0, y: 0 });
+  Body.setVelocity(hit.player.body, { x: 0, y: 0 });
+  tick(hit, dt);
+  assert.equal(hit.marioStage, 0);
+  assert.ok(hit.player.alive && hit.mario.alive);
+  assert.equal(hit.player.scale, T.hugeScale);
+  assert.equal(hit.events.includes("marioDeath"), false);
 
   const hunt = game();
   give(hunt, hunt.player, "mushroom8x");
@@ -5445,9 +5511,9 @@ test("8x still stomps Mario, stays hunted, dies in a pit, then 3x is vulnerable"
   parkNpcs(pit, []);
   Body.setPosition(pit.player.body, { x: 200, y: 700 });
   tick(pit, dt);
-  assert.equal(pit.player.alive, false);
-  assert.equal(pit.mode, "dead");
-  assert.equal(pit.events.includes("splat"), false);
+  assert.equal(pit.player.alive, true);
+  assert.equal(pit.mode, "playing");
+  assert.equal(pit.player.scale, T.hugeScale);
 
   const later = game();
   give(later, later.player, "mushroom8x");
@@ -5470,7 +5536,9 @@ test("air overlap: Mario with higher feet does not hurt 8x", () => {
   tick(s, dt);
   assert.equal(s.player.alive, true);
   assert.equal(s.player.scale, T.hugeScale);
-  assert.equal(s.events.includes("shrink"), false);
+  assert.equal(s.marioStage, 0);
+  assert.ok(s.events.includes("shrink"));
+  assert.equal(s.events.includes("splat"), false);
 });
 
 test("a moving shell does not hurt 8x", () => {
@@ -5527,6 +5595,365 @@ test("Mario side contact does not kick a stopped 8x Koopa shell", () => {
   assert.equal(n.shell, "stopped");
   assert.equal(s.events.includes("kick"), false);
   assert.notEqual(s.mario.body.velocity.y, -T.stompBounce);
+});
+
+function overlapWithMario(s: Simulation, actor: Actor) {
+  stillMario(s);
+  Body.setPosition(s.mario.body, {
+    x: actor.body.position.x,
+    y: actor.body.position.y,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  Body.setVelocity(actor.body, { x: 0, y: 0 });
+}
+
+test("8x NPC fireball shrinks 2x and 3x and kills 1x", () => {
+  for (const kind of ["mushroom", "mushroom3x"] as const) {
+    const s = game();
+    const n = s.npcs[0];
+    give(s, n, kind);
+    parkNpcs(s, [n]);
+    at(s, 4000);
+    s.fireballs.push({
+      id: 7,
+      x: n.body.position.x,
+      y: n.body.position.y,
+      vx: 0,
+      age: 0,
+      owner: "mario",
+      vy: 0,
+    });
+    tick(s, dt);
+    assert.equal(n.alive, true, kind);
+    assert.equal(n.scale, 1, kind);
+    assert.ok(s.events.includes("shrink"), kind);
+  }
+  const small = game();
+  const n = small.npcs[0];
+  parkNpcs(small, [n]);
+  at(small, 4000);
+  small.fireballs.push({
+    id: 8,
+    x: n.body.position.x,
+    y: n.body.position.y,
+    vx: 0,
+    age: 0,
+    owner: "mario",
+    vy: 0,
+  });
+  tick(small, dt);
+  assert.equal(n.alive, false);
+});
+
+test("8x contact pairs drop one stage, both 8x miss, and star still wins", () => {
+  const playerHit = game();
+  playerHit.setMarioStage(2);
+  give(playerHit, playerHit.player, "mushroom8x");
+  parkNpcs(playerHit, []);
+  overlapWithMario(playerHit, playerHit.player);
+  tick(playerHit, dt);
+  assert.equal(playerHit.marioStage, 1);
+  assert.equal(playerHit.mario.alive, true);
+  assert.equal(playerHit.player.scale, T.hugeScale);
+
+  const npcHit = game();
+  const n = npcHit.npcs[0];
+  give(npcHit, n, "mushroom8x");
+  parkNpcs(npcHit, [n]);
+  at(npcHit, 4000);
+  overlapWithMario(npcHit, n);
+  tick(npcHit, dt);
+  assert.equal(npcHit.marioStage, 0);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, T.hugeScale);
+
+  const marioVsSmall = game();
+  marioVsSmall.marioActive = true;
+  give(marioVsSmall, marioVsSmall.mario, "mushroom8x");
+  parkNpcs(marioVsSmall, []);
+  overlapWithMario(marioVsSmall, marioVsSmall.player);
+  tick(marioVsSmall, dt);
+  assert.equal(marioVsSmall.player.alive, false);
+  assert.equal(marioVsSmall.mario.scale, T.hugeScale);
+
+  for (const kind of ["mushroom", "mushroom3x"] as const) {
+    const s = game();
+    s.marioActive = true;
+    give(s, s.player, kind);
+    give(s, s.mario, "mushroom8x");
+    parkNpcs(s, []);
+    overlapWithMario(s, s.player);
+    tick(s, dt);
+    assert.equal(s.player.alive, true, kind);
+    assert.equal(s.player.scale, 1, kind);
+    assert.equal(s.mario.scale, T.hugeScale, kind);
+  }
+
+  const marioVsNpc = game();
+  const victim = marioVsNpc.npcs[0];
+  marioVsNpc.marioActive = true;
+  give(marioVsNpc, marioVsNpc.mario, "mushroom8x");
+  parkNpcs(marioVsNpc, [victim]);
+  at(marioVsNpc, 4000);
+  overlapWithMario(marioVsNpc, victim);
+  tick(marioVsNpc, dt);
+  assert.equal(victim.alive, false);
+  assert.equal(marioVsNpc.mario.scale, T.hugeScale);
+
+  const both = game();
+  const other = both.npcs[0];
+  both.marioActive = true;
+  give(both, both.player, "mushroom8x");
+  give(both, both.mario, "mushroom8x");
+  parkNpcs(both, [other]);
+  overlapWithMario(both, both.player);
+  tick(both, dt);
+  assert.equal(both.player.alive, true);
+  assert.equal(both.player.scale, T.hugeScale);
+  assert.equal(both.mario.alive, true);
+  assert.equal(both.mario.scale, T.hugeScale);
+  assert.equal(both.marioStage, 1);
+  give(both, other, "mushroom8x");
+  overlapWithMario(both, other);
+  tick(both, dt);
+  assert.equal(other.alive, true);
+  assert.equal(other.scale, T.hugeScale);
+  assert.equal(both.mario.scale, T.hugeScale);
+
+  const starred = game();
+  starred.marioActive = true;
+  give(starred, starred.player, "star");
+  give(starred, starred.mario, "mushroom8x");
+  parkNpcs(starred, []);
+  overlapWithMario(starred, starred.player);
+  tick(starred, dt);
+  assert.equal(starred.mario.alive, false);
+  assert.equal(starred.marioActive, false);
+  assert.ok(starred.player.alive);
+});
+
+test("8x player, NPC, and Mario survive a pit; TIME 0 still kills 8x", () => {
+  const player = game();
+  give(player, player.player, "mushroom8x");
+  parkNpcs(player, []);
+  Body.setPosition(player.player.body, { x: 200, y: 700 });
+  tick(player, dt);
+  assert.equal(player.player.alive, true);
+  assert.equal(player.mode, "playing");
+
+  const npc = game();
+  const n = npc.npcs[0];
+  give(npc, n, "mushroom8x");
+  parkNpcs(npc, [n]);
+  Body.setPosition(n.body, { x: 200, y: 700 });
+  tick(npc, dt);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, T.hugeScale);
+
+  const mario = game();
+  mario.marioActive = true;
+  give(mario, mario.mario, "mushroom8x");
+  parkNpcs(mario, []);
+  stillMario(mario);
+  Body.setPosition(mario.mario.body, { x: 200, y: 700 });
+  tick(mario, dt);
+  assert.equal(mario.mario.alive, true);
+  assert.equal(mario.marioActive, true);
+  assert.equal(mario.mario.scale, T.hugeScale);
+
+  const time = game();
+  give(time, time.player, "mushroom8x");
+  time.timeLeft = 1;
+  tick(time, T.timerTickFrames / 60);
+  assert.equal(time.timeLeft, 0);
+  assert.equal(time.mode, "dead");
+  assert.equal(time.player.alive, false);
+});
+
+test("player fireballs and stomps do not drop 8x Mario", () => {
+  const s = game();
+  s.marioActive = true;
+  give(s, s.player, "flower");
+  give(s, s.mario, "mushroom8x");
+  parkNpcs(s, []);
+  stillMario(s);
+  s.fireballs.push({
+    id: 11,
+    x: s.mario.body.position.x,
+    y: s.mario.body.position.y,
+    vx: 0,
+    age: 0,
+    owner: "player",
+    vy: 0,
+  });
+  tick(s, dt);
+  assert.equal(s.mario.scale, T.hugeScale);
+  assert.equal(s.marioStage, 1);
+  assert.equal(s.mario.alive, true);
+  give(s, s.player, "mushroom3x");
+  giantStompMario(s);
+  tick(s, dt);
+  assert.equal(s.mario.scale, T.hugeScale);
+  assert.equal(s.mario.alive, true);
+  assert.equal(s.events.includes("marioDeath"), false);
+});
+
+function goalPipeSim() {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  s.player.areaId = "40";
+  const sub = s.loadRoom("40");
+  const goal = sub.data.goal!;
+  const goalData = sub.data.pipes.find(
+    (p) => p.column === goal.column && p.row === goal.row,
+  )!;
+  const goalPipe = s.obstacles.find((c) => {
+    const x = sub.offset + (goalData.column + goalData.width / 2) * 32;
+    return c.kind === "pipe" && Math.abs(c.x - x) < 1;
+  })!;
+  return { s, sub, goalPipe };
+}
+
+function standOnPipe(actor: Actor, pipe: { x: number; body?: { bounds: { min: { y: number } } } }) {
+  Body.setPosition(actor.body, {
+    x: pipe.x,
+    y: pipe.body!.bounds.min.y - actor.body.height / 2,
+  });
+  Body.setVelocity(actor.body, { x: 0, y: 0 });
+}
+
+test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
+  const playerPipe = goalPipeSim();
+  give(playerPipe.s, playerPipe.s.player, "mushroom8x");
+  standOnPipe(playerPipe.s.player, playerPipe.goalPipe);
+  tick(playerPipe.s, 0.1, { down: true });
+  assert.ok(playerPipe.s.player.pipeTravel);
+  assert.equal(playerPipe.s.player.scale, T.giantScale);
+  assert.equal(playerPipe.s.player.hugeLeft, 0);
+  playerPipe.s.physics.clear();
+
+  const npcPipe = goalPipeSim();
+  const n = npcPipe.s.npcs[0];
+  n.areaId = "40";
+  n.warned = true;
+  n.state = "run";
+  parkNpcs(npcPipe.s, [n]);
+  give(npcPipe.s, n, "mushroom8x");
+  standOnPipe(n, npcPipe.goalPipe);
+  tick(npcPipe.s, 0.15);
+  assert.ok(n.pipeTravel);
+  assert.equal(n.scale, T.giantScale);
+  assert.equal(n.hugeLeft, 0);
+  npcPipe.s.physics.clear();
+
+  const marioPipe = goalPipeSim();
+  marioPipe.s.marioActive = true;
+  marioPipe.s.mario.areaId = "40";
+  stillMario(marioPipe.s);
+  marioPipe.s.marioDecision = 0;
+  marioPipe.s.marioChase = 0;
+  marioPipe.s.marioPause = 0;
+  marioPipe.s.marioReaction = 0;
+  marioPipe.s.random = () => 0;
+  for (const c of marioPipe.s.obstacles) {
+    if (c.kind === "pipe" && c !== marioPipe.goalPipe) c.x = -1e6;
+  }
+  give(marioPipe.s, marioPipe.s.mario, "mushroom8x");
+  standOnPipe(marioPipe.s.mario, marioPipe.goalPipe);
+  marioPipe.s.cameraX = marioPipe.goalPipe.x - 400;
+  tick(marioPipe.s, dt);
+  assert.ok(marioPipe.s.mario.pipeTravel);
+  assert.equal(marioPipe.s.mario.scale, 1);
+  assert.equal(marioPipe.s.marioStage, 1);
+  assert.equal(marioPipe.s.mario.hugeLeft, 0);
+  marioPipe.s.physics.clear();
+
+  const door = game();
+  parkNpcs(door, []);
+  give(door, door.player, "mushroom8x");
+  const room = door.activeRoom;
+  Body.setPosition(door.player.body, {
+    x: room.goalX + 4,
+    y: T.groundY - 14 * door.player.scale,
+  });
+  Body.setVelocity(door.player.body, { x: 0, y: 0 });
+  tick(door, dt, { right: true });
+  assert.equal(door.mode, "finishing");
+  assert.equal(door.player.scale, T.giantScale);
+  assert.equal(door.player.hugeLeft, 0);
+
+  const npcDoor = game();
+  const saved = npcDoor.npcs[0];
+  saved.warned = true;
+  parkNpcs(npcDoor, [saved]);
+  give(npcDoor, saved, "mushroom8x");
+  Body.setPosition(saved.body, {
+    x: npcDoor.activeRoom.goalX + 4,
+    y: T.groundY - 14 * saved.scale,
+  });
+  Body.setVelocity(saved.body, { x: 0, y: 0 });
+  tick(npcDoor, dt);
+  assert.equal(saved.saved, true);
+  assert.equal(saved.scale, T.giantScale);
+  assert.equal(saved.hugeLeft, 0);
+
+  const marioDoor = game();
+  marioDoor.marioActive = true;
+  stillMario(marioDoor);
+  parkNpcs(marioDoor, []);
+  give(marioDoor, marioDoor.mario, "mushroom8x");
+  Body.setPosition(marioDoor.mario.body, {
+    x: marioDoor.activeRoom.goalX + 4,
+    y: T.groundY - 14 * marioDoor.mario.scale,
+  });
+  Body.setVelocity(marioDoor.mario.body, { x: 0, y: 0 });
+  tick(marioDoor, dt);
+  assert.equal(marioDoor.mario.scale, 1);
+  assert.equal(marioDoor.marioStage, 1);
+  assert.equal(marioDoor.mario.hugeLeft, 0);
+  assert.equal(marioDoor.mario.alive, true);
+  assert.equal(marioDoor.marioActive, false);
+  assert.equal(marioDoor.mario.body.frozen, true);
+});
+
+test("8x Mario contact kills a stopped 1x shell instead of kicking it", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  s.marioActive = true;
+  give(s, s.mario, "mushroom8x");
+  overlapWithMario(s, n);
+  tick(s, dt);
+  assert.equal(n.alive, false);
+  assert.equal(s.events.includes("kick"), false);
+  assert.notEqual(s.mario.body.velocity.y, -T.stompBounce);
+  assert.equal(s.mario.scale, T.hugeScale);
+});
+
+test("a falling player does not shell an 8x Koopa", () => {
+  const s = game();
+  const n = troopa(s);
+  give(s, n, "mushroom8x");
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  Body.setPosition(n.body, { x: 200, y: T.groundY - 14 * n.scale });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 200, n.body.bounds.min.y - s.player.body.height / 2 - 2);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, T.hugeScale);
+  assert.equal(n.shell, "none");
 });
 
 test("stomping a walking Koopa shells it without a player hop, and is not a death", () => {

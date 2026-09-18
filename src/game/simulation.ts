@@ -303,15 +303,13 @@ export class Simulation {
       (c) => c.kind === "pipe" && Math.abs(c.x - mouthX) < 1,
     );
     if (mouth?.broken) return false;
-    if (
-      actor.scale >= T.hugeScale &&
-      !(mouth && this.isGoalPipe(room, mouth))
-    )
+    if (this.isHuge(actor) && !(mouth && this.isGoalPipe(room, mouth)))
       return false;
     const destination =
       pipe.destinations.find((d) => d.world === this.level.world) ??
       (room.data.id === "29" ? { area: this.level.main, page: 0 } : undefined);
     if (!destination) return false;
+    if (this.isHuge(actor)) this.expireHuge(actor);
     const dir = pipe.direction === "down" ? "down" : "right";
     const vis = this.pipeVisual(actor);
     const left = room.offset + pipe.column * 32;
@@ -789,9 +787,10 @@ export class Simulation {
       this.marioStage = stage;
       return;
     }
-    this.resize(this.mario, stage === 0 ? 0.5 : 1, blink);
-    this.mario.flower = stage === 2;
     this.marioStage = stage;
+    this.mario.flower = stage === 2;
+    if (this.isHuge(this.mario)) return;
+    this.resize(this.mario, stage === 0 ? 0.5 : 1, blink);
   }
   private runSpeedFor(a: Actor) {
     if (a === this.player || a === this.mario) return T.runSpeed;
@@ -1107,7 +1106,7 @@ export class Simulation {
     return a.starLeft > 0;
   }
 
-  private immuneToMario(a: Actor) {
+  private isHuge(a: Actor) {
     return a.scale >= T.hugeScale;
   }
 
@@ -1144,7 +1143,7 @@ export class Simulation {
       !a.alive ||
       a.saved ||
       a.starLeft > 0 ||
-      this.immuneToMario(a) ||
+      this.isHuge(a) ||
       this.shrinking(a)
     )
       return false;
@@ -1304,7 +1303,7 @@ export class Simulation {
       if (!n.alive || n.saved || this.inPipe(n) || !this.actorOnBlock(n, block))
         continue;
       if (hitter === this.mario) {
-        if (n.starLeft <= 0) this.kill(n);
+        if (n.starLeft <= 0 && !this.isHuge(n)) this.kill(n);
         continue;
       }
       Body.setVelocity(n.body, {
@@ -1330,8 +1329,11 @@ export class Simulation {
     if (a === this.mario) {
       if (item.kind === "flower") this.setMarioStage(2, this.marioStage === 0);
       if (isMushroom(item.kind)) {
-        if (this.marioStage === 0) this.setMarioStage(1, true);
-        else this.score += T.mushroomScore;
+        if (item.kind === "mushroom8x" && !this.isHuge(this.mario))
+          this.setMarioHuge();
+        else if (this.isHuge(this.mario) || this.marioStage !== 0)
+          this.score += T.mushroomScore;
+        else this.setMarioStage(1, true);
       }
     } else if (item.kind === "flower") a.flower = true;
     if (a !== this.mario && isMushroom(item.kind)) {
@@ -1361,6 +1363,28 @@ export class Simulation {
     a.hugeLeft = scale >= T.hugeScale ? T.hugeSeconds : 0;
     if (scale < T.hugeScale) this.fitActor(a);
     else this.smashHuge(a);
+  }
+
+  private setMarioHuge() {
+    if (this.marioStage === 0) this.marioStage = 1;
+    this.resize(this.mario, T.hugeScale, true);
+    this.mario.body.ignoreWalls = true;
+    this.mario.hugeLeft = T.hugeSeconds;
+    this.smashHuge(this.mario);
+  }
+
+  private expireHuge(a: Actor) {
+    if (!this.isHuge(a)) return;
+    if (a === this.mario) {
+      a.hugeLeft = 0;
+      a.body.ignoreWalls = false;
+      this.marioStage = 1;
+      this.mario.flower = false;
+      this.resize(this.mario, 1, false);
+      this.fitActor(this.mario);
+      return;
+    }
+    this.setGoombaScale(a, T.giantScale);
   }
 
   private fitActor(a: Actor) {
@@ -1699,7 +1723,8 @@ export class Simulation {
   }
 
   private hitMarioByFireball(byPlayer = true) {
-    if (!this.marioActive || this.mario.starLeft > 0) return;
+    if (!this.marioActive || this.mario.starLeft > 0 || this.isHuge(this.mario))
+      return;
     if (this.marioStage === 2) {
       this.setMarioStage(1, true);
       this.marioStun = T.marioStunSeconds;
@@ -1790,7 +1815,7 @@ export class Simulation {
         this.player.body.bounds.max.y >= this.npcTop(n)
       ) {
         this.bouncedNpcs.add(n);
-        if (n.kind === "koopa") this.koopaStomp(n, this.player);
+        if (n.kind === "koopa" && !this.isHuge(n)) this.koopaStomp(n, this.player);
       }
     }
   }
@@ -1839,6 +1864,17 @@ export class Simulation {
           this.defeatMario(a === this.player);
           return;
         }
+        continue;
+      }
+      const actorHuge = this.isHuge(a);
+      const marioHuge = this.isHuge(this.mario);
+      if (actorHuge && marioHuge) continue;
+      if (actorHuge) {
+        if (this.marioStun === 0) this.hitMarioByFireball(a === this.player);
+        continue;
+      }
+      if (marioHuge) {
+        this.hurt(a);
         continue;
       }
       if (a !== this.player) continue;
@@ -1962,7 +1998,7 @@ export class Simulation {
   private shellHits(victim: Actor, shell?: Actor) {
     if (!victim.alive || victim.saved || this.inPipe(victim)) return;
     if (victim === this.mario) {
-      if (this.marioStun > 0) return;
+      if (this.marioStun > 0 || this.isHuge(this.mario)) return;
       this.hitMarioByFireball(shell?.shellKicker === this.player.id);
       return;
     }
@@ -2004,6 +2040,7 @@ export class Simulation {
         this.marioActive &&
         this.mario.alive &&
         !this.inPipe(this.mario) &&
+        !this.isHuge(this.mario) &&
         this.overlapActors(this.mario, n) &&
         !this.shellStomps.has(n) &&
         n.kickIgnore !== this.mario.id
@@ -2015,7 +2052,7 @@ export class Simulation {
           marioBottom <= prevTop &&
           this.mario.body.bounds.max.y >= this.npcTop(n);
         if (fallingOn) {
-          if (!this.immuneToMario(n)) {
+          if (!this.isHuge(n)) {
             this.koopaStomp(n, this.mario);
             Body.setVelocity(this.mario.body, {
               x: this.mario.body.velocity.x,
@@ -2023,7 +2060,7 @@ export class Simulation {
             });
           }
         } else if (n.shell === "stopped") {
-          if (!this.immuneToMario(n)) this.kickShell(n, this.mario);
+          if (!this.isHuge(n)) this.kickShell(n, this.mario);
         } else this.shellHits(this.mario, n);
       }
       if (n.shell === "moving") {
@@ -2324,8 +2361,7 @@ export class Simulation {
       a.starLeft = Math.max(0, a.starLeft - dt);
       a.transformLeft = Math.max(0, a.transformLeft - dt);
       a.hugeLeft = Math.max(0, a.hugeLeft - dt);
-      if (a !== this.mario && a.scale >= T.hugeScale && a.hugeLeft === 0)
-        this.setGoombaScale(a, T.giantScale);
+      if (this.isHuge(a) && a.hugeLeft === 0) this.expireHuge(a);
       a.exclaimLeft = Math.max(0, a.exclaimLeft - dt);
       if (!this.inPipe(a)) a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
@@ -2402,7 +2438,10 @@ export class Simulation {
         room.data.goal.kind !== "pipe" &&
         p.x >= room.goalX
       ) {
-        if (room.atDoor(this.player)) this.finish();
+        if (room.atDoor(this.player)) {
+          this.expireHuge(this.player);
+          this.finish();
+        }
         else Body.setPosition(this.player.body, { x: room.goalX - 1, y: p.y });
       }
     } else if (this.mode === "playing") this.jumped = true;
@@ -2450,7 +2489,12 @@ export class Simulation {
         Body.setVelocity(n.body, { x: n.navVx, y: n.body.velocity.y });
       n.navHoldX = undefined;
     }
-    for (const a of [this.player, ...this.npcs]) this.smashHuge(a);
+    for (const a of [
+      this.player,
+      ...this.npcs,
+      ...(this.marioActive ? [this.mario] : []),
+    ])
+      this.smashHuge(a);
     for (const room of this.rooms.values())
       for (const coin of room.coins) {
         if (coin.collected) continue;
@@ -2495,6 +2539,7 @@ export class Simulation {
         !a.saved &&
         !this.inPipe(a) &&
         a.body.position.y > 640 &&
+        !this.isHuge(a) &&
         !(a === this.player && this.pipeIntro)
       )
         this.kill(a, false);
@@ -2567,8 +2612,10 @@ export class Simulation {
           room.data.goal.kind !== "pipe" &&
           n.body.position.x >= room.goalX &&
           room.atDoor(n)
-        )
+        ) {
+          this.expireHuge(n);
           this.save(n);
+        }
         else this.updateShelledKoopa(n, dt);
         continue;
       }
@@ -2593,7 +2640,10 @@ export class Simulation {
         room.data.goal.kind !== "pipe" &&
         p.x >= room.goalX
       ) {
-        if (room.atDoor(n)) this.save(n);
+        if (room.atDoor(n)) {
+          this.expireHuge(n);
+          this.save(n);
+        }
         else {
           n.navVx = 0;
           Body.setVelocity(n.body, { x: 0, y: n.body.velocity.y });
@@ -2859,6 +2909,7 @@ export class Simulation {
         if (this.marioDeath.y > 700) this.marioDeath = null;
       }
       if (this.marioReturn > 0 || this.marioDeath) return;
+      if (this.isHuge(this.mario)) this.expireHuge(this.mario);
       this.setMarioStage((this.phase === 0 ? 1 : this.phase) as 0 | 1 | 2);
       this.mario.starLeft = 0;
       this.mario.areaId = this.player.areaId;
@@ -2881,6 +2932,22 @@ export class Simulation {
       this.mario.navHoldX = undefined;
     }
     if (this.inPipe(this.mario)) return;
+    const huntRoom = this.roomFor(this.mario);
+    if (
+      this.isHuge(this.mario) &&
+      huntRoom.data.goal &&
+      huntRoom.data.goal.kind !== "pipe" &&
+      huntRoom.atDoor(this.mario)
+    ) {
+      this.expireHuge(this.mario);
+      this.marioActive = false;
+      this.marioReturn = 2.5 + this.random() * 2.5;
+      this.mario.navVx = undefined;
+      this.mario.navDelay = undefined;
+      this.mario.navHoldX = undefined;
+      Body.setFrozen(this.mario.body, true);
+      return;
+    }
     this.marioIgnore = Math.max(0, this.marioIgnore - dt);
     this.marioDecision -= dt;
     const pursuing = this.marioChase > 0;
@@ -2902,7 +2969,7 @@ export class Simulation {
     const m = this.mario.body.position;
     const water = this.roomFor(this.mario).data.type === "water";
     if (
-      m.y > 620 ||
+      (m.y > 620 && !this.isHuge(this.mario)) ||
       m.x > this.roomFor(this.mario).goalX + 100 ||
       m.x > this.cameraX + this.viewWidth + 240 ||
       m.x < this.cameraX - 650
@@ -3094,7 +3161,7 @@ export class Simulation {
         this.overlapActors(this.mario, a)
       ) {
         if (a === this.player && !a.grounded && !this.mario.grounded) continue;
-        if (this.immuneToMario(a)) continue;
+        if (this.isHuge(a) || this.isHuge(this.mario)) continue;
         if (a.kind === "koopa") {
           this.koopaStomp(a, this.mario);
           Body.setVelocity(this.mario.body, {
@@ -3170,7 +3237,7 @@ export class Simulation {
           !this.inPipe(a) &&
           this.overlapFireball(a, f.x, f.y, radius)
         ) {
-          if (a.starLeft <= 0 && !this.immuneToMario(a)) this.kill(a);
+          if (a.starLeft <= 0) this.hurt(a);
           f.age = 6;
           break;
         }
