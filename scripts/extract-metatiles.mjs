@@ -152,6 +152,70 @@ frames.set(
   ]),
 );
 
+// Springs are sprites in SMB1. NESMaps BG maps therefore yield a blank 103 and
+// a half-brick 104. Paint the rest-frame trampoline so the tiles are visible.
+const springPixel = (rows) => {
+  const image = Buffer.alloc(1024);
+  const colors = {
+    R: [181, 49, 32],
+    G: [230, 156, 33],
+    W: [252, 252, 252],
+  };
+  for (let y = 0; y < 16; y++) {
+    const row = rows[y];
+    for (let x = 0; x < 16; x++) {
+      const rgb = colors[row[x]];
+      if (!rgb) continue;
+      const i = (y * 16 + x) * 4;
+      image[i] = rgb[0];
+      image[i + 1] = rgb[1];
+      image[i + 2] = rgb[2];
+      image[i + 3] = 255;
+    }
+  }
+  return image;
+};
+const springTop = springPixel([
+  "RRRRRRRRRRRRRRRR",
+  "RRRRRRRRRRRRRRRR",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+]);
+const springBottom = springPixel([
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "WW...WW..WW...WW",
+  "WW...WW..WW...WW",
+  "WGGGGGW..WGGGGGW",
+  "RRRRRRRRRRRRRRRR",
+  "RRRRRRRRRRRRRRRR",
+]);
+for (const theme of themes) {
+  frames.set(`${theme}:103`, Buffer.from(springTop));
+  frames.set(`${theme}:104`, Buffer.from(springBottom));
+}
+
 // Identical source metatile graphics have distinct IDs for their game behavior.
 const aliases = {
   16: 18,
@@ -222,20 +286,21 @@ for (const [themeIndex, theme] of themes.entries()) {
       );
   }
 }
-const used = new Set(
-  readdirSync("src/assets/levels")
-    .filter((name) => /^area-.*\.json$/.test(name))
-    .flatMap((name) =>
-      JSON.parse(
-        readFileSync(`src/assets/levels/${name}`, "utf8"),
-      ).tiles.flat(),
-    ),
-);
-const missing = [...used].filter(
-  (id) => id && id !== 95 && id !== 96 && !coverage.day.includes(id),
-);
+const missing = [];
+for (const name of readdirSync("src/assets/levels").filter((n) =>
+  /^area-.*\.json$/.test(n),
+)) {
+  const area = JSON.parse(
+    readFileSync(`src/assets/levels/${name}`, "utf8"),
+  );
+  const covered = coverage[area.palette] ?? [];
+  for (const id of new Set(area.tiles.flat())) {
+    if (!id || id === 95 || id === 96) continue;
+    if (!covered.includes(id)) missing.push(`${area.palette}:${id}`);
+  }
+}
 if (missing.length)
-  throw new Error(`Missing original tile art: ${missing.join(", ")}`);
+  throw new Error(`Missing original tile art: ${[...new Set(missing)].join(", ")}`);
 mkdirSync("src/assets/smb", { recursive: true });
 writeFileSync(
   "src/assets/smb/metatiles.png",

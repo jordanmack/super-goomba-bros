@@ -185,6 +185,12 @@ export function decodeArea(tables, pointer) {
     16;
   const tiles = Array.from({ length: 15 }, () => Array(width).fill(0));
   const attributes = [];
+  const lastCastle = objects
+    .filter((o) => o.opcode === 18 && o.column > 16)
+    .at(-1);
+  const castleWallEnd = lastCastle
+    ? lastCastle.column + objectWidth(lastCastle, style)
+    : Number.POSITIVE_INFINITY;
   let terrain = header.terrain,
     background = header.background,
     foreground = header.foreground,
@@ -221,11 +227,17 @@ export function decodeArea(tables, pointer) {
             tables.BackSceneryMetatiles[((scenery & 15) - 1) * 3 + n],
           );
     }
-    if (foreground)
-      for (let r = 0; r < 13; r++) {
-        const tile = tables.ForeSceneryData[(foreground - 1) * 13 + r];
-        if (tile) put(r + 2, tile);
-      }
+    if (foreground) {
+      // Foreground 2 is the repeating castle wall. Original data latches it at
+      // the end-of-stage castle and never turns it off; extra camera padding
+      // then fills to the right edge. Stop the wall at the castle's width.
+      const skipCastleWall = foreground === 2 && x >= castleWallEnd;
+      if (!skipCastleWall)
+        for (let r = 0; r < 13; r++) {
+          const tile = tables.ForeSceneryData[(foreground - 1) * 13 + r];
+          if (tile) put(r + 2, tile);
+        }
+    }
     for (let r = 0; r < 13; r++) {
       const bits = tables.TerrainRenderBits[terrain * 2 + (r >> 3)];
       if (bits & (1 << (r % 8)) && !(header.cloud && r >= 8 && r !== 11))

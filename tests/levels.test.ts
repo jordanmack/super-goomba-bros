@@ -9,7 +9,11 @@ import {
   parseTables,
 } from "../scripts/extract-levels.mjs";
 import { WORLD_1_1 } from "./fixtures/world-1-1.ts";
-import { isFlagpoleTile, isSolidTile } from "../src/game/levels.ts";
+import {
+  isFlagpoleTile,
+  isSmashExemptTile,
+  isSolidTile,
+} from "../src/game/levels.ts";
 
 const root = new URL("../src/assets/levels/", import.meta.url);
 const read = (name: string) =>
@@ -61,6 +65,22 @@ test("World 1-1 decoded collision anchors match the existing reference map", () 
     ),
     sorted(stairs),
   );
+});
+
+test("spring tiles stay solid and 8x-unsmashable", () => {
+  assert.equal(isSolidTile(103), true);
+  assert.equal(isSolidTile(104), true);
+  assert.equal(isSmashExemptTile(103), true);
+  assert.equal(isSmashExemptTile(104), true);
+  for (const id of ["24", "28", "2d", "31", "32", "33"]) {
+    const area = areas.find((a) => a.id === id);
+    const springs = area.objects.filter((o) => o.opcode === 33);
+    assert.ok(springs.length >= 1, `${id}: has a spring`);
+    for (const spring of springs) {
+      assert.equal(area.tiles[spring.row][spring.column], 103);
+      assert.equal(area.tiles[spring.row + 1][spring.column], 104);
+    }
+  }
 });
 
 test("flagpole shaft tiles are scenery and World 1-1 keeps its original pole", () => {
@@ -210,10 +230,67 @@ test("palette controls stay latched and every area has matching tile art", () =>
           `${area.id}: tile ${tile} has art`,
         );
   }
+  // One-colour harvests such as the flagpole shaft stay covered.
+  assert.ok(atlas.coverage.day.includes(37));
+  const extract = readFileSync(
+    new URL("../scripts/extract-metatiles.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(extract, /colors\.size < 2/);
   for (const level of ["1-2", "2-1", "2-2", "3-1", "5-2", "6-2"])
     assert.equal(
       atlas.regions.find((region) => region.level === level).offsetY,
       240,
       `${level}: main map strip`,
     );
+});
+
+test("end-of-stage castles stay 5-wide and do not fill terrain to the right edge", () => {
+  const castleBody = new Set([69, 70, 71, 72, 73, 74, 75]);
+  for (const area of areas) {
+    if (area.type !== "overworld" || area.goal?.kind !== "castle-door")
+      continue;
+    const castle = area.objects
+      .filter((o) => o.opcode === 18 && o.column > 16)
+      .at(-1);
+    if (!castle) continue;
+    const after = castle.column + 5;
+    for (let y = 2; y < 13; y++) {
+      assert.equal(
+        castleBody.has(area.tiles[y][area.width - 1]),
+        false,
+        `${area.id} row ${y}: castle wall does not run to the right edge`,
+      );
+      for (let x = after; x < area.width; x++)
+        assert.equal(
+          castleBody.has(area.tiles[y][x]),
+          false,
+          `${area.id} row ${y} col ${x}: no trailing castle fill`,
+        );
+    }
+    assert.equal(area.tiles[13][after], 84, `${area.id}: ground past castle`);
+  }
+  const area26 = areas.find((area) => area.id === "26");
+  const area25 = areas.find((area) => area.id === "25");
+  const castle26 = area26.objects
+    .filter((o) => o.opcode === 18 && o.column > 16)
+    .at(-1);
+  const castle25 = area25.objects
+    .filter((o) => o.opcode === 18 && o.column > 16)
+    .at(-1);
+  const slice = (area, castle, y) =>
+    area.tiles[y].slice(castle.column, castle.column + 5);
+  // 1-3 keeps a 5-wide body with both side walls, like 1-1's short castle.
+  assert.deepEqual(slice(area26, castle26, 4), [69, 73, 73, 73, 69]);
+  assert.deepEqual(slice(area26, castle26, 5), [71, 71, 74, 71, 71]);
+  assert.deepEqual(slice(area25, castle25, 10), [69, 73, 73, 73, 69]);
+  assert.deepEqual(slice(area25, castle25, 11), [71, 71, 74, 71, 71]);
+  // Foreground-2 wall still draws in the two columns before 1-3's castle.
+  assert.equal(area26.tiles[7][castle26.column - 2], 69);
+  assert.equal(area26.tiles[8][castle26.column - 2], 71);
+  assert.equal(area26.tiles[7][castle26.column], 73);
+  // Start-of-stage fg=2 (2-1) is not clipped by the end-castle bound.
+  const area28 = areas.find((area) => area.id === "28");
+  assert.equal(area28.tiles[7][5], 69);
+  assert.equal(area28.tiles[8][5], 71);
 });

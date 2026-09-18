@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -160,6 +161,76 @@ test("the warned-NPC mark is a tiny outlined sweat drop, not a white bang", () =
   assert.deepEqual(tip, [0, 0, 0, 255]);
   const fill = at(Math.floor(SWEAT_DROP_WIDTH / 2), 3);
   assert.ok(fill[3] === 255 && fill[2] > fill[0] && fill[1] > 180);
+});
+
+function atlasRgba(atlas: string, crop: string) {
+  try {
+    return execFileSync(
+      "convert",
+      [atlas, "-crop", crop, "-depth", "8", "rgba:-"],
+      { maxBuffer: 2e6 },
+    );
+  } catch (error) {
+    const err = error as { code?: string };
+    if (err.code === "ENOENT")
+      throw new Error("convert required to inspect metatiles.png");
+    throw error;
+  }
+}
+
+test("atlas tiles 103 and 104 hold trampoline art, not empty or brick fills", () => {
+  const atlas = join(root, "src/assets/smb/metatiles.png");
+  const meta = JSON.parse(
+    readFileSync(join(root, "src/assets/smb/metatiles.json"), "utf8"),
+  );
+  for (const [themeIndex, theme] of meta.themes.entries()) {
+    const brick81 = atlasRgba(atlas, `16x16+16+${themeIndex * 256 + 80}`);
+    const brick34 = atlasRgba(atlas, `16x16+32+${themeIndex * 256 + 32}`);
+    for (const id of [103, 104]) {
+      assert.ok(
+        meta.coverage[theme].includes(id),
+        `${theme}: tile ${id} is covered`,
+      );
+      const x = (id % 16) * 16;
+      const y = themeIndex * 256 + Math.floor(id / 16) * 16;
+      const tile = atlasRgba(atlas, `16x16+${x}+${y}`);
+      let opaque = 0;
+      const colors = new Set();
+      for (let i = 0; i < tile.length; i += 4) {
+        if (tile[i + 3] < 128) continue;
+        opaque++;
+        colors.add(tile.subarray(i, i + 3).toString("hex"));
+      }
+      assert.ok(opaque >= 16, `${theme} ${id}: spring pixels are opaque`);
+      assert.ok(colors.size >= 2, `${theme} ${id}: spring is not a flat fill`);
+      assert.notEqual(
+        Buffer.from(tile).compare(brick81),
+        0,
+        `${theme} ${id}: spring is not brick 81`,
+      );
+      assert.notEqual(
+        Buffer.from(tile).compare(brick34),
+        0,
+        `${theme} ${id}: spring is not brick 34`,
+      );
+      const rowOpaque = (row: number) => {
+        let n = 0;
+        for (let col = 0; col < 16; col++)
+          if (tile[(row * 16 + col) * 4 + 3] >= 128) n++;
+        return n;
+      };
+      if (id === 103)
+        assert.ok(
+          rowOpaque(0) >= 12,
+          `${theme} 103: plate sits at the top of the tile`,
+        );
+      else
+        assert.ok(
+          rowOpaque(15) >= 12,
+          `${theme} 104: base sits at the bottom of the tile`,
+        );
+    }
+  }
 });
 
 test("Play draws the sweat drop unscaled, never a scaling exclaim bang", () => {
