@@ -54,7 +54,7 @@ export class Boot extends Phaser.Scene {
       "fireKoopa",
       "smallMario",
       "mario",
-      "whiteMario",
+      "fireMario",
     ]) {
       const poses = base.toLowerCase().includes("mario")
         ? ["Walk", "Walk2", "Walk3"]

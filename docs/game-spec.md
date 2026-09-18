@@ -43,10 +43,10 @@ settings unless a rule below explicitly fixes their relationship.
 - No logs or hiding spots are added. Bushes are scenery.
 - The goal is the castle doorway. Castle interiors use a rescue doorway after
   the original bridge. On stages with a flagpole, the first of the player or
-  Mario to pass it raises a matching flag (Goomba or Mario). The Goomba flag
-  uses Goomba sprite art on the original flag silhouette. Mario keeps the
-  original flag. NPCs do not claim it. The pole and flag never add collision or
-  change velocity. The castle door remains the real goal.
+  Mario to pass it raises a matching flag. The player flag stamps mushroom art
+  onto the original flag silhouette. Mario keeps the original flag. NPCs do
+  not claim it. The pole and flag never add collision or change velocity. The
+  castle door remains the real goal.
 
 Original asset sources and frame details are in the
 [sprite credits](../src/assets/smb/README.md) and
@@ -354,7 +354,7 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   8x use the same smash rule. The character can still walk. 8x ignores stomp,
   fireball, moving shell, side contact, and player attacks.
 - A flower gives the player fireballs and a white palette. NPCs can show the
-  flower palette but do not shoot. Mario becomes Fire Mario.
+  flower palette but do not shoot. Mario becomes SMB1 Fire Mario.
 - Powers can coexist. 2x, 3x, and flower powers last for the stage; stars and
   8x expire. Restart and a new stage clear them.
 

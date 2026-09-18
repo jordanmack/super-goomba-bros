@@ -2195,7 +2195,7 @@ test("castle tally still counts saves after the player vanishes", () => {
   assert.equal(s.mode, "finishing");
 });
 
-test("first player past the flagpole raises a Goomba flag", () => {
+test("first player past the flagpole raises a mushroom flag", () => {
   const s = game();
   const pole = poleOf(s);
   assert.equal(pole.claim, null);
@@ -2211,7 +2211,7 @@ test("first player past the flagpole raises a Goomba flag", () => {
   Body.setPosition(s.player.body, { x: pole.x + 80, y: pole.top });
   tick(s, 1);
   assert.equal(pole.claim, "goomba");
-  assert.equal(flagTextureKey(pole.claim), "goombaFlag");
+  assert.equal(flagTextureKey(pole.claim), "mushroomFlag");
   assert.equal(pole.raise, 1);
 });
 

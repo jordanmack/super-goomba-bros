@@ -75,12 +75,6 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     fireMarioWalk3,
     fireMarioSkid,
     fireMarioJump,
-    whiteMario: firePalette(fireMario),
-    whiteMarioWalk: firePalette(fireMarioWalk),
-    whiteMarioWalk2: firePalette(fireMarioWalk2),
-    whiteMarioWalk3: firePalette(fireMarioWalk3),
-    whiteMarioSkid: firePalette(fireMarioSkid),
-    whiteMarioJump: firePalette(fireMarioJump),
   };
 }
 
@@ -174,30 +168,30 @@ function pixelSweatDrop() {
 }
 
 export function flagTextureKey(claim: "goomba" | "mario") {
-  return claim === "mario" ? "marioFlag" : "goombaFlag";
+  return claim === "mario" ? "marioFlag" : "mushroomFlag";
 }
 
-export function stampGoombaFlag(
+export function stampMushroomFlag(
   flag: Uint8ClampedArray,
-  goomba: Uint8ClampedArray,
+  mushroom: Uint8ClampedArray,
   width: number,
   height: number,
-  goombaWidth = width,
-  goombaHeight = height,
+  mushroomWidth = width,
+  mushroomHeight = height,
 ) {
   let fillR = 228,
     fillG = 88,
     fillB = 16;
-  for (let i = 0; i < goomba.length; i += 4) {
+  for (let i = 0; i < mushroom.length; i += 4) {
     if (
-      goomba[i + 3] &&
-      goomba[i] > 200 &&
-      goomba[i + 1] < 120 &&
-      goomba[i + 2] < 40
+      mushroom[i + 3] &&
+      mushroom[i] > 160 &&
+      mushroom[i + 1] < 120 &&
+      mushroom[i + 2] < 80
     ) {
-      fillR = goomba[i];
-      fillG = goomba[i + 1];
-      fillB = goomba[i + 2];
+      fillR = mushroom[i];
+      fillG = mushroom[i + 1];
+      fillB = mushroom[i + 2];
       break;
     }
   }
@@ -212,20 +206,20 @@ export function stampGoombaFlag(
     const cloth =
       (r > 200 && g > 200 && b > 200) || (r > 180 && g < 100 && b < 100);
     if (!cloth) continue;
-    // 1:1 stamp so Goomba eyes sit in the cloth; pole and orb stay.
-    const gx = x - 1;
-    const gy = y - 1;
-    const gi = (gy * goombaWidth + gx) * 4;
+    // 1:1 stamp so the mushroom sits in the cloth; pole and orb stay.
+    const mx = x - 1;
+    const my = y - 1;
+    const mi = (my * mushroomWidth + mx) * 4;
     if (
-      gx >= 0 &&
-      gy >= 0 &&
-      gx < goombaWidth &&
-      gy < goombaHeight &&
-      goomba[gi + 3]
+      mx >= 0 &&
+      my >= 0 &&
+      mx < mushroomWidth &&
+      my < mushroomHeight &&
+      mushroom[mi + 3]
     ) {
-      flag[i] = goomba[gi];
-      flag[i + 1] = goomba[gi + 1];
-      flag[i + 2] = goomba[gi + 2];
+      flag[i] = mushroom[mi];
+      flag[i + 1] = mushroom[mi + 1];
+      flag[i + 2] = mushroom[mi + 2];
     } else {
       flag[i] = fillR;
       flag[i + 1] = fillG;
@@ -235,7 +229,7 @@ export function stampGoombaFlag(
   return flag;
 }
 
-function goombaFlag(flag: HTMLCanvasElement, goomba: HTMLCanvasElement) {
+function mushroomFlag(flag: HTMLCanvasElement, mushroom: HTMLCanvasElement) {
   const canvas = document.createElement("canvas");
   canvas.width = flag.width;
   canvas.height = flag.height;
@@ -243,25 +237,22 @@ function goombaFlag(flag: HTMLCanvasElement, goomba: HTMLCanvasElement) {
   context.imageSmoothingEnabled = false;
   context.drawImage(flag, 0, 0);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  const face = goomba
+  const face = mushroom
     .getContext("2d")!
-    .getImageData(0, 0, goomba.width, goomba.height);
-  stampGoombaFlag(
+    .getImageData(0, 0, mushroom.width, mushroom.height);
+  stampMushroomFlag(
     pixels.data,
     face.data,
     canvas.width,
     canvas.height,
-    goomba.width,
-    goomba.height,
+    mushroom.width,
+    mushroom.height,
   );
   context.putImageData(pixels, 0, 0);
   return canvas;
 }
 
-export function scenerySprites(
-  { enemies, items }: SpriteSources,
-  goomba: HTMLCanvasElement,
-) {
+export function scenerySprites({ enemies, items }: SpriteSources) {
   const marioFlag = crop(items, 128, 0, 16, 16);
   const mushroom = crop(items, 0, 0, 16, 16);
   return {
@@ -275,7 +266,7 @@ export function scenerySprites(
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
     marioFlag,
-    goombaFlag: goombaFlag(marioFlag, goomba),
+    mushroomFlag: mushroomFlag(marioFlag, mushroom),
     [SWEAT_DROP_KEY]: pixelSweatDrop(),
   };
 }

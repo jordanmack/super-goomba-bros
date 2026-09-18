@@ -347,15 +347,18 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
       .getSourceImage()
       .getContext("2d")
       .getImageData(0, 0, 16, 32).data;
-    let marioWhite = 0;
-    for (let i = 0; i < marioData.length; i += 4)
-      if (
-        marioData[i + 3] &&
-        marioData[i] > 245 &&
-        marioData[i + 1] > 245 &&
-        marioData[i + 2] > 245
-      )
-        marioWhite++;
+    let marioWhite = 0,
+      marioRed = 0,
+      marioCream = 0;
+    for (let i = 0; i < marioData.length; i += 4) {
+      if (!marioData[i + 3]) continue;
+      const r = marioData[i],
+        gc = marioData[i + 1],
+        b = marioData[i + 2];
+      if (r > 245 && gc > 245 && b > 245) marioWhite++;
+      if (r > 180 && gc < 140 && b < 80) marioRed++;
+      if (r > 240 && gc > 200 && b > 140 && b < 220) marioCream++;
+    }
     s.defeatMario();
     for (const event of s.events.splice(0)) g.audio.event(event);
     g.renderer.render(s, 0);
@@ -367,11 +370,15 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
         g.renderer.play.actors.get(s.mario.id).texture ===
         g.renderer.game.textures.get("marioDeath"),
       marioWhite,
+      marioRed,
+      marioCream,
     };
   });
   expect(appearance.white).toBeGreaterThan(60);
   expect(appearance.dark).toBeGreaterThan(20);
-  expect(appearance.marioWhite).toBeGreaterThan(20);
+  expect(appearance.marioWhite).toBe(0);
+  expect(appearance.marioRed).toBeGreaterThan(20);
+  expect(appearance.marioCream).toBeGreaterThan(20);
   expect(appearance.deathVisible && appearance.deathPose).toBe(true);
   await page.screenshot({ path: "test-results/white-goomba-mario-death.png" });
   await page.evaluate(() => {
@@ -665,7 +672,7 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
   expect(drawn.sizes.oneUp).toBe(32);
 });
 
-test("player flagpole flag is Goomba art and Mario keeps the original flag", async ({
+test("player flagpole flag is mushroom art and Mario keeps the original flag", async ({
   page,
 }) => {
   await page.goto("/");
@@ -682,9 +689,9 @@ test("player flagpole flag is Goomba art and Mario keeps the original flag", asy
       const image = textures[name].getSourceImage() as HTMLCanvasElement;
       return image.getContext("2d")!.getImageData(0, 0, image.width, image.height);
     };
-    const goomba = pixelsOf("goomba");
+    const mushroom = pixelsOf("mushroom");
     const marioFlag = pixelsOf("marioFlag");
-    const goombaFlag = pixelsOf("goombaFlag");
+    const mushroomFlag = pixelsOf("mushroomFlag");
     const palette = (data: Uint8ClampedArray) => {
       let white = 0,
         red = 0,
@@ -723,42 +730,42 @@ test("player flagpole flag is Goomba art and Mario keeps the original flag", asy
     }
     let stamped = 0,
       recolorSame = 0;
-    const goombaColors = new Set<string>();
-    for (let i = 0; i < goomba.data.length; i += 4) {
-      if (!goomba.data[i + 3]) continue;
-      goombaColors.add(
-        `${goomba.data[i]},${goomba.data[i + 1]},${goomba.data[i + 2]}`,
+    const mushroomColors = new Set<string>();
+    for (let i = 0; i < mushroom.data.length; i += 4) {
+      if (!mushroom.data[i + 3]) continue;
+      mushroomColors.add(
+        `${mushroom.data[i]},${mushroom.data[i + 1]},${mushroom.data[i + 2]}`,
       );
     }
-    let fromGoomba = 0;
-    for (let i = 0; i < goombaFlag.data.length; i += 4) {
-      if (!goombaFlag.data[i + 3]) continue;
-      const r = goombaFlag.data[i],
-        gc = goombaFlag.data[i + 1],
-        b = goombaFlag.data[i + 2];
-      if (goombaColors.has(`${r},${gc},${b}`)) fromGoomba++;
+    let fromMushroom = 0;
+    for (let i = 0; i < mushroomFlag.data.length; i += 4) {
+      if (!mushroomFlag.data[i + 3]) continue;
+      const r = mushroomFlag.data[i],
+        gc = mushroomFlag.data[i + 1],
+        b = mushroomFlag.data[i + 2];
+      if (mushroomColors.has(`${r},${gc},${b}`)) fromMushroom++;
       if (
         r === recolor[i] &&
         gc === recolor[i + 1] &&
         b === recolor[i + 2]
       )
         recolorSame++;
-      const x = (i / 4) % goombaFlag.width;
-      const y = Math.floor(i / 4 / goombaFlag.width);
-      const gx = x - 1;
-      const gy = y - 1;
+      const x = (i / 4) % mushroomFlag.width;
+      const y = Math.floor(i / 4 / mushroomFlag.width);
+      const mx = x - 1;
+      const my = y - 1;
       if (
-        gx >= 0 &&
-        gy >= 0 &&
-        gx < goomba.width &&
-        gy < goomba.height
+        mx >= 0 &&
+        my >= 0 &&
+        mx < mushroom.width &&
+        my < mushroom.height
       ) {
-        const gi = (gy * goomba.width + gx) * 4;
+        const mi = (my * mushroom.width + mx) * 4;
         if (
-          goomba.data[gi + 3] &&
-          r === goomba.data[gi] &&
-          gc === goomba.data[gi + 1] &&
-          b === goomba.data[gi + 2]
+          mushroom.data[mi + 3] &&
+          r === mushroom.data[mi] &&
+          gc === mushroom.data[mi + 1] &&
+          b === mushroom.data[mi + 2]
         )
           stamped++;
       }
@@ -782,12 +789,27 @@ test("player flagpole flag is Goomba art and Mario keeps the original flag", asy
     const flagsOf = () =>
       play.effects
         .filter(
-          (entry: { visible: boolean; texture: { key: string } }) =>
+          (entry: {
+            visible: boolean;
+            texture: { key: string };
+            displayWidth: number;
+            displayHeight: number;
+          }) =>
             entry.visible &&
-            (entry.texture.key === "goombaFlag" ||
+            (entry.texture.key === "mushroomFlag" ||
               entry.texture.key === "marioFlag"),
         )
-        .map((entry: { texture: { key: string } }) => entry.texture.key);
+        .map(
+          (entry: {
+            texture: { key: string };
+            displayWidth: number;
+            displayHeight: number;
+          }) => ({
+            key: entry.texture.key,
+            width: entry.displayWidth,
+            height: entry.displayHeight,
+          }),
+        );
     const playerFlags = flagsOf();
     const playerClaim = pole.claim;
     pole.claim = null;
@@ -811,44 +833,53 @@ test("player flagpole flag is Goomba art and Mario keeps the original flag", asy
     ctx.fillStyle = "#5c94fc";
     ctx.fillRect(0, 0, 160, 80);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(textures.goombaFlag.getSourceImage(), 8, 8, 64, 64);
+    ctx.drawImage(textures.mushroomFlag.getSourceImage(), 8, 8, 64, 64);
     ctx.drawImage(textures.marioFlag.getSourceImage(), 88, 8, 64, 64);
     document.body.append(sheet);
     return {
-      goomba: palette(goomba.data),
+      mushroom: palette(mushroom.data),
       marioFlag: palette(marioFlag.data),
-      goombaFlag: palette(goombaFlag.data),
+      mushroomFlag: palette(mushroomFlag.data),
       stamped,
-      fromGoomba,
+      fromMushroom,
       recolorSame,
       playerClaim,
       playerFlags,
       marioClaim,
       marioFlags,
+      hasGoombaFlag: !!textures.goombaFlag,
       sameCanvas:
-        textures.goombaFlag.getSourceImage() ===
+        textures.mushroomFlag.getSourceImage() ===
         textures.marioFlag.getSourceImage(),
     };
   });
   expect(drawn.sameCanvas).toBe(false);
+  expect(drawn.hasGoombaFlag).toBe(false);
   expect(drawn.marioFlag.white).toBeGreaterThan(50);
   expect(drawn.marioFlag.red).toBeGreaterThan(20);
   expect(drawn.marioFlag.dark).toBe(0);
-  expect(drawn.goombaFlag.dark).toBeGreaterThan(8);
-  expect(drawn.goombaFlag.skin).toBeGreaterThan(10);
-  expect(drawn.goombaFlag.brown).toBeGreaterThan(20);
-  expect(drawn.goombaFlag.white).toBe(0);
+  expect(drawn.mushroomFlag.red).toBeGreaterThan(20);
+  expect(drawn.mushroomFlag.white).toBeGreaterThan(8);
   expect(drawn.stamped).toBeGreaterThan(50);
-  expect(drawn.fromGoomba).toBeGreaterThan(50);
+  expect(drawn.fromMushroom).toBeGreaterThan(50);
   expect(drawn.stamped).toBeGreaterThan(drawn.recolorSame);
-  expect(drawn.goomba.dark).toBeGreaterThan(0);
+  expect(drawn.mushroom.red).toBeGreaterThan(0);
+  expect(drawn.mushroom.white).toBeGreaterThan(0);
   expect(drawn.playerClaim).toBe("goomba");
-  expect(drawn.playerFlags).toEqual(["goombaFlag"]);
+  expect(drawn.playerFlags.map((f: { key: string }) => f.key)).toEqual([
+    "mushroomFlag",
+  ]);
+  expect(drawn.playerFlags[0].width).toBe(32);
+  expect(drawn.playerFlags[0].height).toBe(32);
   expect(drawn.marioClaim).toBe("mario");
-  expect(drawn.marioFlags).toEqual(["marioFlag"]);
+  expect(drawn.marioFlags.map((f: { key: string }) => f.key)).toEqual([
+    "marioFlag",
+  ]);
+  expect(drawn.marioFlags[0].width).toBe(32);
+  expect(drawn.marioFlags[0].height).toBe(32);
   await page
     .locator("#debug-flag-sheet")
-    .screenshot({ path: "test-results/goomba-mario-flags.png" });
+    .screenshot({ path: "test-results/mushroom-mario-flags.png" });
 });
 
 for (const viewport of [
@@ -1694,6 +1725,135 @@ test("game text and controls cannot be selected by dragging", async ({
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
 });
 
+test("Fire Mario uses the SMB1 palette on idle, walk, skid, and jump", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
+  const drawn = await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    const s = g.sim;
+    const play = g.renderer.play;
+    const textures = g.renderer.game.textures.list;
+    const poses = [
+      "fireMario",
+      "fireMarioWalk",
+      "fireMarioWalk2",
+      "fireMarioWalk3",
+      "fireMarioSkid",
+      "fireMarioJump",
+    ];
+    const missing = poses.filter((name) => !textures[name]);
+    const whiteKeys = Object.keys(textures).filter((key) =>
+      key.startsWith("whiteMario"),
+    );
+    const palette = (name: string) => {
+      const image = textures[name].getSourceImage() as HTMLCanvasElement;
+      const data = image
+        .getContext("2d")!
+        .getImageData(0, 0, image.width, image.height).data;
+      let opaque = 0,
+        cream = 0,
+        white = 0,
+        red = 0,
+        flat = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (!data[i + 3]) continue;
+        opaque++;
+        const r = data[i],
+          gc = data[i + 1],
+          b = data[i + 2];
+        if (r > 240 && gc > 200 && b > 140 && b < 220) cream++;
+        if (r > 200 && gc > 200 && b > 200) white++;
+        if (r > 180 && gc < 140 && b < 80) red++;
+        if (r === 252 && gc === 252 && b === 252) flat++;
+      }
+      return { opaque, cream, white, red, flat };
+    };
+    const palettes = Object.fromEntries(poses.map((pose) => [pose, palette(pose)]));
+    s.marioActive = true;
+    s.marioDeath = null;
+    s.mario.alive = true;
+    s.mario.saved = false;
+    s.setMarioStage(2);
+    s.marioStun = 0;
+    s.mario.starLeft = 0;
+    s.mario.pipeTravel = null;
+    s.mario.grounded = true;
+    s.mario.body.velocity.x = 0;
+    s.marioChase = 0;
+    s.marioReaction = 0;
+    g.renderer.render(s, 0);
+    const sprite = play.actors.get(s.mario.id);
+    const idle = sprite.texture.key;
+    s.mario.body.velocity.x = 80;
+    g.renderer.render(s, 0);
+    const walk = {
+      texture: sprite.texture.key,
+      anim: sprite.anims?.currentAnim?.key ?? null,
+    };
+    s.marioChase = 1;
+    s.marioAim = s.mario.body.position.x - 100;
+    g.renderer.render(s, 0);
+    const skid = sprite.texture.key;
+    s.marioChase = 0;
+    s.mario.grounded = false;
+    s.mario.body.velocity.x = 0;
+    g.renderer.render(s, 0);
+    const jump = sprite.texture.key;
+    s.player.flower = true;
+    s.player.alive = true;
+    s.player.saved = false;
+    s.playerDeath = null;
+    s.player.grounded = true;
+    s.player.body.velocity.x = 0;
+    s.player.pipeTravel = null;
+    g.renderer.render(s, 0);
+    const player = play.actors.get(s.player.id);
+    return {
+      missing,
+      whiteKeys,
+      palettes,
+      fireGoomba: palette("fireGoomba"),
+      fireKoopa: palette("fireKoopa"),
+      idle,
+      walk,
+      skid,
+      jump,
+      playerFlower: player.texture.key,
+      hasFireWalkAnim: play.anims.exists("fireMario-walk"),
+      hasWhiteWalkAnim: play.anims.exists("whiteMario-walk"),
+    };
+  });
+  expect(drawn.missing).toEqual([]);
+  expect(drawn.whiteKeys).toEqual([]);
+  expect(drawn.hasFireWalkAnim).toBe(true);
+  expect(drawn.hasWhiteWalkAnim).toBe(false);
+  for (const pose of [
+    "fireMario",
+    "fireMarioWalk",
+    "fireMarioWalk2",
+    "fireMarioWalk3",
+    "fireMarioSkid",
+    "fireMarioJump",
+  ] as const) {
+    const pal = drawn.palettes[pose];
+    expect(pal.red, pose).toBeGreaterThan(20);
+    expect(pal.cream, pose).toBeGreaterThan(20);
+    expect(pal.flat / pal.opaque, pose).toBeLessThan(0.2);
+  }
+  expect(drawn.idle).toBe("fireMario");
+  expect(drawn.walk.anim).toBe("fireMario-walk");
+  expect(drawn.skid).toBe("fireMarioSkid");
+  expect(drawn.jump).toBe("fireMarioJump");
+  expect(drawn.playerFlower).toBe("fireGoomba");
+  expect(drawn.fireGoomba.white).toBeGreaterThan(drawn.fireGoomba.red);
+  expect(drawn.fireKoopa.white).toBeGreaterThan(drawn.fireKoopa.red);
+});
+
 test("pixel sprite poses render at native proportions", async ({ page }) => {
   await page.goto("/");
   await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
@@ -1713,12 +1873,12 @@ test("pixel sprite poses render at native proportions", async ({ page }) => {
     ];
     const canvas = document.createElement("canvas");
     canvas.id = "debug-sprite-sheet";
-    canvas.width = 640;
+    canvas.width = 800;
     canvas.height = 160;
     canvas.style.cssText = "position:fixed;top:100px;left:0;z-index:100";
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = "#7dc9d1";
-    ctx.fillRect(0, 0, 640, 160);
+    ctx.fillRect(0, 0, 800, 160);
     ctx.imageSmoothingEnabled = false;
     names.forEach((name, i) => {
       const image = textures[name].getSourceImage();

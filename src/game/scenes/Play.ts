@@ -334,7 +334,7 @@ export class Play extends Phaser.Scene {
       ? smallMario
         ? "smallMario"
         : sim.marioStage === 2
-          ? "whiteMario"
+          ? "fireMario"
           : "mario"
       : actor.flower
         ? actor.kind === "goomba"

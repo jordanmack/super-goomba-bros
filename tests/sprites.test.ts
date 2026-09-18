@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   flagTextureKey,
-  stampGoombaFlag,
+  stampMushroomFlag,
   stampSweatDrop,
   SWEAT_DROP_HEIGHT,
   SWEAT_DROP_KEY,
@@ -61,38 +61,61 @@ function recolorMarioFlag(flag: Uint8ClampedArray, width = W) {
 }
 
 test("claim maps to the shipped flag texture keys", () => {
-  assert.equal(flagTextureKey("goomba"), "goombaFlag");
+  assert.equal(flagTextureKey("goomba"), "mushroomFlag");
   assert.equal(flagTextureKey("mario"), "marioFlag");
 });
 
-test("Goomba flag stamps Goomba art into the cloth, not a Mario-flag recolor", () => {
+test("player flag stamps mushroom art into the cloth, not a Mario-flag recolor", () => {
   const flag = new Uint8ClampedArray(W * H * 4);
-  const goomba = new Uint8ClampedArray(W * H * 4);
-  const brown = [228, 88, 16] as const;
-  const eye = [32, 32, 32] as const;
-  const skin = [244, 212, 180] as const;
-  const mark = [10, 20, 30] as const;
-  setPx(goomba, 8, 0, ...brown);
-  setPx(goomba, 4, 5, ...eye);
-  setPx(goomba, 7, 7, ...skin);
-  setPx(goomba, 5, 6, ...mark);
+  const mushroom = new Uint8ClampedArray(W * H * 4);
+  const cap = [228, 88, 16] as const;
+  const outline = [0, 0, 0] as const;
+  const stem = [252, 160, 68] as const;
+  const spot = [252, 252, 252] as const;
+  setPx(mushroom, 8, 0, ...cap);
+  setPx(mushroom, 4, 5, ...outline);
+  setPx(mushroom, 7, 7, ...stem);
+  setPx(mushroom, 5, 6, ...spot);
   setPx(flag, 2, 2, 230, 156, 33);
   setPx(flag, 2, 6, 181, 49, 33);
   setPx(flag, 5, 6, 252, 252, 252);
   setPx(flag, 8, 8, 181, 49, 33);
   setPx(flag, 6, 7, 252, 252, 252);
   const before = new Uint8ClampedArray(flag);
-  stampGoombaFlag(flag, goomba, W, H);
+  stampMushroomFlag(flag, mushroom, W, H);
   assert.deepEqual(px(flag, 2, 2), px(before, 2, 2));
   assert.deepEqual(px(flag, 2, 6), px(before, 2, 6));
-  assert.deepEqual(px(flag, 5, 6), [...eye, 255]);
-  assert.deepEqual(px(flag, 8, 8), [...skin, 255]);
-  assert.deepEqual(px(flag, 6, 7), [...mark, 255]);
+  assert.deepEqual(px(flag, 5, 6), [...outline, 255]);
+  assert.deepEqual(px(flag, 8, 8), [...stem, 255]);
+  assert.deepEqual(px(flag, 6, 7), [...spot, 255]);
   const recolor = recolorMarioFlag(before);
   assert.notDeepEqual(px(flag, 5, 6), px(recolor, 5, 6));
   assert.notDeepEqual(px(flag, 8, 8), px(recolor, 8, 8));
   assert.notDeepEqual(px(flag, 6, 7), px(recolor, 6, 7));
   assert.notEqual(Buffer.from(flag).compare(Buffer.from(recolor)), 0);
+});
+
+test("Fire Mario draw path uses original fireMario frames, not the white palette", () => {
+  const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
+  const boot = readFileSync(join(root, "src/game/scenes/Boot.ts"), "utf8");
+  const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
+  const pose = play.slice(
+    play.indexOf("const base = mario"),
+    play.indexOf("const moving ="),
+  );
+  assert.match(pose, /marioStage === 2\s*\n\s*\? "fireMario"/);
+  assert.doesNotMatch(play, /whiteMario/);
+  assert.match(boot, /"fireMario"/);
+  assert.doesNotMatch(boot, /whiteMario/);
+  assert.doesNotMatch(sprites, /whiteMario/);
+  assert.match(sprites, /fireMario,/);
+  assert.match(sprites, /fireMarioWalk,/);
+  assert.match(sprites, /fireMarioWalk2,/);
+  assert.match(sprites, /fireMarioWalk3,/);
+  assert.match(sprites, /fireMarioSkid,/);
+  assert.match(sprites, /fireMarioJump,/);
+  assert.match(sprites, /fireGoomba: firePalette\(goomba\)/);
+  assert.match(sprites, /fireKoopa: firePalette\(koopa\)/);
 });
 
 test("the warned-NPC mark is a tiny outlined sweat drop, not a white bang", () => {
