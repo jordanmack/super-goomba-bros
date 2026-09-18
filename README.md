@@ -2,8 +2,8 @@
 
 An 8-bit side-scrolling rescue game built with Phaser 4 and React. Play a Goomba,
 warn nearby characters, evade Mario, and reach the castle door. The campaign
-follows all 32 original SMB1 stages, including pipe entrances,
-underground rooms, water, moving platforms, and castles.
+includes all 32 original SMB1 stages, with pipe entrances, underground rooms,
+water, moving platforms, and castles. Warp-zone pipes skip worlds as in SMB1.
 
 The world uses individual tiles from bundled level data. No full-map background,
 ROM file, or runtime asset download is required. Asset sources are in the
@@ -20,7 +20,7 @@ ionice -c3 nice -n19 bun run dev --host 0.0.0.0
 ```
 
 The development build accepts `?level=4-3` to inspect a stage. The production game
-starts at World 1-1 and progresses in order.
+starts at World 1-1 and advances through stages, including warp-zone skips.
 
 ## Controls
 

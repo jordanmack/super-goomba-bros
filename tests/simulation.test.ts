@@ -3397,9 +3397,10 @@ function ridePipe(s: Simulation, hold: Partial<Input>, destId: string) {
   assert.equal(s.player.pipeTravel, undefined);
 }
 
-test("down-pipe travel slides in, warps after hiding, and emerges from the dest pipe", () => {
+test("down-pipe travel slides in, hides, then falls into area 42 from the ceiling", () => {
   const s = game();
   const entry = s.activeRoom.data.pipes.find((p) => p.direction === "down")!;
+  assert.equal(entry.column, 57);
   const mouth = MAP_TOP + entry.row * 32;
   at(s, (entry.column + entry.width / 2) * 32, mouth - 14);
   s.step(dt, { ...emptyInput(), down: true });
@@ -3432,17 +3433,205 @@ test("down-pipe travel slides in, warps after hiding, and emerges from the dest 
     "the traveler hides in the pipe before the area changes",
   );
   assert.equal(s.activeRoom.data.id, "42");
-  assert.equal(s.player.pipeTravel?.phase, "exit");
-  while (s.player.pipeTravel) s.step(dt, emptyInput());
-  const dest = s.activeRoom.data.pipes[0];
-  const destLeft = s.activeRoom.offset + dest.column * 32;
+  assert.equal(s.player.pipeTravel, undefined);
+  const exit = s.activeRoom.data.pipes[0];
+  const destLeft = s.activeRoom.offset + exit.column * 32;
   assert.ok(
-    s.player.body.position.x < destLeft,
-    "emerge from the dest pipe opening, not a nearby floor snap",
+    s.player.body.position.x < destLeft - 80,
+    "ceiling drop is not the column 13 side exit",
   );
-  assert.ok(s.player.body.position.x > destLeft - 80);
+  assert.equal(s.player.grounded, false);
+  assert.ok(s.player.body.position.y < MAP_TOP + 4 * 32);
   assert.ok((s.player.pipeWait ?? 0) > 0);
-  assert.ok(s.events.filter((event) => event === "pipe").length >= 2);
+  for (let i = 0; i < 180 && !s.player.grounded; i++) s.step(dt, emptyInput());
+  assert.equal(s.player.grounded, true);
+  assert.ok(s.player.body.position.y > MAP_TOP + 10 * 32);
+});
+
+test("1-2 bonus pipe falls through the two-tile shaft, not onto the roof", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  tick(s, T.pipeCooldown + dt);
+  const entry = s.activeRoom.data.pipes.find((p) => p.column === 103)!;
+  at(
+    s,
+    s.activeRoom.offset + (entry.column + entry.width / 2) * 32,
+    MAP_TOP + entry.row * 32 - 14,
+  );
+  ridePipe(s, { down: true }, "42");
+  assert.equal(s.player.grounded, false);
+  const local = s.player.body.position.x - s.activeRoom.offset;
+  const pageX = local - 2 * 512;
+  assert.ok(pageX > 32 && pageX < 96, `shaft x ${pageX}`);
+  for (let i = 0; i < 180 && !s.player.grounded; i++) s.step(dt, emptyInput());
+  assert.equal(s.player.grounded, true);
+  assert.ok(s.player.body.position.y > MAP_TOP + 10 * 32);
+});
+
+test("a 2x player falls through the 1-2 two-tile shaft instead of the roof", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  tick(s, T.pipeCooldown + dt);
+  give(s, s.player, "mushroom");
+  const entry = s.activeRoom.data.pipes.find((p) => p.column === 103)!;
+  at(
+    s,
+    s.activeRoom.offset + (entry.column + entry.width / 2) * 32,
+    MAP_TOP + entry.row * 32 - 14 * s.player.scale,
+  );
+  ridePipe(s, { down: true }, "42");
+  assert.equal(s.player.grounded, false);
+  const pageX = s.player.body.position.x - s.activeRoom.offset - 2 * 512;
+  assert.ok(pageX > 32 && pageX < 96, `shaft x ${pageX}`);
+  for (let i = 0; i < 180 && !s.player.grounded; i++) s.step(dt, emptyInput());
+  assert.equal(s.player.grounded, true);
+  assert.ok(s.player.body.position.y > MAP_TOP + 10 * 32);
+});
+
+test("NPCs and Mario cannot enter warp-zone pipes", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  tick(s, T.pipeCooldown + dt);
+  const pipe = s.activeRoom.data.pipes.find((p) => p.column === 178)!;
+  const mouthX = s.activeRoom.offset + (pipe.column + pipe.width / 2) * 32;
+  const mouthY = MAP_TOP + pipe.row * 32;
+  const n = s.npcs[0];
+  n.areaId = s.player.areaId;
+  n.warned = true;
+  n.state = "run";
+  Body.setPosition(n.body, { x: mouthX, y: mouthY - n.body.height / 2 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  s.marioActive = true;
+  Body.setFrozen(s.mario.body, false);
+  s.mario.areaId = s.player.areaId;
+  Body.setPosition(s.mario.body, {
+    x: mouthX,
+    y: mouthY - s.mario.body.height / 2,
+  });
+  tick(s, 0.2);
+  assert.equal(n.pipeTravel, undefined);
+  assert.equal(s.mario.pipeTravel, undefined);
+  assert.equal(s.level.id, "1-2");
+  assert.equal(s.activeRoom.data.id, "40");
+});
+
+test("2-1 bonus pipe also falls into area 42 from the ceiling", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
+  s.reset();
+  s.marioReturn = 1e6;
+  const entry = s.activeRoom.data.pipes.find((p) => p.column === 103)!;
+  at(
+    s,
+    s.activeRoom.offset + (entry.column + entry.width / 2) * 32,
+    MAP_TOP + entry.row * 32 - 14,
+  );
+  ridePipe(s, { down: true }, "42");
+  assert.equal(s.player.grounded, false);
+  const exit = s.activeRoom.data.pipes[0];
+  assert.ok(
+    s.player.body.position.x <
+      s.activeRoom.offset + exit.column * 32 - 80,
+  );
+});
+
+test("a side-pipe rise onto a page with several null pipes uses column page*16+3", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "6-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  const bonus = s.loadRoom("42");
+  const pipe = bonus.data.pipes.find((p) => p.column === 141)!;
+  s.player.areaId = "42";
+  at(
+    s,
+    bonus.offset + pipe.column * 32 - 12,
+    MAP_TOP + pipe.row * 32 + 32,
+  );
+  ridePipe(s, { right: true }, "23");
+  const dest = s.activeRoom.data.pipes.find((p) => p.column === 35)!;
+  const center = s.activeRoom.offset + (dest.column + dest.width / 2) * 32;
+  assert.ok(Math.abs(s.player.body.position.x - center) < 8);
+});
+
+test("8-4 castle down pipe rises from the water area null pipe", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "8-4");
+  s.reset();
+  s.marioReturn = 1e6;
+  const entry = s.activeRoom.data.pipes.find((p) => p.column === 228)!;
+  at(
+    s,
+    s.activeRoom.offset + (entry.column + entry.width / 2) * 32,
+    MAP_TOP + entry.row * 32 - 14,
+  );
+  ridePipe(s, { down: true }, "02");
+  const dest = s.activeRoom.data.pipes.find((p) => p.column === 3)!;
+  const center = s.activeRoom.offset + (dest.column + dest.width / 2) * 32;
+  assert.ok(Math.abs(s.player.body.position.x - center) < 8);
+});
+
+test("1-2 warp pipes skip to worlds 4, 3, and 2", () => {
+  const cases: [number, string, string][] = [
+    [178, "4-1", "22"],
+    [182, "3-1", "24"],
+    [186, "2-1", "28"],
+  ];
+  for (const [column, id, area] of cases) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+    s.reset();
+    s.marioReturn = 1e6;
+    finishPipeIntro(s);
+    tick(s, T.pipeCooldown + dt);
+    s.player.flower = true;
+    const score = s.score;
+    const pipe = s.activeRoom.data.pipes.find((p) => p.column === column)!;
+    at(
+      s,
+      s.activeRoom.offset + (pipe.column + pipe.width / 2) * 32,
+      MAP_TOP + pipe.row * 32 - 14,
+    );
+    s.step(dt, { ...emptyInput(), down: true });
+    let frames = 1;
+    while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
+    assert.equal(s.level.id, id);
+    assert.equal(s.activeRoom.data.id, area);
+    assert.equal(s.mode, "intro");
+    assert.equal(s.player.flower, true);
+    assert.equal(s.score, score);
+    s.physics.clear();
+  }
+});
+
+test("4-2 warp pipe starts world 5", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  tick(s, T.pipeCooldown + dt);
+  const pipe = s.activeRoom.data.pipes.find((p) => p.column === 214)!;
+  at(
+    s,
+    s.activeRoom.offset + (pipe.column + pipe.width / 2) * 32,
+    MAP_TOP + pipe.row * 32 - 14,
+  );
+  s.step(dt, { ...emptyInput(), down: true });
+  let frames = 1;
+  while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
+  assert.equal(s.level.id, "5-1");
+  assert.equal(s.activeRoom.data.id, "2a");
+  assert.equal(s.mode, "intro");
 });
 
 test("side-pipe travel slides in, then emerges from the destination pipe", () => {
@@ -3466,7 +3655,7 @@ test("side-pipe travel slides in, then emerges from the destination pipe", () =>
   );
 });
 
-test("an intro pipe emerges at the dest page without a nearby-floor search", () => {
+test("an intro pipe stands at the dest page without a nearby-floor search", () => {
   const s = new Simulation(() => 0.5);
   s.levelIndex = 1;
   s.reset();
@@ -3484,13 +3673,13 @@ test("an intro pipe emerges at the dest page without a nearby-floor search", () 
   while (s.activeRoom.data.id === start && frames++ < 180)
     s.step(dt, { ...emptyInput(), right: true });
   assert.equal(s.activeRoom.data.id, s.level.main);
-  assert.equal(s.player.pipeTravel?.phase, "exit");
-  assert.ok(s.player.body.position.x < s.activeRoom.offset + 100);
   while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
-  assert.equal(s.events.filter((event) => event === "pipe").length, 2);
+  assert.equal(s.player.pipeTravel, undefined);
+  assert.ok(s.events.filter((event) => event === "pipe").length >= 2);
   assert.ok(
     Math.abs(s.player.body.position.x - (s.activeRoom.offset + 100)) < 8,
   );
+  assert.equal(s.player.grounded, true);
 });
 
 test("1-2 after nextLevel from 1-1 goes through 29 without applying input", () => {
@@ -3513,7 +3702,7 @@ test("1-2 after nextLevel from 1-1 goes through 29 without applying input", () =
   assert.equal(s.elapsed, 0);
   assert.equal(s.marioActive, false);
   assert.notEqual(s.mode, "dead");
-  let sawExit = false;
+  let reachedMain = false;
   for (
     let frame = 0;
     frame < 60 * 20 && (s.mode === "intro" || s.pipeIntro);
@@ -3525,17 +3714,16 @@ test("1-2 after nextLevel from 1-1 goes through 29 without applying input", () =
       jump: true,
       down: true,
     });
-    if (s.player.areaId === "40" && s.player.pipeTravel?.phase === "exit") {
-      sawExit = true;
+    if (s.player.areaId === "40") {
+      reachedMain = true;
       assert.equal(s.elapsed, 0);
       assert.equal(s.marioActive, false);
-      assert.equal(s.pipeIntro, true);
     }
     assert.notEqual(s.mode, "dead");
   }
   assert.equal(s.pipeIntro, false);
   assert.equal(s.mode, "playing");
-  assert.equal(sawExit, true);
+  assert.equal(reachedMain, true);
   assert.equal(s.lives, lives);
   assert.equal(s.player.areaId, "40");
   assert.equal(s.player.pipeTravel, undefined);
@@ -3748,19 +3936,9 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
     spriteW,
     spriteH,
   );
-  waitPipePhase(down, down.player, "exit");
-  const dest = down.activeRoom.data.pipes[0];
-  assert.equal(down.player.pipeTravel?.dir, "left");
-  assertLipClip(
-    down.player.pipeTravel!.clip!,
-    down.activeRoom,
-    dest,
-    "left",
-    spriteW,
-    spriteH,
-  );
   while (down.player.pipeTravel) down.step(dt, emptyInput());
   tick(down, T.pipeCooldown + dt);
+  const dest = down.activeRoom.data.pipes[0];
   at(
     down,
     down.activeRoom.offset + dest.column * 32 - 12,

@@ -448,6 +448,9 @@ test("GAME OVER title uses the same framed still as a cold load", async ({
     s.lives = 1;
     s.kill(s.player, false);
   });
+  await expect(page.getByRole("region", { name: "Game over" })).toBeVisible({
+    timeout: 8000,
+  });
   await expect(page.getByRole("region", { name: "Title screen" })).toBeVisible({
     timeout: 8000,
   });

@@ -32,8 +32,10 @@ Each `area-XX.json` has a normalized hexadecimal area pointer as its ID:
 - `destinations`: world-specific three-byte area-pointer commands. These latch
   before pipe entry; they are not individual enemy spawns.
 - `pipes`: dimensions, entry direction, and latched destinations per world.
-  Decorative pipes have no entry direction. The shared intro uses the campaign
-  route for its destination. Warp-zone and vine commands remain in `objects`.
+  `null` direction marks an arrival mouth, not a decoration. The shared intro
+  uses the campaign route for its destination. Warp-zone pipes override the
+  shared area-pointer latch with `WarpZoneNumbers` (1-2: worlds 4/3/2, 4-2:
+  world 5). Vine commands remain in `objects`.
 - `goal`: castle door, final castle room, or an exit pipe to another area.
   Bonus cloud/warp areas can have no direct goal.
 

@@ -139,6 +139,13 @@ test("bonus pipe travel preserves rescues, powers, and NPC progress without fini
     sim.step(1 / 60, emptyInput());
   assert.equal(sim.player.pipeTravel, undefined);
   assert.ok(sim.player.body.position.x >= sim.activeRoom.offset);
+  const side = sim.activeRoom.data.pipes[0];
+  assert.ok(
+    sim.player.body.position.x <
+      sim.activeRoom.offset + side.column * 32 - 40,
+    "1-1 bonus arrival is a ceiling fall, not the side exit",
+  );
+  assert.equal(sim.player.grounded, false);
   assert.equal(sim.mode, "playing");
   assert.equal(sim.saved, 12);
   assert.equal(sim.warned, 13);

@@ -60,6 +60,25 @@ export function parseTables(source) {
 
 const areaId = (pointer) => (pointer & 127).toString(16).padStart(2, "0");
 const TYPES = ["water", "overworld", "underground", "castle"];
+// WarpZoneObject ($34). ScrollLockObject_Warp sets WarpZoneControl; this enemy
+// marks the pipes that HandlePipeEntry maps through WarpZoneNumbers.
+const WARP_ZONE_OBJECT = 52;
+const WARP_ZONE_WORLDS = { 4: [4, 3, 2], 5: [5], 6: [8, 7, 6] };
+
+function firstStageArea(tables, world) {
+  const pointers = tables[`World${world}Areas`];
+  const first = areaId(pointers[0]);
+  return first === "29" ? areaId(pointers[1]) : first;
+}
+
+function worldsUsingArea(tables, id) {
+  const worlds = [];
+  for (let world = 1; world <= 8; world++) {
+    const pointers = tables[`World${world}Areas`];
+    if (pointers.some((pointer) => areaId(pointer) === id)) worlds.push(world);
+  }
+  return worlds;
+}
 
 export function decodeObjects(bytes) {
   let page = 0;
@@ -498,6 +517,34 @@ export function decodeArea(tables, pointer) {
                 : null;
             }).filter(Boolean),
     }));
+  // Warp pipes share the last area-pointer latch unless we override them.
+  // HandlePipeEntry uses WarpZoneNumbers, not that latch, so each warp mouth
+  // gets its own world-1 start (1-2: 4/3/2, 4-2: 5). Vine warps are #106.
+  const warpColumn = enemies
+    .filter((enemy) => enemy.type === WARP_ZONE_OBJECT)
+    .reduce((min, enemy) => Math.min(min, enemy.column), Infinity);
+  if (Number.isFinite(warpColumn)) {
+    const warpPipes = pipes.filter(
+      (pipe) => pipe.direction === "down" && pipe.column >= warpColumn,
+    );
+    const sourceWorlds = worldsUsingArea(tables, id);
+    for (const sourceWorld of sourceWorlds.length ? sourceWorlds : [1]) {
+      const control = sourceWorld === 1 ? 4 : type === 1 ? 6 : 5;
+      const warpWorlds = WARP_ZONE_WORLDS[control] ?? [];
+      warpPipes.forEach((pipe, index) => {
+        const destWorld = warpWorlds[index];
+        if (!destWorld) return;
+        pipe.destinations = [
+          {
+            world: sourceWorld,
+            area: firstStageArea(tables, destWorld),
+            page: 0,
+            entrance: 0,
+          },
+        ];
+      });
+    }
+  }
   const castle = objects.filter((o) => o.opcode === 18 && o.column > 16).at(-1);
   const axe = objects.find((o) => o.opcode === 36);
   const exitPipe = pipes.filter((p) => p.direction === "right").at(-1);

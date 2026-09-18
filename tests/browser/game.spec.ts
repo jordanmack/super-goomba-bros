@@ -214,6 +214,13 @@ test("pipe segments and background bushes retain their map pixels", async ({
 }) => {
   await page.goto("/");
   await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
+  // Title camera is a static opening shot, so pan samples from play camera.
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    g.sim.mode = "playing";
+  });
+  await expect(page.locator(".play-footer")).toBeVisible();
   const cells = LEVEL.pipes.flatMap(({ column, height }) =>
     Array.from({ length: height }, (_, i) =>
       [column, column + 1].map((x) => [x, LEVEL.groundRow - height + i]),
@@ -226,6 +233,7 @@ test("pipe segments and background bushes retain their map pixels", async ({
       const g = (window as any).__game;
       const s = g.sim;
       g.paused = true;
+      s.mode = "playing";
       s.player.alive = false;
       for (const n of s.npcs) n.alive = false;
       s.marioActive = false;
@@ -251,10 +259,18 @@ test("pipe segments and background bushes retain their map pixels", async ({
         g.renderer.render(s, 0);
         await new Promise(requestAnimationFrame);
         await new Promise(requestAnimationFrame);
+        canvas.width = source.width;
+        canvas.height = source.height;
         ctx.drawImage(source, 0, 0);
+        const zoom = s.cameraZoom || 1;
+        const viewX =
+          s.cameraX + (g.renderer.width / 2) * (1 - 1 / zoom);
+        const viewY = s.cameraY + (540 / 2) * (1 - 1 / zoom);
         const pixel = ctx.getImageData(
-          Math.floor(((worldX - s.cameraX) / g.renderer.width) * canvas.width),
-          Math.floor((worldY / 540) * canvas.height),
+          Math.floor(
+            ((worldX - viewX) * zoom / g.renderer.width) * canvas.width,
+          ),
+          Math.floor(((worldY - viewY) * zoom / 540) * canvas.height),
           1,
           1,
         ).data;

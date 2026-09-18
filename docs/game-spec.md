@@ -17,7 +17,8 @@ settings unless a rule below explicitly fixes their relationship.
 
 - Use Phaser 4 for rendering, sprite animation, cameras, audio, input, and Arcade
   collisions. React provides screens and the HUD.
-- Progress through all 32 original SMB1 stages in order.
+- The campaign includes all 32 original SMB1 stages. Warp-zone pipes skip
+  worlds as in SMB1. The remaining stages stay in world-stage order.
 - Build the world from individual native tiles and bundled JSON. The
   [level data](../src/assets/levels/README.md) comes from public disassembly text.
   Never read or require a ROM.
@@ -30,7 +31,13 @@ settings unless a rule below explicitly fixes their relationship.
   move with the pair. Ordinary moving platforms keep their independent motion.
   Original springs give a stronger bounce.
 - Enterable pipes use world-specific destinations and entrance pages. Side
-  entrances work when approached at their opening. Decorative pipes stay solid.
+  entrances work when approached at their opening. Arrival follows the source
+  pipe: a side pipe rises from a `null`-direction pipe on the destination page
+  (nearest to page*512+100; never a `down` or `right` mouth). A down pipe uses
+  the destination `header.entrance` (0/1 fall in from above with gravity, 2
+  stand, 3 mid-air drop), except castle-source down pipes rise like a side pipe
+  (`AltEntranceControl = 2` in SMB1 `VerticalPipeEntry`). Destination-record
+  `entrance` is unread. Solid pipes with no entry direction are arrival mouths.
 - Pipe travel preserves elapsed time, powers, NPC states, broken blocks, items,
   and counters within the stage. It does not itself rescue a character.
 - Stages whose route starts off the main area (1-2, 2-2, 4-2, 7-2) play that
@@ -40,9 +47,11 @@ settings unless a rule below explicitly fixes their relationship.
   work. TIME does not run, and Mario does not spawn or hunt, until control on
   main. The script is not a death. Death with lives left, Pause Restart, and
   other retries of that stage skip the strip and spawn at the start of main.
-- Preserve source warp/vine commands in the data. Campaign progression remains
-  sequential; climbing a vine goes to that vine's named destination and does
-  not skip worlds. See [Vines](#vines).
+- Warp-zone pipes skip to that world's first stage, as in SMB1: 1-2 columns
+  178/182/186 go to worlds 4/3/2; 4-2 column 214 starts world 5. Power-ups,
+  score, coins, and lives persist across a warp. Preserve source warp/vine
+  commands in the data. Climbing a vine goes to that vine's named destination
+  and does not skip worlds. See [Vines](#vines).
 - No logs or hiding spots are added. Bushes are scenery.
 - The goal is the castle doorway. Castle interiors use a visible inverted-white
   rescue doorway after the original bridge. On stages with a flagpole, the first of the player or

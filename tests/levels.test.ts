@@ -187,6 +187,43 @@ test("extracted hidden blocks keep 19 coins, 8 one-ups, and two 1-up bricks", ()
   );
 });
 
+test("1-2 and 4-2 warp-zone pipes go to distinct first stages", () => {
+  const area40 = areas.find((a) => a.id === "40");
+  const dest = (column) =>
+    area40.pipes
+      .find((p) => p.column === column)
+      .destinations.find((d) => d.world === 1);
+  assert.deepEqual(dest(178), {
+    world: 1,
+    area: "22",
+    page: 0,
+    entrance: 0,
+  });
+  assert.deepEqual(dest(182), {
+    world: 1,
+    area: "24",
+    page: 0,
+    entrance: 0,
+  });
+  assert.deepEqual(dest(186), {
+    world: 1,
+    area: "28",
+    page: 0,
+    entrance: 0,
+  });
+  const area41 = areas.find((a) => a.id === "41");
+  assert.deepEqual(
+    area41.pipes
+      .find((p) => p.column === 214)
+      .destinations.find((d) => d.world === 4),
+    { world: 4, area: "2a", page: 0, entrance: 0 },
+  );
+  assert.equal(levels.find((l) => l.id === "4-1").main, "22");
+  assert.equal(levels.find((l) => l.id === "3-1").main, "24");
+  assert.equal(levels.find((l) => l.id === "2-1").main, "28");
+  assert.equal(levels.find((l) => l.id === "5-1").main, "2a");
+});
+
 test("pipe routes preserve world-specific underground return pages and 8-4 connections", () => {
   const entry = areas
     .find((a) => a.id === "25")

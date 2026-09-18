@@ -1077,7 +1077,7 @@ p {
 }
 @media (max-height: 540px) and (min-width: 600px) {
   .topbar {
-    padding: 10px 20px;
+    padding: 8px 20px;
   }
   .brand {
     font-size: 7px;

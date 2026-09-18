@@ -146,6 +146,8 @@ export type Actor = {
     remaining: number;
     destArea: string;
     destPage: number;
+    arrival?: "rise" | "fall" | "stand" | "drop" | "warp";
+    destLevel?: number;
     clip?: PipeClip;
   };
   navVx?: number;
@@ -341,9 +343,9 @@ export class Simulation {
   private pipeOnPage(room: Room, page: number) {
     const start = page * 16,
       end = start + 16,
-      spawn = room.offset + page * 512 + 100;
+      spawn = this.pipeSpawnX(room, page);
     const onPage = room.data.pipes.filter(
-      (p) => p.column >= start && p.column < end,
+      (p) => p.column >= start && p.column < end && !p.direction,
     );
     if (!onPage.length) return;
     return onPage.reduce((best, pipe) => {
@@ -351,6 +353,33 @@ export class Simulation {
         bestX = room.offset + (best.column + best.width / 2) * 32;
       return Math.abs(x - spawn) < Math.abs(bestX - spawn) ? pipe : best;
     });
+  }
+  private pipeSpawnX(room: Room, page: number) {
+    return room.offset + page * 512 + 100;
+  }
+  private pipeFallX(room: Room, page: number, actor: Actor) {
+    // Two-tile ceiling shafts sit on page columns 1-2 (SMB1 $18/$28).
+    const pageLeft = room.offset + page * 512;
+    const shaftLeft = pageLeft + 32,
+      shaftRight = pageLeft + 96,
+      mid = pageLeft + 64,
+      half = actor.body.width / 2;
+    if (half * 2 >= shaftRight - shaftLeft) return mid;
+    return Math.min(shaftRight - half, Math.max(shaftLeft + half, mid));
+  }
+  private warpLevelFor(destination: { area: string; page: number }) {
+    if (destination.page !== 0) return;
+    const index = CAMPAIGN.findIndex(
+      (level) => level.main === destination.area && level.stage === 1,
+    );
+    if (index < 0 || CAMPAIGN[index]!.world === this.level.world) return;
+    return index;
+  }
+  private headerArrival(id: string): "fall" | "stand" | "drop" {
+    const entrance = areaData(id).header.entrance;
+    if (entrance === 2) return "stand";
+    if (entrance === 3) return "drop";
+    return "fall";
   }
   private tryPipe(actor: Actor, down: boolean, right: boolean) {
     if ((actor.pipeWait ?? 0) > 0 || this.inPipe(actor)) return false;
@@ -386,11 +415,23 @@ export class Simulation {
       pipe.destinations.find((d) => d.world === this.level.world) ??
       (room.data.id === "29" ? { area: this.level.main, page: 0 } : undefined);
     if (!destination) return false;
+    if (this.warpLevelFor(destination) !== undefined && actor !== this.player)
+      return false;
     const wasHuge = this.isHuge(actor);
     if (wasHuge) this.expireHuge(actor);
     const dir = pipe.direction === "down" ? "down" : "right";
     const vis = this.pipeVisual(actor);
     const left = room.offset + pipe.column * 32;
+    const destLevel = this.warpLevelFor(destination);
+    // Side pipes and castle down pipes set AltEntranceControl=2 (rise).
+    // Other down pipes use the destination header.entrance. Warp pipes skip
+    // worlds and spawn at that world's first stage (HandlePipeEntry).
+    const arrival =
+      destLevel !== undefined
+        ? "warp"
+        : dir === "right" || room.data.type === "castle"
+          ? "rise"
+          : this.headerArrival(destination.area);
     if (dir === "down")
       Body.setPosition(actor.body, {
         x: left + pipe.width * 16,
@@ -407,6 +448,8 @@ export class Simulation {
           : Math.max(vis.w, left + vis.w / 2 - actor.body.position.x),
       destArea: destination.area,
       destPage: destination.page,
+      arrival,
+      destLevel,
       clip: pipeClip(room.offset, room.data.width * 32, pipe, dir),
     };
     actor.idleDrop = undefined;
@@ -435,61 +478,40 @@ export class Simulation {
       else Body.setPosition(actor.body, { x: p.x - move, y: p.y });
       travel.remaining -= move;
       if (travel.remaining > 0) continue;
-      if (travel.phase === "enter") this.beginPipeExit(actor, travel);
-      else this.endPipeTravel(actor);
+      if (travel.phase === "enter") {
+        this.beginPipeExit(actor, travel);
+        if (this.mode !== "playing" && this.mode !== "finishing") return;
+      } else this.endPipeTravel(actor);
     }
   }
   private beginPipeExit(
     actor: Actor,
     travel: NonNullable<Actor["pipeTravel"]>,
   ) {
+    if (
+      travel.arrival === "warp" &&
+      actor === this.player &&
+      travel.destLevel !== undefined
+    ) {
+      this.warpTo(travel.destLevel);
+      return;
+    }
+    if (travel.arrival === "warp") travel = { ...travel, arrival: "stand" };
     const target = this.loadRoom(travel.destArea);
     actor.areaId = target.data.id;
-    const dest = this.pipeOnPage(target, travel.destPage);
     const vis = this.pipeVisual(actor);
     const height = actor.body.height;
-    if (!dest) {
-      const x = target.offset + travel.destPage * 512 + 100;
-      target.dropOnto(actor, x);
-      Body.setPosition(actor.body, {
-        x: Math.max(
-          target.offset + vis.w / 2,
-          actor.body.position.x - vis.w,
-        ),
-        y: actor.body.position.y,
-      });
-      actor.facing = 1;
-      actor.pipeTravel = {
-        phase: "exit",
-        dir: "right",
-        remaining: vis.w,
-        destArea: travel.destArea,
-        destPage: travel.destPage,
-      };
-    } else {
-      const left = target.offset + dest.column * 32,
-        top = MAP_TOP + dest.row * 32,
-        clip = pipeClip(
-          target.offset,
-          target.data.width * 32,
-          dest,
-          dest.direction === "right" ? "left" : "up",
-        );
-      if (dest.direction === "right") {
-        Body.setPosition(actor.body, {
-          x: left + dest.width * 16,
-          y: top + dest.height * 32 - height / 2,
-        });
-        actor.facing = -1;
-        actor.pipeTravel = {
-          phase: "exit",
-          dir: "left",
-          remaining: dest.width * 16 + vis.w / 2 + 0.5,
-          destArea: travel.destArea,
-          destPage: travel.destPage,
-          clip,
-        };
-      } else {
+    if (travel.arrival === "rise") {
+      const dest = this.pipeOnPage(target, travel.destPage);
+      if (dest) {
+        const left = target.offset + dest.column * 32,
+          top = MAP_TOP + dest.row * 32,
+          clip = pipeClip(
+            target.offset,
+            target.data.width * 32,
+            dest,
+            "up",
+          );
         Body.setPosition(actor.body, {
           x: left + dest.width * 16,
           y: top + vis.h - height / 2,
@@ -500,21 +522,63 @@ export class Simulation {
           remaining: vis.h,
           destArea: travel.destArea,
           destPage: travel.destPage,
+          arrival: travel.arrival,
           clip,
         };
+        if (actor === this.player) this.events.push("pipe");
+        return;
       }
+      this.standAt(actor, target, this.pipeSpawnX(target, travel.destPage));
+      this.finishPipeArrival(actor, true);
+      if (actor === this.player) this.events.push("pipe");
+      return;
     }
+    const spawnX =
+      travel.arrival === "stand"
+        ? this.pipeSpawnX(target, travel.destPage)
+        : this.pipeFallX(target, travel.destPage, actor);
+    if (travel.arrival === "stand") {
+      this.standAt(actor, target, spawnX);
+      this.finishPipeArrival(actor, true);
+      if (actor === this.player) this.events.push("pipe");
+      return;
+    }
+    const top =
+      travel.arrival === "drop" ? MAP_TOP + 0x50 * 2 : MAP_TOP - 48;
+    Body.setPosition(actor.body, {
+      x: spawnX,
+      y: top + height / 2,
+    });
+    actor.facing = 1;
+    this.finishPipeArrival(actor, false);
     if (actor === this.player) this.events.push("pipe");
   }
-  private endPipeTravel(actor: Actor) {
+  private standAt(actor: Actor, room: Room, x: number) {
+    if (!room.standOnFloor(actor, x)) room.dropOnto(actor, x);
+    actor.facing = 1;
+  }
+  private warpTo(levelIndex: number) {
+    const flower = this.player.flower,
+      scale = this.player.scale,
+      starLeft = this.player.starLeft;
+    this.levelIndex = levelIndex;
+    this.reset("intro");
+    if (scale !== this.player.scale) this.resize(this.player, scale, false);
+    this.player.flower = flower;
+    this.player.starLeft = starLeft;
+  }
+  private finishPipeArrival(actor: Actor, grounded: boolean) {
     actor.pipeTravel = undefined;
     actor.pipeWait = T.pipeCooldown;
     actor.homeX = actor.body.position.x;
-    actor.grounded = true;
+    actor.grounded = grounded;
     Body.setFrozen(actor.body, false);
     Body.setVelocity(actor.body, { x: 0, y: 0 });
     if (actor === this.player && actor.areaId === this.level.main)
       this.endPipeIntro();
+  }
+  private endPipeTravel(actor: Actor) {
+    this.finishPipeArrival(actor, true);
   }
   private endPipeIntro() {
     if (!this.pipeIntro) return;
@@ -2941,6 +3005,7 @@ export class Simulation {
     }
     this.updatePipeTravel(dt);
     this.updateVines(dt);
+    if (this.mode !== "playing" && this.mode !== "finishing") return;
     if (this.mode === "playing" && !this.inPipe(this.player)) {
       const play = this.pipeIntro
         ? { ...emptyInput(), right: true }
