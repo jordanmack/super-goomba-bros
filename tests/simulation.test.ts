@@ -7,7 +7,7 @@ import {
   emptyInput,
 } from "../src/game/simulation.ts";
 import { MAP_TOP, PHRASES, TUNING as T, blockDrawY } from "../src/game/config.ts";
-import { firstEmptySpawnCell } from "../src/game/spawn-cell.ts";
+import { firstEmptySpawnCell, spawnCellCenter } from "../src/game/spawn-cell.ts";
 import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
@@ -15,7 +15,11 @@ const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
 const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
-import { itemSpriteSize } from "../src/game/simulation.ts";
+import {
+  itemDrawY,
+  itemHoldHidden,
+  itemSpriteSize,
+} from "../src/game/simulation.ts";
 import { flagTextureKey } from "../src/game/smb-sprites.ts";
 
 class Simulation extends RulesSimulation {
@@ -580,7 +584,7 @@ function assertEmergeClip(s: Simulation, kind: ItemKind) {
     );
     assert.ok(clip.x <= item.body.position.x - size / 2 + 1e-6);
     assert.ok(clip.x + clip.w >= item.body.position.x + size / 2 - 1e-6);
-    if (item.body.position.y + size / 2 > top) sawBelow = true;
+    if (itemDrawY(item) + size / 2 > top) sawBelow = true;
   }
   assert.ok(sawBelow, "item extends below the bouncing block during emerge");
   tick(s, 0.5);
@@ -6955,7 +6959,27 @@ test("SCORE may go negative from died penalties", () => {
   assert.ok(s.score < 0);
 });
 
-test("cheat drop spawns a free item in the first empty cell under the ceiling", () => {
+test("8x mushroom draw shares the 32px item's visible bottom", () => {
+  const s = game();
+  const box = s.obstacles.find((c) => c.question && !c.hidden && !c.used)!;
+  s.hitBlock(box, s.player);
+  const item = s.items[0];
+  item.kind = "mushroom";
+  const bottom32 = itemDrawY(item) + itemSpriteSize("mushroom") / 2;
+  assert.equal(itemDrawY(item), item.body.position.y);
+  item.kind = "mushroom8x";
+  const bottom8x = itemDrawY(item) + itemSpriteSize("mushroom8x") / 2;
+  assert.equal(bottom8x, bottom32);
+  assert.equal(itemDrawY(item), item.body.position.y - 8);
+  item.kind = "flower";
+  assert.equal(itemDrawY(item), item.body.position.y);
+  item.kind = "star";
+  assert.equal(itemDrawY(item), item.body.position.y);
+  item.kind = "oneUp";
+  assert.equal(itemDrawY(item), item.body.position.y);
+});
+
+test("cheat drop hangs in the sky, blinks, then falls straight down", () => {
   const s = game();
   const room = s.activeRoom;
   const p = s.player.body.position;
@@ -6965,16 +6989,51 @@ test("cheat drop spawns a free item in the first empty cell under the ceiling", 
     room.data.width,
     p.x,
     p.y,
+    0,
   );
   assert.ok(cell);
   const item = s.dropCheatItem("star");
   assert.ok(item);
   assert.equal(item.kind, "star");
   assert.equal(item.emerge, 0);
-  assert.equal(item.body.frozen, false);
+  assert.equal(item.hold, T.cheatDropHold);
+  assert.equal(item.drop, true);
+  assert.equal(item.body.frozen, true);
   assert.equal(item.body.position.x, cell.x);
   assert.equal(item.body.position.y, cell.y);
+  assert.ok(item.body.position.y < MAP_TOP + T.brickSize);
   assert.ok(s.events.includes("appear"));
+  const hangX = item.body.position.x;
+  const hangY = item.body.position.y;
+  const hidden = new Set<boolean>();
+  at(s, hangX + 240);
+  for (let i = 0; i < Math.round((T.cheatDropHold / 2) * 60); i++) {
+    hidden.add(itemHoldHidden(item));
+    tick(s, dt);
+  }
+  assert.ok(item.hold > 0);
+  assert.equal(item.body.frozen, true);
+  assert.equal(item.body.position.x, hangX);
+  assert.equal(item.body.position.y, hangY);
+  assert.equal(item.body.velocity.x, 0);
+  assert.equal(hidden.has(true) && hidden.has(false), true);
+  Body.setPosition(s.player.body, { x: hangX, y: hangY });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.ok(s.items.includes(item), "not collectable during the hold");
+  tick(s, item.hold + dt);
+  assert.equal(item.hold, 0);
+  assert.equal(item.body.frozen, false);
+  const fallY = item.body.position.y;
+  tick(s, 0.15);
+  assert.equal(item.body.position.x, hangX);
+  assert.ok(item.body.position.y > fallY);
+  assert.equal(item.body.velocity.x, 0);
+  assert.ok(s.items.includes(item), "not collectable while falling");
+  at(s, hangX + 240);
+  tick(s, 2);
+  assert.equal(item.drop, false);
+  assert.ok(item.body.position.y > hangY + 40);
   const brick = s.obstacles.find(
     (c) => c.kind === "brick" && !c.hidden && c.body && c.y < p.y - 40,
   )!;
@@ -6985,6 +7044,7 @@ test("cheat drop spawns a free item in the first empty cell under the ceiling", 
     s.activeRoom.data.width,
     s.player.body.position.x,
     s.player.body.position.y,
+    0,
   )!;
   s.events.length = 0;
   const dropped = s.dropCheatItem("mushroom");
@@ -6993,6 +7053,122 @@ test("cheat drop spawns a free item in the first empty cell under the ceiling", 
   assert.equal(dropped.body.position.y, under.y);
   assert.ok(dropped.body.position.y > brick.y);
   assert.ok(s.events.includes("appear"));
+});
+
+test("cheat drop hangs under a solid ceiling instead of on the roof", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  s.player.areaId = "40";
+  const room = s.loadRoom("40");
+  at(s, room.offset + 10 * T.brickSize + 16, T.groundY - 14);
+  const cell = firstEmptySpawnCell(
+    room.solids,
+    room.offset,
+    room.data.width,
+    s.player.body.position.x,
+    s.player.body.position.y,
+    0,
+  );
+  assert.ok(cell);
+  assert.ok(cell.y > spawnCellCenter(room.offset, 0, 0).y);
+  const item = s.dropCheatItem("star");
+  assert.ok(item);
+  assert.equal(item.body.position.x, cell.x);
+  assert.equal(item.body.position.y, cell.y);
+  assert.equal(
+    room.solids.some((solid) => {
+      if (solid.headOnly) return false;
+      const b = solid.bounds;
+      const p = item.body.position;
+      return (
+        p.x + 12 > b.min.x &&
+        p.x - 12 < b.max.x &&
+        p.y + 14 > b.min.y &&
+        p.y - 14 < b.max.y
+      );
+    }),
+    false,
+  );
+});
+
+test("cheat drop does not land on a hidden head-only block", () => {
+  const s = game();
+  const item = s.dropCheatItem("mushroom");
+  assert.ok(item);
+  const trap = s.physics.rectangle(item.body.position.x, 200, 32, 32, true);
+  trap.headOnly = true;
+  s.solids.push(trap);
+  at(s, item.body.position.x + 400);
+  tick(s, T.cheatDropHold + dt);
+  let passed = false;
+  for (let i = 0; i < 180 && s.items.includes(item); i++) {
+    tick(s, dt);
+    const b = item.body.bounds;
+    if (b.max.y > trap.bounds.min.y && b.min.y < trap.bounds.max.y) {
+      passed = true;
+      assert.equal(item.drop, true);
+      assert.equal(item.body.velocity.x, 0);
+    }
+    if (item.drop === false) break;
+  }
+  assert.ok(passed, "fell through the hidden block");
+  assert.equal(item.drop, false);
+  assert.ok(item.body.position.y > trap.bounds.max.y + 20);
+});
+
+test("cheat drop is collectable by any character after it lands", () => {
+  const collectAfterLand = (who: "player" | "npc" | "mario") => {
+    const s = game();
+    parkNpcs(s, []);
+    const item = s.dropCheatItem("mushroom");
+    assert.ok(item);
+    at(s, item.body.position.x + 400);
+    tick(s, T.cheatDropHold + 2);
+    assert.equal(item.drop, false);
+    assert.ok(s.items.includes(item));
+    if (who === "mario") {
+      s.marioActive = true;
+      Body.setFrozen(s.mario.body, false);
+    }
+    const actor =
+      who === "player" ? s.player : who === "npc" ? s.npcs[0] : s.mario;
+    if (who === "npc") {
+      actor.alive = true;
+      actor.saved = false;
+    }
+    Body.setPosition(actor.body, { ...item.body.position });
+    tick(s, dt);
+    assert.equal(s.items.includes(item), false, `${who} collects after land`);
+  };
+  collectAfterLand("player");
+  collectAfterLand("npc");
+  collectAfterLand("mario");
+});
+
+test("head-hit and smash item spawns do not use the cheat-drop hold", () => {
+  const s = game();
+  const box = s.obstacles.find((c) => c.question && !c.hidden && !c.used)!;
+  s.hitBlock(box, s.player);
+  const emerging = s.items[0];
+  assert.ok(emerging.emerge > 0);
+  assert.equal(emerging.hold, 0);
+  assert.equal(emerging.drop, undefined);
+  const smash = game();
+  parkNpcs(smash, []);
+  give(smash, smash.player, "mushroom8x");
+  const smashBox = smash.obstacles.find(
+    (c) => c.question && !c.hidden && !c.used && !c.broken && c.y > 300,
+  )!;
+  smash.random = () => 0.5;
+  at(smash, smashBox.x, smashBox.y);
+  tick(smash, dt);
+  const flying = smash.items.find((entry) => entry.smash);
+  assert.ok(flying);
+  assert.equal(flying.emerge, 0);
+  assert.equal(flying.hold, 0);
+  assert.equal(flying.drop, undefined);
 });
 
 test("cheat drop ignores title, intro, dead, finishing, and pipe travel", () => {

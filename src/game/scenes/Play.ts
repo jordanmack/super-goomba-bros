@@ -3,7 +3,13 @@ import { MAP_TOP, TUNING as T, blockDrawY } from "../config";
 import { isSolidTile, themeFor } from "../levels";
 import type { Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
-import { itemSpriteSize, type Actor, type Simulation } from "../simulation";
+import {
+  itemDrawY,
+  itemHoldHidden,
+  itemSpriteSize,
+  type Actor,
+  type Simulation,
+} from "../simulation";
 import {
   flagTextureKey,
   SWEAT_DROP_HEIGHT,
@@ -166,6 +172,7 @@ export class Play extends Phaser.Scene {
         .setTint(tint)
         .setFlipX(false)
         .setRotation(0)
+        .setAlpha(1)
         .setVisible(true);
       return sprite;
     };
@@ -177,13 +184,14 @@ export class Play extends Phaser.Scene {
       const size = itemSpriteSize(item.kind);
       const sprite = image(
         item.body.position.x,
-        item.body.position.y,
+        itemDrawY(item),
         size,
         size,
         item.kind,
         4,
       );
       sprite.setRotation(0);
+      sprite.setAlpha(itemHoldHidden(item) ? 0.25 : 1);
       if (item.clip) {
         liveItems.add(item.id);
         this.bindItemClip(item.id, sprite, item.clip);

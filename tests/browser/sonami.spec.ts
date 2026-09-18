@@ -99,7 +99,7 @@ test("mute still unlocks Sonami without a coin tone", async ({ page }) => {
     .toBe(true);
 });
 
-test("tray click while playing spawns a free item under the ceiling", async ({
+test("tray click while playing hangs a blinking item in the sky", async ({
   page,
 }) => {
   await waitGame(page);
@@ -122,12 +122,18 @@ test("tray click while playing spawns a free item under the ceiling", async ({
       kind: last?.kind,
       emerge: last?.emerge,
       frozen: last?.body.frozen,
+      hold: last?.hold,
+      drop: last?.drop,
+      y: last?.body.position.y,
       count: s.items.length,
     };
   });
   expect(item.kind).toBe("star");
   expect(item.emerge).toBe(0);
-  expect(item.frozen).toBe(false);
+  expect(item.frozen).toBe(true);
+  expect(item.hold).toBeGreaterThan(0);
+  expect(item.drop).toBe(true);
+  expect(item.y).toBeLessThan(50);
   expect(item.count).toBeGreaterThan(before);
 });
 

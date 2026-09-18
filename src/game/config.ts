@@ -97,6 +97,7 @@ export const TUNING = {
   mushroom8xChance: 0.1,
   transformSeconds: 0.8,
   transformBlinkHz: 12,
+  cheatDropHold: 0.8,
   marioStunSeconds: 2,
   marioDefeatSeconds: 3,
   fireballSlots: 2,

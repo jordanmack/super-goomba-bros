@@ -50,7 +50,8 @@ On the title screen, consecutive `up up down down left right left right B A`
 unlocks a session-only power-up tray (star, 2x, 3x, 8x, flower, 1-up). Use
 arrow keys then letter B then letter A, or a gamepad D-pad plus B then A.
 WASD does not count. A click while playing drops that item in the player
-column. Reload clears the tray.
+column. It hangs in the sky or under a ceiling, blinks, then falls straight
+down. Reload clears the tray.
 
 Each touch, mouse pointer, and key has an independent hold. Sliding changes
 actions; sliding out releases them. Pause, restart, and interruptions clear input.

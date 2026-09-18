@@ -57,6 +57,7 @@ export function firstEmptySpawnCell(
   roomWidth: number,
   playerX: number,
   playerY: number,
+  minRow = AREA_TOP_ROW,
 ): { x: number; y: number } | null {
   if (roomWidth <= 0) return null;
   const column = Math.max(
@@ -64,9 +65,9 @@ export function firstEmptySpawnCell(
     Math.min(roomWidth - 1, Math.floor((playerX - roomOffset) / T.brickSize)),
   );
   const playerRow = Math.floor((playerY - MAP_TOP) / T.brickSize);
-  let startRow = AREA_TOP_ROW;
-  const top = Math.max(AREA_TOP_ROW, Math.min(AREA_BOTTOM_ROW, playerRow - 1));
-  for (let row = top; row >= AREA_TOP_ROW; row--) {
+  let startRow = minRow;
+  const top = Math.max(minRow, Math.min(AREA_BOTTOM_ROW, playerRow - 1));
+  for (let row = top; row >= minRow; row--) {
     const cell = spawnCellCenter(roomOffset, column, row);
     if (spawnCellBlocked(solids, cell.x, cell.y)) {
       startRow = row + 1;

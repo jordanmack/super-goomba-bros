@@ -256,4 +256,12 @@ test("first empty spawn cell is under the ceiling or at the area top", () => {
     firstEmptySpawnCell([hidden], 0, width, playerX, playerY),
     spawnCellCenter(0, column, AREA_TOP_ROW),
   );
+  assert.deepEqual(
+    firstEmptySpawnCell([], 0, width, playerX, playerY, 0),
+    spawnCellCenter(0, column, 0),
+  );
+  assert.deepEqual(
+    firstEmptySpawnCell([ceiling], 0, width, playerX, playerY, 0),
+    spawnCellCenter(0, column, 6),
+  );
 });

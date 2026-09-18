@@ -114,9 +114,11 @@ Nothing is stored.
 
 The tray sits at the bottom of the playfield, above the on-screen pad, with
 star, 2x, 3x, 8x, flower, and 1-up. A click while playing spawns that item in
-the player column at the first empty cell under the ceiling above the player,
-or the top of the area if there is no ceiling. The item is already free, not
-inside a solid, and plays the appear cue. Ignore clicks on the title, intro,
+the player column. It hangs in the sky when that column is open, or at the
+first empty cell under a ceiling. It blinks in place for the cheat-drop hold,
+stays at that world position, and is not collectable until it lands. Then it
+falls straight down with no horizontal spawn drift. Any character can collect
+it after it lands. It plays the appear cue. Ignore clicks on the title, intro,
 GAME OVER, dead, or finishing screens, and while the player is in a pipe.
 
 A side pipe can also be entered by walking into its opening. There is no Hide

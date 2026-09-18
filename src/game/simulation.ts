@@ -194,6 +194,13 @@ export const fireballScaleFor = (scale: number) =>
       : 1;
 export const itemSpriteSize = (kind: ItemKind) =>
   kind === "mushroom8x" ? 48 : 32;
+/** Draw Y so a larger sprite shares the 32px item's visible bottom. */
+export function itemDrawY(item: { kind: ItemKind; body: Body }) {
+  return item.body.position.y - (itemSpriteSize(item.kind) - 32) / 2;
+}
+export function itemHoldHidden(item: { hold: number; age: number }) {
+  return item.hold > 0 && Math.floor(item.age * T.transformBlinkHz) % 2 === 1;
+}
 export type Item = {
   id: number;
   kind: ItemKind;
@@ -202,6 +209,8 @@ export type Item = {
   originY: number;
   direction: number;
   age: number;
+  hold: number;
+  drop?: boolean;
   block?: Obstacle;
   clip?: { x: number; y: number; w: number; h: number };
   smash?: boolean;
@@ -1211,9 +1220,11 @@ export class Simulation {
       room.data.width,
       p.x,
       p.y,
+      0,
     );
     if (!cell) return null;
     const body = this.physics.rectangle(cell.x, cell.y, 24, 28, false);
+    Body.setFrozen(body, true);
     const item: Item = {
       id: this.nextId++,
       kind,
@@ -1222,6 +1233,8 @@ export class Simulation {
       originY: cell.y,
       direction: this.player.facing || 1,
       age: 0,
+      hold: T.cheatDropHold,
+      drop: true,
     };
     this.items.push(item);
     this.events.push("appear");
@@ -1244,6 +1257,7 @@ export class Simulation {
       originY: c.y,
       direction: facing || 1,
       age: 0,
+      hold: 0,
       block: c,
       smash: instant,
     };
@@ -1679,6 +1693,11 @@ export class Simulation {
   private updateItems(dt: number) {
     for (const item of [...this.items]) {
       item.age += dt;
+      if (item.hold > 0) {
+        item.hold = Math.max(0, item.hold - dt);
+        if (item.hold === 0) Body.setFrozen(item.body, false);
+        continue;
+      }
       if (item.emerge > 0) {
         item.emerge = Math.max(0, item.emerge - dt);
         Body.setPosition(item.body, {
@@ -1695,6 +1714,7 @@ export class Simulation {
         halfH = item.body.height / 2;
       const floor = this.solids.some(
         (s) =>
+          !s.headOnly &&
           p.x + halfW > s.bounds.min.x &&
           p.x - halfW < s.bounds.max.x &&
           Math.abs(p.y + halfH - s.bounds.min.y) < 5,
@@ -1706,10 +1726,11 @@ export class Simulation {
           p.y > s.bounds.min.y &&
           p.y < s.bounds.max.y,
       );
-      if (wall) item.direction *= -1;
+      if (wall && !item.drop) item.direction *= -1;
+      const falling = !!item.drop && !floor;
       Body.setVelocity(item.body, {
         x:
-          item.kind === "flower" && (!item.smash || floor)
+          falling || (item.kind === "flower" && (!item.smash || floor))
             ? 0
             : item.direction * (item.kind === "star" ? 2.8 : 1.8),
         y:
@@ -1717,18 +1738,21 @@ export class Simulation {
             ? -7.5
             : item.body.velocity.y,
       });
-      for (const a of [this.player, ...this.npcs, this.mario]) {
-        if (
-          !a.alive ||
-          a.saved ||
-          this.inPipe(a) ||
-          (a === this.mario && !this.marioActive) ||
-          !this.overlapBody(a.body, item.body)
-        )
-          continue;
-        if (item.ignoreActor === a) continue;
-        this.collect(a, item);
-        break;
+      if (item.drop && floor) item.drop = false;
+      if (!item.drop) {
+        for (const a of [this.player, ...this.npcs, this.mario]) {
+          if (
+            !a.alive ||
+            a.saved ||
+            this.inPipe(a) ||
+            (a === this.mario && !this.marioActive) ||
+            !this.overlapBody(a.body, item.body)
+          )
+            continue;
+          if (item.ignoreActor === a) continue;
+          this.collect(a, item);
+          break;
+        }
       }
       if (
         item.ignoreActor &&

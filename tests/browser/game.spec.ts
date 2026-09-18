@@ -619,6 +619,7 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
       return n;
     };
     const sizes: Record<string, number | null> = {};
+    const overhangs: Record<string, number | null> = {};
     const previous = s.random;
     s.random = () => 0.5;
     for (const kind of [
@@ -636,6 +637,12 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
         (entry: any) => entry.visible && entry.texture.key === kind,
       );
       sizes[kind] = sprite?.displayWidth ?? null;
+      overhangs[kind] =
+        sprite != null
+          ? sprite.y +
+            sprite.displayHeight / 2 -
+            (item.body.position.y + item.body.height / 2)
+          : null;
       s.physics.remove(item.body);
       s.items = [];
     }
@@ -650,6 +657,7 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
       blueOnOneUp: exact("oneUp", [32, 136, 252]),
       blueOn2x: exact("mushroom", [32, 136, 252]),
       sizes,
+      overhangs,
     };
   });
   expect(drawn.mushroom.red).toBeGreaterThan(drawn.mushroom.green);
@@ -670,6 +678,9 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
   expect(drawn.sizes.mushroom3x).toBe(32);
   expect(drawn.sizes.mushroom8x).toBe(48);
   expect(drawn.sizes.oneUp).toBe(32);
+  expect(drawn.overhangs.mushroom8x).toBe(drawn.overhangs.mushroom);
+  expect(drawn.overhangs.mushroom3x).toBe(drawn.overhangs.mushroom);
+  expect(drawn.overhangs.oneUp).toBe(drawn.overhangs.mushroom);
 });
 
 test("player flagpole flag is mushroom art and Mario keeps the original flag", async ({
