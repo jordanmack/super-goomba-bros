@@ -258,7 +258,11 @@ does not kill that NPC. Mario's bounce or break kills them, including Koopas,
 unless they are 8x; this is not a stomp into a shell.
 
 Visible question blocks that are not hidden 1-up or hidden coin blocks release
-one random star, mushroom, or flower and become a used block. Original hidden
+one fully random prize from a shared pool of a coin plus the existing
+power-ups (star, mushroom, or flower) and become a used block. Head-hit from
+below and 8x smash use that same prize rule. Smash may break the box; the
+prize is still that roll. Visible question prizes are not authored per block
+and do not use random percentages. Original hidden
 blocks are revealed by a head hit. An unrevealed hidden block does not support
 a character landing from above. Hidden coin blocks release a coin, then stay as
 a used platform. A player head hit adds that coin to the count and SCORE. A

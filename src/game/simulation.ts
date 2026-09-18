@@ -1186,11 +1186,7 @@ export class Simulation {
       return;
     }
     this.events.push("bump");
-    if (c.question) {
-      this.reveal(c);
-      this.spawnItem(c, this.rollItem(), hitter.facing);
-      this.events.push("appear");
-    }
+    if (c.question) this.grantQuestionPrize(c, hitter, false);
   }
 
   private reveal(c: Obstacle) {
@@ -1347,15 +1343,39 @@ export class Simulation {
     this.events.push("power");
   }
 
+  private rollMushroom(): MushroomKind {
+    const roll = this.random();
+    if (roll >= 1 - T.mushroom8xChance) return "mushroom8x";
+    if (roll >= 1 - T.mushroom8xChance - T.mushroom3xChance) return "mushroom3x";
+    return "mushroom";
+  }
+
   private rollItem(): ItemKind {
     const kind = (["star", "mushroom", "flower"] as const)[
       Math.min(2, Math.floor(this.random() * 3))
     ];
     if (kind !== "mushroom") return kind;
-    const roll = this.random();
-    if (roll >= 1 - T.mushroom8xChance) return "mushroom8x";
-    if (roll >= 1 - T.mushroom8xChance - T.mushroom3xChance) return "mushroom3x";
-    return "mushroom";
+    return this.rollMushroom();
+  }
+
+  private rollQuestionPrize(): ItemKind | "coin" {
+    const kind = (["coin", "star", "mushroom", "flower"] as const)[
+      Math.min(3, Math.floor(this.random() * 4))
+    ];
+    if (kind !== "mushroom") return kind;
+    return this.rollMushroom();
+  }
+
+  private grantQuestionPrize(c: Obstacle, hitter: Actor, instant: boolean) {
+    this.reveal(c);
+    const prize = this.rollQuestionPrize();
+    if (prize === "coin") {
+      this.popCoin(hitter, c.x, c.y);
+      return;
+    }
+    const item = this.spawnItem(c, prize, hitter.facing, instant);
+    if (instant) item.ignoreActor = hitter;
+    else this.events.push("appear");
   }
 
   private setGoombaScale(a: Actor, scale: number, blink = false) {
@@ -1469,12 +1489,11 @@ export class Simulation {
       this.spawnItem(c, "star", hitter.facing, true).ignoreActor = hitter;
       return;
     }
-    if (c.content === "coin") {
-      this.reveal(c);
-      this.popCoin(hitter, c.x, c.y);
+    if (c.question) {
+      this.grantQuestionPrize(c, hitter, true);
       return;
     }
-    if (c.question || c.content === "power-up") {
+    if (c.content === "power-up") {
       this.reveal(c);
       this.spawnItem(c, this.rollItem(), hitter.facing, true).ignoreActor =
         hitter;

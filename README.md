@@ -69,7 +69,8 @@ castle door, including after leaving an underground or water area. They keep
 moving while the player visits another area. Mario notices running crowds and
 warnings, then pursues, jumps, and fires when powered.
 
-Visible question blocks release random stars, mushrooms, or flowers. Hidden
+Visible question blocks release a fully random coin, star, mushroom, or flower.
+Head-hit and 8x smash use that same prize rule. Hidden
 coin and 1-up blocks keep their original contents. 2x mushrooms are common;
 3x and timed 8x mushrooms appear less often. Mushrooms grow Goomba and NPC
 size only to a larger tier. A same-size or smaller mushroom scores 1000 for

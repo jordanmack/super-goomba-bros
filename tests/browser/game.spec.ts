@@ -31,7 +31,10 @@ test("Starman music follows only player and Mario stars and respects death cues"
     page.evaluate((who) => {
       const s = (window as any).__game.sim;
       const box = s.obstacles.find((c: any) => c.question && !c.used);
+      const previous = s.random;
+      s.random = () => 0.5;
       s.hitBlock(box, s.player);
+      s.random = previous;
       const item = s.items.at(-1);
       item.kind = "star";
       s.collect(who === "npc" ? s.npcs[0] : s[who], item);
@@ -184,7 +187,10 @@ test("area music resumes after Mario death from the saved seek", async ({
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
     const box = s.obstacles.find((c: any) => c.question && !c.used);
+    const previous = s.random;
+    s.random = () => 0.5;
     s.hitBlock(box, s.player);
+    s.random = previous;
     const item = s.items.at(-1);
     item.kind = "star";
     s.collect(s.player, item);
@@ -312,7 +318,10 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
     const s = g.sim;
     s.marioReturn = 1e6;
     const box = s.obstacles.find((c: any) => c.question);
+    const previous = s.random;
+    s.random = () => 0.5;
     s.hitBlock(box, s.player);
+    s.random = previous;
     s.items[0].kind = "flower";
     s.collect(s.player, s.items[0]);
     g.renderer.render(s, 0);
@@ -419,6 +428,8 @@ test("blocks bounce and disappear independently; item powers render with touch f
     s.breakBrick(brick);
     g.renderer.render(s, 0);
     const disappeared = !mesh.visible;
+    const previous = s.random;
+    s.random = () => 0.5;
     for (const kind of ["mushroom", "flower", "star"]) {
       const box = s.obstacles.find((c: any) => c.question && !c.used);
       s.hitBlock(box, s.player);
@@ -426,6 +437,7 @@ test("blocks bounce and disappear independently; item powers render with touch f
       item.kind = kind;
       s.collect(s.player, item);
     }
+    s.random = previous;
     g.renderer.render(s, 0);
     return {
       bounced,
@@ -503,6 +515,8 @@ test("question-block items stay upright after fireball sprite reuse", async ({
       "star",
     ] as const;
     const itemRotations: Record<string, number | null> = {};
+    const previous = s.random;
+    s.random = () => 0.5;
     for (const kind of kinds) {
       const box = s.obstacles.find((c: any) => c.question && !c.used);
       s.hitBlock(box, s.player);
@@ -518,6 +532,7 @@ test("question-block items stay upright after fireball sprite reuse", async ({
     }
     const box = s.obstacles.find((c: any) => c.question && !c.used);
     s.hitBlock(box, s.player);
+    s.random = previous;
     const live = s.items.at(-1);
     s.fireballs = [{ ...fireball, id: 9002 }];
     g.renderer.render(s, 0);
@@ -597,6 +612,8 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
       return n;
     };
     const sizes: Record<string, number | null> = {};
+    const previous = s.random;
+    s.random = () => 0.5;
     for (const kind of [
       "mushroom",
       "mushroom3x",
@@ -615,6 +632,7 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
       s.physics.remove(item.body);
       s.items = [];
     }
+    s.random = previous;
     return {
       mushroom: caps("mushroom"),
       mushroom3x: caps("mushroom3x"),
@@ -1581,7 +1599,10 @@ test("original recordings decode and play as effects, with level clear replacing
     a.event("warn");
     const s = (window as any).__game.sim;
     const box = s.obstacles.find((c: any) => c.question && !c.used);
+    const previous = s.random;
+    s.random = () => 0.5;
     s.hitBlock(box, s.player);
+    s.random = previous;
     const released = s.events.slice();
     for (const event of s.events.splice(0)) a.event(event);
     const bumpAndAppear =

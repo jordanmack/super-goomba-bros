@@ -67,7 +67,10 @@ function give(s: Simulation, actor: Actor, kind: ItemKind) {
   const box = s.obstacles.find(
     (c) => c.question && !c.used && !c.hidden && c.content !== "1-up",
   )!;
+  const previous = s.random;
+  s.random = () => 0.5;
   s.hitBlock(box, s.player);
+  s.random = previous;
   const item = s.items.at(-1)!;
   item.kind = kind;
   s.collect(actor, item);
@@ -591,21 +594,35 @@ test("emerging items stay clipped above the bouncing block", () => {
 
 test("question blocks release each random item once, including on Mario hits", () => {
   for (const [roll, kind] of [
-    [0, "star"],
+    [0, "coin"],
+    [0.25, "star"],
     [0.5, "mushroom"],
     [0.99, "flower"],
   ] as const) {
     const s = game();
     s.random = () => roll;
     const box = s.obstacles.find((c) => c.question && !c.hidden)!;
+    const coins = s.coins;
     s.hitBlock(box, s.mario);
-    assert.equal(s.items[0].kind, kind);
     assert.equal(box.used, true);
     assert.equal(box.broken, false);
-    tick(s, 0.5);
-    assert.ok(Number.isFinite(s.items[0].body.position.y));
-    s.hitBlock(box, s.player);
-    assert.equal(s.items.length, 1);
+    if (kind === "coin") {
+      assert.equal(s.items.length, 0);
+      assert.equal(s.coins, coins);
+      assert.equal(s.coinPops.length, 1);
+      assert.ok(s.events.includes("coin"));
+      assert.equal(s.events.includes("appear"), false);
+      s.hitBlock(box, s.player);
+      assert.equal(s.items.length, 0);
+      assert.equal(s.coins, coins);
+      assert.equal(s.coinPops.length, 1);
+    } else {
+      assert.equal(s.items[0].kind, kind);
+      tick(s, 0.5);
+      assert.ok(Number.isFinite(s.items[0].body.position.y));
+      s.hitBlock(box, s.player);
+      assert.equal(s.items.length, 1);
+    }
     assert.ok(s.solids.includes(box.body!));
     s.reset();
     assert.equal(s.items.length, 0);
@@ -3823,7 +3840,7 @@ test("mushrooms grow 2x, 3x, or timed 8x; same or smaller score 1000", () => {
 
 test("question blocks keep star and flower and roll rarer 3x and 8x mushrooms", () => {
   for (const [first, second, kind] of [
-    [0, 0, "star"],
+    [0.25, 0, "star"],
     [0.5, 0, "mushroom"],
     [0.5, 0.7, "mushroom3x"],
     [0.5, 0.95, "mushroom8x"],
@@ -3839,6 +3856,84 @@ test("question blocks keep star and flower and roll rarer 3x and 8x mushrooms", 
     s.hitBlock(box, s.mario);
     assert.equal(s.items[0].kind, kind);
     assert.equal(box.used, true);
+  }
+});
+
+test("visible question head-hit and 8x smash share the same prize rule including coin", () => {
+  const cases = [
+    { roll: 0, prize: "coin" },
+    { roll: 0.25, prize: "star" },
+    { roll: 0.5, prize: "mushroom" },
+    { roll: 0.99, prize: "flower" },
+  ] as const;
+  for (const { roll, prize } of cases) {
+    for (const authored of ["coin", "power-up"] as const) {
+      const bump = game();
+      const bumpBox = bump.obstacles.find(
+        (c) => c.question && !c.hidden && !c.used && c.content === authored,
+      )!;
+      bump.random = () => roll;
+      const bumpCoins = bump.coins;
+      bump.hitBlock(bumpBox, bump.player);
+      assert.equal(bumpBox.used, true, `head-hit used ${authored} ${roll}`);
+      assert.equal(bumpBox.broken, false, `head-hit solid ${authored} ${roll}`);
+      if (prize === "coin") {
+        assert.equal(bump.items.length, 0, `head-hit coin ${authored}`);
+        assert.equal(bump.coins, bumpCoins + 1);
+        assert.ok(bump.events.includes("coin"));
+        assert.equal(bump.events.includes("appear"), false);
+      } else {
+        assert.equal(bump.items[0].kind, prize, `head-hit ${authored} ${roll}`);
+        assert.ok(bump.events.includes("appear"));
+      }
+
+      const smash = game();
+      parkNpcs(smash, []);
+      give(smash, smash.player, "mushroom8x");
+      const smashBox = smash.obstacles.find(
+        (c) =>
+          c.question &&
+          !c.hidden &&
+          !c.used &&
+          !c.broken &&
+          c.content === authored &&
+          c.y > 300 &&
+          smash.obstacles.every(
+            (other) =>
+              other === c ||
+              other.kind !== "brick" ||
+              (!other.question && !other.content) ||
+              other.hidden ||
+              other.used ||
+              other.broken ||
+              Math.abs(other.x - c.x) > 200 ||
+              Math.abs(other.y - c.y) > 200,
+          ),
+      )!;
+      smash.random = () => roll;
+      smash.events.length = 0;
+      const smashCoins = smash.coins;
+      at(smash, smashBox.x, smashBox.y);
+      tick(smash, dt);
+      assert.equal(smashBox.broken, true, `smash ${authored} ${roll}`);
+      assert.ok(!smash.solids.includes(smashBox.body!));
+      if (prize === "coin") {
+        assert.equal(
+          smash.items.some((item) => item.smash),
+          false,
+          `smash coin ${authored}`,
+        );
+        assert.equal(smash.coins, smashCoins + 1);
+        assert.ok(smash.events.includes("coin"));
+        assert.equal(smash.events.includes("appear"), false);
+      } else {
+        const item = smash.items.find((entry) => entry.smash);
+        assert.ok(item, `smash item ${authored} ${roll}`);
+        assert.equal(item.kind, prize);
+        assert.equal(item.emerge, 0);
+        assert.equal(smash.events.includes("appear"), false);
+      }
+    }
   }
 });
 
@@ -3962,11 +4057,15 @@ test("8x walking smashes bricks, questions, pipes, and walls; items fly out", ()
   assert.ok(s.events.includes("break"));
   at(s, question.x, T.groundY - 14 * s.player.scale);
   const beforeItems = s.items.length;
+  const pops = s.coinPops.length;
   tick(s, dt);
   assert.equal(question.broken, true);
   assert.ok(!s.solids.includes(question.body!));
   assert.ok(
-    s.items.length > beforeItems || s.player.starLeft > 0 || s.player.flower,
+    s.items.length > beforeItems ||
+      s.player.starLeft > 0 ||
+      s.player.flower ||
+      s.coinPops.length > pops,
   );
 
   at(s, hidden.x, T.groundY - 14 * s.player.scale);
@@ -3976,15 +4075,10 @@ test("8x walking smashes bricks, questions, pipes, and walls; items fly out", ()
   assert.equal(hidden.body!.headOnly, true);
 
   const coinBox = s.obstacles.find(
-    (c) =>
-      c.question &&
-      c.content === "coin" &&
-      !c.hidden &&
-      !c.used &&
-      !c.broken &&
-      c.y > 300,
+    (c) => c.question && !c.hidden && !c.used && !c.broken && c.y > 300,
   )!;
   const coinsBefore = s.coins;
+  s.random = () => 0;
   at(s, coinBox.x, T.groundY - 14 * s.player.scale);
   tick(s, dt);
   assert.equal(coinBox.broken, true);
@@ -4114,16 +4208,11 @@ test("8x smash claims remaining multi-coins for the player; NPC smash pops witho
   assert.ok(s2.events.includes("coin"));
   assert.ok(s2.coinPops.length >= T.multiCoinCount);
   const coinBox = s2.obstacles.find(
-    (c) =>
-      c.question &&
-      c.content === "coin" &&
-      !c.hidden &&
-      !c.used &&
-      !c.broken &&
-      c.y > 300,
+    (c) => c.question && !c.hidden && !c.used && !c.broken && c.y > 300,
   )!;
   const pops = s2.coinPops.length;
   s2.events.length = 0;
+  s2.random = () => 0;
   Body.setPosition(n.body, {
     x: coinBox.x,
     y: T.groundY - 14 * n.scale,
