@@ -1,11 +1,8 @@
-import { test, expect } from "@playwright/test";
-import { skipIntro } from "./skip-intro.ts";
+import { test, expect, startGame, waitForStart } from "./skip-intro.ts";
 
 test("header key bindings button lists keyboard controls", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled({
-    timeout: 20000,
-  });
+  await waitForStart(page);
   await page.getByRole("button", { name: "Key bindings" }).click();
   const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
   await expect(dialog).toBeVisible();
@@ -27,40 +24,56 @@ test("header key bindings button lists keyboard controls", async ({ page }) => {
 test("key bindings overlay freezes play and ignores walk keys", async ({
   page,
 }) => {
+  test.setTimeout(60000);
   await page.goto("/");
-  await page.getByRole("button", { name: "START GAME" }).click();
-  await skipIntro(page);
+  await startGame(page);
   await page.getByRole("button", { name: "Key bindings" }).click();
   const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
   await expect(dialog).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).__game.helpOpen))
+    .toBe(true);
   const startX = await page.evaluate(
     () => (window as any).__game.sim.player.body.position.x,
   );
   await page.keyboard.down("ArrowRight");
-  await page.evaluate(() => new Promise((r) => setTimeout(r, 250)));
-  await page.keyboard.up("ArrowRight");
-  await expect
-    .poll(() =>
-      page.evaluate(() => (window as any).__game.sim.player.body.position.x),
-    )
-    .toBe(startX);
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "PAUSED" })).toHaveCount(0);
-  await page.keyboard.down("ArrowRight");
-  await page.waitForFunction(
-    (x) => (window as any).__game.sim.player.body.position.x > x,
-    startX,
-  );
-  await page.keyboard.up("ArrowRight");
+  try {
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 250)));
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as any).__game.sim.player.body.position.x),
+      )
+      .toBe(startX);
+    await page.keyboard.up("ArrowRight");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "PAUSED" })).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const g = (window as any).__game;
+          return !g.helpOpen && !g.paused && g.sim.mode === "playing";
+        }),
+      )
+      .toBe(true);
+    await page.keyboard.down("ArrowRight");
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => (window as any).__game.sim.player.body.position.x),
+        { timeout: 10000 },
+      )
+      .toBeGreaterThan(startX);
+  } finally {
+    await page.keyboard.up("ArrowRight");
+  }
 });
 
 test("help hides pause actions and restores focus to the header button", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "START GAME" }).click();
-  await skipIntro(page);
+  await startGame(page);
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
   await page.getByRole("button", { name: "Key bindings" }).click();
@@ -86,8 +99,7 @@ for (const viewport of [
       height: viewport.height,
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "START GAME" }).click();
-    await skipIntro(page);
+    await startGame(page);
     for (const name of ["Key bindings", "Compact pad", "Mute", "Pause"])
       await expect(
         page.getByRole("button", { name, exact: true }),
@@ -100,9 +112,7 @@ for (const viewport of [
 test("help list starts on screen at 568x360", async ({ page }) => {
   await page.setViewportSize({ width: 568, height: 360 });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled({
-    timeout: 20000,
-  });
+  await waitForStart(page);
   await page.getByRole("button", { name: "Key bindings" }).click();
   const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
   await expect(dialog).toBeVisible();

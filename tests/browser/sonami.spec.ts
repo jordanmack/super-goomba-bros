@@ -1,5 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipIntro } from "./skip-intro.ts";
+import {
+  test,
+  expect,
+  type Page,
+  skipIntro,
+  waitForStart,
+} from "./skip-intro.ts";
 
 test.setTimeout(60000);
 
@@ -18,9 +23,7 @@ const SEQUENCE = [
 
 async function waitGame(page: Page) {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled({
-    timeout: 15000,
-  });
+  await waitForStart(page);
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
 }
 
@@ -171,7 +174,7 @@ test("reload clears the Sonami tray", async ({ page }) => {
   await enterSequence(page, SEQUENCE);
   await expect(page.getByRole("toolbar", { name: "Power-up tray" })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled();
+  await waitForStart(page);
   await expect(page.getByRole("toolbar", { name: "Power-up tray" })).toHaveCount(
     0,
   );

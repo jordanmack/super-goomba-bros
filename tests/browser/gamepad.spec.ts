@@ -1,14 +1,17 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipIntro } from "./skip-intro.ts";
 import { writeFileSync, mkdirSync } from "node:fs";
+import {
+  test,
+  expect,
+  type Page,
+  skipIntro,
+  waitForStart,
+} from "./skip-intro.ts";
 
 test.setTimeout(60000);
 
 async function waitReady(page: Page) {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled({
-    timeout: 20000,
-  });
+  await waitForStart(page);
 }
 
 const INJECT_LOG = "/tmp/grok-goal-6eb0e4eeb2e9/implementer/issue-75/gamepad-inject.log";

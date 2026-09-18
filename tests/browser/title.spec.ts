@@ -1,5 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipIntro } from "./skip-intro.ts";
+import {
+  test,
+  expect,
+  type Page,
+  skipIntro,
+  waitForStart,
+} from "./skip-intro.ts";
 
 const surfaces = [
   ["tagline", ".title-screen .level-label"],
@@ -32,7 +37,18 @@ async function waitForTitleFonts(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
     await document.fonts.load('16px "Press Start 2P"');
+    await document.fonts.load('56px "Press Start 2P"');
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
   });
+  await expect
+    .poll(() =>
+      page
+        .locator(".title-screen h1")
+        .evaluate((el) => getComputedStyle(el).fontFamily),
+    )
+    .toMatch(/Press Start 2P/);
 }
 
 async function readTitleType(page: Page) {
@@ -43,8 +59,8 @@ async function readTitleType(page: Page) {
   const rows: TitleTypeRow[] = [];
   for (const [name, selector] of surfaces) {
     const loc = page.locator(selector);
-    await expect(loc, name).toBeVisible();
-    await expect(loc, name).toBeInViewport();
+    await expect(loc, name).toBeVisible({ timeout: 10000 });
+    await expect(loc, name).toBeInViewport({ timeout: 10000 });
     const metrics = await loc.evaluate((el) => {
       const style = getComputedStyle(el);
       const box = el.getBoundingClientRect();
@@ -109,6 +125,7 @@ async function assertTitleCopy(page: Page) {
 async function assertTitleType(page: Page) {
   await page.goto("/");
   await waitForTitleFonts(page);
+  await waitForStart(page);
   const screen = page.getByRole("region", { name: "Title screen" });
   await expect(screen).toBeVisible();
   await expect(page.locator("main.at-title")).toBeVisible();
@@ -176,6 +193,7 @@ test("GAME OVER returns the title playfield and type to the cold-load metrics", 
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/");
   await waitForTitleFonts(page);
+  await waitForStart(page);
   const screen = page.getByRole("region", { name: "Title screen" });
   await expect(screen).toBeVisible();
   await expect(page.locator("main.at-title")).toBeVisible();
@@ -238,6 +256,7 @@ test("play keeps the journey label and world intro after the title omits them", 
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/");
+  await waitForStart(page);
   const screen = page.getByRole("region", { name: "Title screen" });
   await expect(screen).toBeVisible();
   await expect(screen).not.toContainText("THE GREAT ESCAPE");

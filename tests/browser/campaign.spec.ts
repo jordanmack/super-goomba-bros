@@ -1,6 +1,5 @@
-import { test, expect } from "@playwright/test";
 import campaign from "../../src/assets/levels/campaign.json" with { type: "json" };
-import { skipIntro } from "./skip-intro.ts";
+import { test, expect, skipIntro } from "./skip-intro.ts";
 
 // ionice can miss Playwright's 30s waitForFunction and test defaults.
 const SCREENSHOT_WAIT_MS = 90_000;

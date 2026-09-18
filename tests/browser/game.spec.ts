@@ -1,9 +1,8 @@
-import { test, expect } from "@playwright/test";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { TUNING as T } from "../../src/game/config";
-import { skipIntro } from "./skip-intro.ts";
+import { test, expect, skipIntro } from "./skip-intro.ts";
 import { WORLD_TILES } from "../fixtures/world-tiles";
 import { WORLD_1_1 as LEVEL } from "../fixtures/world-1-1";
 
@@ -1287,6 +1286,7 @@ test("player bubble is 8-bit and warned NPCs flash a tiny unscaled sweat drop", 
     s.warn();
   });
   await expect(speech).toHaveCount(2);
+  await expect(page.locator(".speech-stack")).toHaveCount(1);
   const boxes = await Promise.all(
     (await speech.all()).map((el) => el.boundingBox()),
   );
@@ -1295,7 +1295,8 @@ test("player bubble is 8-bit and warned NPCs flash a tiny unscaled sweat drop", 
   const a = boxes[0]!;
   const b = boxes[1]!;
   expect(a.y < b.y + b.height && b.y < a.y + a.height).toBe(false);
-  expect(Math.abs(a.x - b.x)).toBeLessThan(48);
+  // Stacked phrases are centered, so left edges diverge with line length.
+  expect(Math.abs(a.x + a.width / 2 - (b.x + b.width / 2))).toBeLessThan(48);
   expect(Math.abs(a.y - b.y)).toBeGreaterThan(8);
   const stackLeft = await page
     .locator(".speech-stack")

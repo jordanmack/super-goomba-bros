@@ -1,5 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipIntro } from "./skip-intro.ts";
+import {
+  test,
+  expect,
+  type Page,
+  skipIntro,
+  waitForStart,
+} from "./skip-intro.ts";
 
 test.use({
   viewport: { width: 844, height: 390 },
@@ -78,6 +83,7 @@ test.beforeEach(async ({ page }) => {
   pageErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
+  await waitForStart(page);
   await page.getByRole("button", { name: "START GAME" }).tap();
   await skipIntro(page);
   await page.evaluate(() => {
