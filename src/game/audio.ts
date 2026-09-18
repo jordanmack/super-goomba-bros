@@ -1,6 +1,6 @@
 import type { GameEvent } from "./simulation";
 import type Phaser from "phaser";
-import { TUNING as T, pickWarningChirp } from "./config";
+import { MIX, TUNING as T, pickWarningChirp } from "./config";
 import overworld from "../assets/audio/overworld.mp3?inline";
 import starman from "../assets/audio/starman.mp3?inline";
 import underground from "../assets/audio/underground.mp3?inline";
@@ -103,12 +103,13 @@ export class GameAudio {
   private cueQueue: ("death" | "clear" | "gameover" | "warning" | "worldClear")[] =
     [];
   private musicResume: { key: string; seek: number } | null = null;
+  private tally: Phaser.Sound.WebAudioSound | null = null;
   random: () => number;
 
   constructor(game: Phaser.Game, random = Math.random) {
     this.game = game;
     this.random = random;
-    this.manager.volume = 0.8;
+    this.manager.volume = MIX.managerVolume;
     this.manager.pauseOnBlur = false;
   }
   get manager() {
@@ -186,6 +187,7 @@ export class GameAudio {
     this.voices.clear();
     for (const effect of this.effects) {
       if (preserveCue && effect === this.cue) continue;
+      if (effect === this.tally) this.tally = null;
       effect.destroy();
       this.effects.delete(effect);
     }
@@ -196,7 +198,11 @@ export class GameAudio {
       this.pausedAt = null;
     }
   }
-  private play(name: keyof typeof RECORDINGS, complete?: () => void) {
+  private play(
+    name: keyof typeof RECORDINGS,
+    complete?: () => void,
+    volume = 1,
+  ) {
     if (!this.game.cache.audio.exists(name)) return;
     const effect = this.manager.add(name) as Phaser.Sound.WebAudioSound;
     this.effects.add(effect);
@@ -205,8 +211,21 @@ export class GameAudio {
       complete?.();
       effect.destroy();
     });
-    effect.play();
+    effect.play({ volume });
     return effect;
+  }
+  private playTally() {
+    if (!this.game.cache.audio.exists("coin")) return;
+    if (this.tally) {
+      this.tally.off("complete");
+      this.effects.delete(this.tally);
+      this.tally.destroy();
+      this.tally = null;
+    }
+    this.tally =
+      this.play("coin", () => {
+        this.tally = null;
+      }, MIX.tallyVolume) ?? null;
   }
   private playCue(
     name: "death" | "clear" | "gameover" | "warning" | "worldClear",
@@ -281,6 +300,10 @@ export class GameAudio {
       );
       return;
     }
+    if (event === "tally") {
+      this.playTally();
+      return;
+    }
     if (event === "warn") this.playWarning();
     else this.play(EFFECTS[event]);
   }
@@ -307,7 +330,7 @@ export class GameAudio {
     )
       return;
     const track = this.manager.add(key, {
-      volume: 0.55,
+      volume: MIX.musicVolume,
       rate,
     }) as Phaser.Sound.WebAudioSound;
     this.music = track;
@@ -316,7 +339,7 @@ export class GameAudio {
       name: "loop",
       start: loop.start,
       duration: loop.duration,
-      config: { loop: true, volume: 0.55 },
+      config: { loop: true, volume: MIX.musicVolume },
     });
     const resume =
       this.musicResume?.key === key ? this.musicResume.seek : null;
@@ -339,7 +362,7 @@ export class GameAudio {
       name: "intro",
       start: loop.intro,
       duration: loop.start - loop.intro,
-      config: { volume: 0.55 },
+      config: { volume: MIX.musicVolume },
     });
     track.once("complete", () => {
       if (this.music === track) track.play("loop");

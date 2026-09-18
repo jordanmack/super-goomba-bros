@@ -14,8 +14,13 @@ by Mario Mayhem. These replace the prototype's synthesized music and game effect
 
 The original prototype recordings are unchanged. The three added area tracks
 retain their openings and first loop sections, with unused repeats removed by
-MP3 stream copy. No audio was recomposed or re-encoded. Nintendo owns the
-recordings; the archive is not a license grant. Bundling supports offline play.
+MP3 stream copy. WAV cues and effects are peak-normalized to -1 dBFS (peak
+0.891) so no file is left with large unused headroom and none clips. Sample
+rates stay as archived; 8-bit files are stored as 16-bit after that gain.
+Looping MP3s are not peak-normalized. Playback still uses manager volume 0.8
+and music volume 0.55; those were re-checked after the WAV gain. Nintendo owns
+the recordings; the archive is not a license grant. Bundling supports offline
+play.
 
 The overworld recording includes opening silence, an intro, repeated music,
 and a fade. Playback skips the opening silence and loops an interior 86.4-second
@@ -35,8 +40,9 @@ travel, shrinking, and power-up pickups use the corresponding original effects.
 Pause and resume play the original pause cue while music is held. A
 question-block item uses the original appear effect with the bump. A 1-up uses
 `smb_1-up.wav`. Game over uses `smb_gameover.wav`. TIME 100 uses
-`smb_warning.wav`, then the area theme plays faster. Leftover TIME tally uses
-the coin beep. World 8-4 uses `smb_world_clear.wav` after the castle tally.
+`smb_warning.wav`, then the area theme plays faster. Leftover TIME tally
+retriggers a quieter copy of the coin sample on one voice. World 8-4 uses
+`smb_world_clear.wav` after the castle tally.
 Warnings use a custom short square-wave voice, picked at random from a small
 pool of chirps. Pitch shapes live in `../../game/config.ts`. There is no
 approach heartbeat or distance-based music change. The world intro is silent.

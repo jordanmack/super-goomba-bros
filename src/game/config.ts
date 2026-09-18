@@ -1,13 +1,23 @@
+/** Peak target applied to bundled WAV cues, as a fraction of full scale. */
+export const WAV_PEAK_TARGET = 10 ** (-1 / 20);
+
+export const MIX = {
+  managerVolume: 0.8,
+  musicVolume: 0.55,
+  tallyVolume: 0.25,
+} as const;
+
 export const TUNING = {
   population: 30,
   elevatedSpawnShare: 1 / 3,
   elevatedSpawnNear: 192,
   idleRadius: 65,
   idleSpeed: 0.65,
-  // header.timer: 0=400, 1=300, 2=200. Tick and tally match SMB1 frame counts.
+  // header.timer: 0=400, 1=300, 2=200. In-play tick is SMB1's 24-frame clock.
+  // Tally drains one TIME unit per frame, matching SMB1.
   timerByHeader: [400, 300, 200],
   timerTickFrames: 24,
-  timerTallyFrames: 4,
+  timerTallyFrames: 1,
   hurryAt: 100,
   hurryRate: 1.5,
   coinScore: 200,

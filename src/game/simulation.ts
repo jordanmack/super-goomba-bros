@@ -310,7 +310,8 @@ export class Simulation {
       pipe.destinations.find((d) => d.world === this.level.world) ??
       (room.data.id === "29" ? { area: this.level.main, page: 0 } : undefined);
     if (!destination) return false;
-    if (this.isHuge(actor)) this.expireHuge(actor);
+    const wasHuge = this.isHuge(actor);
+    if (wasHuge) this.expireHuge(actor);
     const dir = pipe.direction === "down" ? "down" : "right";
     const vis = this.pipeVisual(actor);
     const left = room.offset + pipe.column * 32;
@@ -339,7 +340,7 @@ export class Simulation {
     actor.navHoldX = undefined;
     actor.navBackoff = undefined;
     actor.swimPath = undefined;
-    if (actor === this.player) this.events.push("pipe");
+    if (actor === this.player && !wasHuge) this.events.push("pipe");
     return true;
   }
   private updatePipeTravel(dt: number) {
@@ -1136,7 +1137,12 @@ export class Simulation {
   }
 
   private shrinking(a: Actor) {
-    return a.transformLeft > 0 && a.transformFrom > a.scale;
+    // Damage i-frames only. 8x expiry blinks from hugeScale and stays hitable.
+    return (
+      a.transformLeft > 0 &&
+      a.transformFrom > a.scale &&
+      a.transformFrom < T.hugeScale
+    );
   }
 
   private hurt(a: Actor) {
@@ -1422,18 +1428,19 @@ export class Simulation {
     this.smashHuge(this.mario);
   }
 
-  private expireHuge(a: Actor) {
+  private expireHuge(a: Actor, fx = true) {
     if (!this.isHuge(a)) return;
+    if (fx) this.events.push("shrink");
     if (a === this.mario) {
       a.hugeLeft = 0;
       a.body.ignoreWalls = false;
       this.marioStage = 1;
       this.mario.flower = false;
-      this.resize(this.mario, 1, false);
+      this.resize(this.mario, 1, fx);
       this.fitActor(this.mario);
       return;
     }
-    this.setGoombaScale(a, T.giantScale);
+    this.setGoombaScale(a, T.giantScale, fx);
   }
 
   private fitActor(a: Actor) {
@@ -1762,6 +1769,12 @@ export class Simulation {
     this.mario.navDelay = undefined;
     this.mario.navHoldX = undefined;
     this.mario.starLeft = 0;
+    this.mario.hugeLeft = 0;
+    this.mario.body.ignoreWalls = false;
+    if (this.isHuge(this.mario)) {
+      this.resize(this.mario, 1, false);
+      this.fitActor(this.mario);
+    }
     this.setMarioStage(0);
     this.marioReturn = T.marioDefeatSeconds;
     this.marioTarget = null;
@@ -2409,7 +2422,8 @@ export class Simulation {
       a.starLeft = Math.max(0, a.starLeft - dt);
       a.transformLeft = Math.max(0, a.transformLeft - dt);
       a.hugeLeft = Math.max(0, a.hugeLeft - dt);
-      if (this.isHuge(a) && a.hugeLeft === 0) this.expireHuge(a);
+      if (a.alive && !a.saved && this.isHuge(a) && a.hugeLeft === 0)
+        this.expireHuge(a);
       a.exclaimLeft = Math.max(0, a.exclaimLeft - dt);
       if (!this.inPipe(a)) a.pipeWait = Math.max(0, (a.pipeWait ?? 0) - dt);
       a.navRetry = Math.max(0, (a.navRetry ?? 0) - dt);
@@ -2487,7 +2501,7 @@ export class Simulation {
         p.x >= room.goalX
       ) {
         if (room.atDoor(this.player)) {
-          this.expireHuge(this.player);
+          this.expireHuge(this.player, false);
           this.finish();
         }
         else Body.setPosition(this.player.body, { x: room.goalX - 1, y: p.y });
@@ -2661,7 +2675,7 @@ export class Simulation {
           n.body.position.x >= room.goalX &&
           room.atDoor(n)
         ) {
-          this.expireHuge(n);
+          this.expireHuge(n, false);
           this.save(n);
         }
         else this.updateShelledKoopa(n, dt);
@@ -2689,7 +2703,7 @@ export class Simulation {
         p.x >= room.goalX
       ) {
         if (room.atDoor(n)) {
-          this.expireHuge(n);
+          this.expireHuge(n, false);
           this.save(n);
         }
         else {
@@ -2957,7 +2971,7 @@ export class Simulation {
         if (this.marioDeath.y > 700) this.marioDeath = null;
       }
       if (this.marioReturn > 0 || this.marioDeath) return;
-      if (this.isHuge(this.mario)) this.expireHuge(this.mario);
+      if (this.isHuge(this.mario)) this.expireHuge(this.mario, false);
       this.setMarioStage((this.phase === 0 ? 1 : this.phase) as 0 | 1 | 2);
       this.mario.starLeft = 0;
       this.mario.areaId = this.player.areaId;
@@ -2987,7 +3001,7 @@ export class Simulation {
       huntRoom.data.goal.kind !== "pipe" &&
       huntRoom.atDoor(this.mario)
     ) {
-      this.expireHuge(this.mario);
+      this.expireHuge(this.mario, false);
       this.marioActive = false;
       this.marioReturn = 2.5 + this.random() * 2.5;
       this.mario.navVx = undefined;

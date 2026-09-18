@@ -224,8 +224,8 @@ The castle door is always open. Reaching it completes the stage:
 
 1. The player vanishes. Mario and NPCs keep playing.
 2. Play the original clear tune.
-3. Leftover TIME ticks to 0. SCORE rises +50 per remaining TIME unit with the
-   original tally sound.
+3. Leftover TIME ticks to 0 at one unit per frame. SCORE rises +50 per remaining
+   TIME unit with a quieter tally beep on one voice.
 4. Then outlined white-on-black lines, no box: WARNED, SAVED, DIED, FLAG, MARIO.
    Each line is count × points, then SCORE updates. Saves, deaths, and Mario
    finishes during the tally still count.

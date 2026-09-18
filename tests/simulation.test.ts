@@ -3989,6 +3989,81 @@ test("Mario 8x uses player size, smash, and timer, then expires to Super", () =>
   assert.equal(fire.mario.flower, false);
 });
 
+test("natural 8x expiry blinks, plays shrink, and stays damageable", () => {
+  const blinkSeen = (s: Simulation, actor: Actor, from: number, to: number) => {
+    const shown = new Set<number>();
+    while (actor.transformLeft > 0 && shown.size < 2) {
+      shown.add(s.displayScale(actor));
+      tick(s, dt);
+    }
+    assert.deepEqual(
+      [...shown].sort((a, b) => a - b),
+      [to, from].sort((a, b) => a - b),
+    );
+    assert.ok(actor.transformLeft > 0);
+  };
+
+  const player = game();
+  parkNpcs(player, []);
+  give(player, player.player, "mushroom8x");
+  player.events.length = 0;
+  tick(player, T.hugeSeconds);
+  assert.equal(player.player.scale, T.giantScale);
+  assert.equal(player.player.hugeLeft, 0);
+  assert.equal(player.player.transformFrom, T.hugeScale);
+  assert.ok(player.player.transformLeft > 0);
+  assert.ok(player.events.includes("shrink"));
+  blinkSeen(player, player.player, T.hugeScale, T.giantScale);
+  player.events.length = 0;
+  marioStomp(player, player.player);
+  tick(player, dt);
+  assert.equal(player.player.alive, true);
+  assert.equal(player.player.scale, 1);
+  assert.ok(player.events.includes("shrink"));
+
+  const npcSim = game();
+  const n = npcSim.npcs[0];
+  parkNpcs(npcSim, [n]);
+  give(npcSim, n, "mushroom8x");
+  npcSim.events.length = 0;
+  tick(npcSim, T.hugeSeconds);
+  assert.equal(n.scale, T.giantScale);
+  assert.equal(n.hugeLeft, 0);
+  assert.equal(n.transformFrom, T.hugeScale);
+  assert.ok(n.transformLeft > 0);
+  assert.ok(npcSim.events.includes("shrink"));
+  blinkSeen(npcSim, n, T.hugeScale, T.giantScale);
+  npcSim.events.length = 0;
+  marioStomp(npcSim, n);
+  tick(npcSim, dt);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, 1);
+  assert.ok(npcSim.events.includes("shrink"));
+
+  const mario = game();
+  mario.marioActive = true;
+  parkNpcs(mario, []);
+  stillMario(mario);
+  give(mario, mario.mario, "mushroom8x");
+  mario.events.length = 0;
+  tick(mario, T.hugeSeconds);
+  assert.equal(mario.mario.scale, 1);
+  assert.equal(mario.marioStage, 1);
+  assert.equal(mario.mario.hugeLeft, 0);
+  assert.equal(mario.mario.transformFrom, T.hugeScale);
+  assert.ok(mario.mario.transformLeft > 0);
+  assert.ok(mario.events.includes("shrink"));
+  stillMario(mario);
+  blinkSeen(mario, mario.mario, T.hugeScale, 1);
+  give(mario, mario.player, "mushroom");
+  mario.events.length = 0;
+  giantStompMario(mario);
+  tick(mario, dt);
+  assert.equal(mario.mario.alive, true);
+  assert.equal(mario.marioStage, 0);
+  assert.ok(mario.events.includes("shrink"));
+});
+
 function cellSolid(s: Simulation, column: number, row: number) {
   const room = s.activeRoom;
   const x = room.offset + column * 32 + 16;
@@ -5981,6 +6056,10 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   assert.ok(playerPipe.s.player.pipeTravel);
   assert.equal(playerPipe.s.player.scale, T.giantScale);
   assert.equal(playerPipe.s.player.hugeLeft, 0);
+  assert.ok(playerPipe.s.player.transformLeft > 0);
+  assert.equal(playerPipe.s.player.transformFrom, T.hugeScale);
+  assert.ok(playerPipe.s.events.includes("shrink"));
+  assert.equal(playerPipe.s.events.includes("pipe"), false);
   playerPipe.s.physics.clear();
 
   const npcPipe = goalPipeSim();
@@ -5995,6 +6074,9 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   assert.ok(n.pipeTravel);
   assert.equal(n.scale, T.giantScale);
   assert.equal(n.hugeLeft, 0);
+  assert.ok(n.transformLeft > 0);
+  assert.equal(n.transformFrom, T.hugeScale);
+  assert.ok(npcPipe.s.events.includes("shrink"));
   npcPipe.s.physics.clear();
 
   const marioPipe = goalPipeSim();
@@ -6017,6 +6099,9 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   assert.equal(marioPipe.s.mario.scale, 1);
   assert.equal(marioPipe.s.marioStage, 1);
   assert.equal(marioPipe.s.mario.hugeLeft, 0);
+  assert.ok(marioPipe.s.mario.transformLeft > 0);
+  assert.equal(marioPipe.s.mario.transformFrom, T.hugeScale);
+  assert.ok(marioPipe.s.events.includes("shrink"));
   marioPipe.s.physics.clear();
 
   const door = game();
@@ -6032,6 +6117,9 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   assert.equal(door.mode, "finishing");
   assert.equal(door.player.scale, T.giantScale);
   assert.equal(door.player.hugeLeft, 0);
+  assert.equal(door.player.transformLeft, 0);
+  assert.equal(door.events.includes("shrink"), false);
+  assert.ok(door.events.includes("win"));
 
   const npcDoor = game();
   const saved = npcDoor.npcs[0];
@@ -6047,6 +6135,8 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   assert.equal(saved.saved, true);
   assert.equal(saved.scale, T.giantScale);
   assert.equal(saved.hugeLeft, 0);
+  assert.equal(saved.transformLeft, 0);
+  assert.equal(npcDoor.events.includes("shrink"), false);
 
   const marioDoor = game();
   marioDoor.marioActive = true;
@@ -6062,9 +6152,30 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   assert.equal(marioDoor.mario.scale, 1);
   assert.equal(marioDoor.marioStage, 1);
   assert.equal(marioDoor.mario.hugeLeft, 0);
+  assert.equal(marioDoor.mario.transformLeft, 0);
+  assert.equal(marioDoor.events.includes("shrink"), false);
   assert.equal(marioDoor.mario.alive, true);
   assert.equal(marioDoor.marioActive, false);
   assert.equal(marioDoor.mario.body.frozen, true);
+});
+
+test("star-defeating 8x Mario does not shrink-blink or play pipe", () => {
+  const s = game();
+  parkNpcs(s, []);
+  stillMario(s);
+  give(s, s.mario, "mushroom8x");
+  give(s, s.player, "star");
+  s.events.length = 0;
+  Body.setPosition(s.mario.body, { ...s.player.body.position });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.mario.alive, false);
+  assert.ok(s.mario.scale < T.hugeScale);
+  assert.equal(s.mario.hugeLeft, 0);
+  assert.equal(s.mario.transformLeft, 0);
+  assert.equal(s.events.includes("shrink"), false);
+  assert.ok(s.events.includes("marioDeath"));
 });
 
 test("8x Mario contact kills a stopped 1x shell instead of kicking it", () => {
@@ -6660,6 +6771,29 @@ test("SCORE persists across a lost life and zeros on GAME OVER", () => {
   assert.equal(over.coins, 0);
 });
 
+test("leftover TIME tally drains a 400-unit stage in a few seconds at +50 each", () => {
+  assert.equal(T.timerTallyFrames, 1);
+  const s = game();
+  parkNpcs(s, []);
+  s.timeLeft = 400;
+  s.score = 0;
+  s.finish();
+  s.events.length = 0;
+  while (s.tallyPhase === "time") tick(s, dt);
+  assert.equal(s.timeLeft, 0);
+  assert.equal(s.tallyPhase, "warned");
+  assert.equal(s.score, 400 * T.timeScore);
+  assert.equal(
+    s.events.filter((event) => event === "tally").length,
+    400,
+  );
+  assert.ok(
+    s.finishElapsed < 8,
+    `400-unit drain took ${s.finishElapsed}s, expected a few seconds not ~27`,
+  );
+  assert.ok(s.finishElapsed > 400 / 60 - dt);
+});
+
 test("leftover TIME and castle lines add to SCORE then auto-continue", () => {
   const s = game();
   s.warned = 2;
@@ -6707,7 +6841,7 @@ test("World 8-4 tally holds through world-clear then returns to the title", () =
       n.idleWalking = false;
     }
     // Leftover TIME lets the clear cue finish before world-clear starts.
-    s.timeLeft = 100;
+    s.timeLeft = 400;
     s.finish();
     while (s.mode === "finishing" && s.tallyPhase === "time") tick(s, dt);
     if (dyingMario) {
@@ -6754,7 +6888,7 @@ test("World 8-4 tally holds through world-clear then returns to the title", () =
   );
 });
 
-test("leftover TIME tally starts from a fresh 4-frame accumulator", () => {
+test("leftover TIME tally starts from a fresh accumulator", () => {
   const s = game();
   tick(s, (T.timerTickFrames - 1) / 60);
   assert.equal(s.timeLeft, 300);
