@@ -998,25 +998,26 @@ p {
     height: 32px;
   }
   .title-screen {
-    top: 64px;
+    top: 48px;
   }
   .title-screen h1 {
-    font-size: 40px;
+    font-size: 32px;
   }
   .title-screen h1 span:first-child {
-    font-size: 24px;
+    font-size: 16px;
+    margin-bottom: 0;
   }
   .title-screen h1 span:last-child {
     font-size: 24px;
   }
   .title-screen .level-label {
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     font-size: 16px;
   }
   .title-screen .primary {
-    margin-top: 12px;
-    min-height: 48px;
-    padding: 8px 17px;
+    margin-top: 8px;
+    min-height: 40px;
+    padding: 6px 16px;
     font-size: 16px;
   }
   .in-game .topbar {

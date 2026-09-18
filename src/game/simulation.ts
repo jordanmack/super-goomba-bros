@@ -10,7 +10,14 @@ import {
   overlaps,
   rayBlocked,
 } from "./physics.ts";
-import { MAP_TOP, PHRASES, TUNING as T, blockDrawY, jumpArc } from "./config.ts";
+import {
+  MAP_TOP,
+  PHRASES,
+  TUNING as T,
+  VIEW_HEIGHT,
+  blockDrawY,
+  jumpArc,
+} from "./config.ts";
 import {
   CAMPAIGN,
   isSmashExemptTile,
@@ -38,6 +45,24 @@ export const emptyInput = (): Input => ({
   down: false,
   run: false,
 });
+export type PipeClip = { x: number; y: number; w: number; h: number };
+export function pipeClip(
+  roomOffset: number,
+  roomWidthPx: number,
+  pipe: { column: number; row: number; width: number; height: number },
+  dir: "down" | "up" | "right" | "left",
+): PipeClip {
+  const mouthX = roomOffset + pipe.column * 32;
+  const mouthY = MAP_TOP + pipe.row * 32;
+  if (dir === "down" || dir === "up")
+    return { x: roomOffset, y: 0, w: roomWidthPx, h: Math.max(1, mouthY) };
+  return {
+    x: roomOffset,
+    y: 0,
+    w: Math.max(1, mouthX - roomOffset),
+    h: VIEW_HEIGHT,
+  };
+}
 export type Mode =
   | "title"
   | "intro"
@@ -100,7 +125,7 @@ export type Actor = {
     remaining: number;
     destArea: string;
     destPage: number;
-    clip?: { x: number; y: number; w: number; h: number };
+    clip?: PipeClip;
   };
   navVx?: number;
   navDelay?: number;
@@ -272,19 +297,6 @@ export class Simulation {
       return Math.abs(x - spawn) < Math.abs(bestX - spawn) ? pipe : best;
     });
   }
-  private pipeClip(
-    room: Room,
-    pipe: { column: number; row: number; width: number; height: number },
-    dir: "down" | "up" | "right" | "left",
-  ) {
-    const x = room.offset + pipe.column * 32,
-      y = MAP_TOP + pipe.row * 32,
-      w = pipe.width * 32,
-      h = pipe.height * 32;
-    if (dir === "down" || dir === "up")
-      return { x, y: MAP_TOP, w, h: Math.max(1, y - MAP_TOP) };
-    return { x: room.offset, y, w: Math.max(1, x - room.offset), h };
-  }
   private tryPipe(actor: Actor, down: boolean, right: boolean) {
     if ((actor.pipeWait ?? 0) > 0 || this.inPipe(actor)) return false;
     const room = this.roomFor(actor),
@@ -340,7 +352,7 @@ export class Simulation {
           : Math.max(vis.w, left + vis.w / 2 - actor.body.position.x),
       destArea: destination.area,
       destPage: destination.page,
-      clip: this.pipeClip(room, pipe, dir),
+      clip: pipeClip(room.offset, room.data.width * 32, pipe, dir),
     };
     actor.idleDrop = undefined;
     actor.facing = dir === "down" ? actor.facing : 1;
@@ -402,8 +414,9 @@ export class Simulation {
     } else {
       const left = target.offset + dest.column * 32,
         top = MAP_TOP + dest.row * 32,
-        clip = this.pipeClip(
-          target,
+        clip = pipeClip(
+          target.offset,
+          target.data.width * 32,
           dest,
           dest.direction === "right" ? "left" : "up",
         );
@@ -521,6 +534,8 @@ export class Simulation {
   marioStage: 0 | 1 | 2 = 0;
   brickTarget: number | null = null;
   cameraX = 0;
+  cameraY = 0;
+  cameraZoom = 1;
   viewWidth = 960;
   private flagPrevPlayerX = 0;
   private flagPrevMarioX = 0;
@@ -574,30 +589,33 @@ export class Simulation {
     );
     this.player.areaId = entry.data.id;
     entry.place(this.player, entry.offset + 100);
-    const occupied = new Set<string>();
-    let raisedLeft = Math.round(T.population * T.elevatedSpawnShare);
-    this.npcs = Array.from({ length: T.population }, (_, i) => {
-      const x =
-        main.offset +
-        390 +
-        i * ((main.goalX - main.offset - 650) / T.population) +
-        this.random() * 65;
-      return this.actor(x, i % 3 === 1 ? "koopa" : "goomba");
-    });
-    for (const actor of this.npcs) {
-      if (raisedLeft && main.place(actor, actor.homeX, "brick", occupied))
-        raisedLeft--;
-    }
-    for (const actor of this.npcs) {
-      if (
-        !actor.grounded &&
-        raisedLeft &&
-        main.place(actor, actor.homeX, "lid", occupied)
-      )
-        raisedLeft--;
-    }
-    for (const actor of this.npcs) {
-      if (!actor.grounded) main.place(actor, actor.homeX, "low", occupied);
+    this.npcs = [];
+    if (mode !== "title") {
+      const occupied = new Set<string>();
+      let raisedLeft = Math.round(T.population * T.elevatedSpawnShare);
+      this.npcs = Array.from({ length: T.population }, (_, i) => {
+        const x =
+          main.offset +
+          390 +
+          i * ((main.goalX - main.offset - 650) / T.population) +
+          this.random() * 65;
+        return this.actor(x, i % 3 === 1 ? "koopa" : "goomba");
+      });
+      for (const actor of this.npcs) {
+        if (raisedLeft && main.place(actor, actor.homeX, "brick", occupied))
+          raisedLeft--;
+      }
+      for (const actor of this.npcs) {
+        if (
+          !actor.grounded &&
+          raisedLeft &&
+          main.place(actor, actor.homeX, "lid", occupied)
+        )
+          raisedLeft--;
+      }
+      for (const actor of this.npcs) {
+        if (!actor.grounded) main.place(actor, actor.homeX, "low", occupied);
+      }
     }
     if (this.pipeIntro)
       for (const npc of this.npcs) Body.setFrozen(npc.body, true);
@@ -646,6 +664,8 @@ export class Simulation {
       this.marioPause =
         0;
     this.cameraX = 0;
+    this.cameraY = 0;
+    this.cameraZoom = 1;
     this.fireballs = [];
     this.items = [];
     this.coinPops = [];

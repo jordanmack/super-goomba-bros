@@ -1,5 +1,11 @@
 import Phaser from "phaser";
-import { MAP_TOP, TUNING as T, blockDrawY } from "../config";
+import {
+  MAP_TOP,
+  TUNING as T,
+  VIEW_HEIGHT,
+  blockDrawY,
+  titleCamera,
+} from "../config";
 import { isSolidTile, themeFor } from "../levels";
 import type { Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
@@ -106,18 +112,28 @@ export class Play extends Phaser.Scene {
     this.draw?.();
   }
 
-  renderState(sim: Simulation, width: number) {
+  renderState(sim: Simulation, width: number, height = VIEW_HEIGHT) {
     const room = sim.activeRoom;
     if (this.room !== room) this.loadRoom(room);
-    sim.cameraX = Math.max(
-      room.offset,
-      Math.min(
-        room.offset + room.data.width * 32 - width,
-        sim.player.body.position.x - width * 0.36,
-      ),
-    );
+    if (sim.mode === "title") {
+      const frame = titleCamera(width, height);
+      sim.cameraX = frame.scrollX;
+      sim.cameraY = frame.scrollY;
+      sim.cameraZoom = frame.zoom;
+    } else {
+      sim.cameraY = 0;
+      sim.cameraZoom = 1;
+      sim.cameraX = Math.max(
+        room.offset,
+        Math.min(
+          room.offset + room.data.width * 32 - width,
+          sim.player.body.position.x - width * 0.36,
+        ),
+      );
+    }
     sim.viewWidth = width;
-    this.cameras.main.setScroll(sim.cameraX, 0);
+    this.cameras.main.setZoom(sim.cameraZoom);
+    this.cameras.main.setScroll(sim.cameraX, sim.cameraY);
     for (const key of room.smashedTiles) {
       const [column, row] = key.split(",").map(Number);
       if (row >= 13) continue;
@@ -147,8 +163,10 @@ export class Play extends Phaser.Scene {
         .setPosition(c.x, blockDrawY(c.y, c.bounce))
         .setVisible(!c.broken && !(c.hidden && !c.used));
     }
-    for (const actor of [sim.player, ...sim.npcs, sim.mario])
-      this.renderActor(actor, sim);
+    const liveActors = [sim.player, ...sim.npcs, sim.mario];
+    const live = new Set(liveActors.map((actor) => actor.id));
+    this.dropStaleActors(live);
+    for (const actor of liveActors) this.renderActor(actor, sim);
     let index = 0;
     const image = (
       x: number,
@@ -394,6 +412,20 @@ export class Play extends Phaser.Scene {
           ]
         : 0xffffff,
     );
+  }
+
+  private dropStaleActors(live: Set<number>) {
+    for (const [id, sprite] of [...this.actors]) {
+      if (live.has(id)) continue;
+      const entry = this.pipeMasks.get(id);
+      if (entry) {
+        sprite.filters?.external.remove(entry.mask);
+        entry.shape.destroy();
+        this.pipeMasks.delete(id);
+      }
+      sprite.destroy();
+      this.actors.delete(id);
+    }
   }
 
   private actorSpriteHeight(actor: Actor, sim: Simulation) {

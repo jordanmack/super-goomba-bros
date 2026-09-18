@@ -3,21 +3,21 @@ import { Boot } from "./scenes/Boot";
 import { Play } from "./scenes/Play";
 import type { Simulation } from "./simulation";
 import type { PhysicsWorld } from "./physics";
-import { TUNING } from "./config";
+import { TUNING, VIEW_HEIGHT } from "./config";
 
 // React owns screens and HUD; Phaser owns the canvas and its update loop.
 export class PhaserGame {
   game: Phaser.Game;
   play?: Play;
   width = 960;
-  height = 540;
+  height = VIEW_HEIGHT;
   observer: ResizeObserver;
   host: HTMLElement;
   ready: Promise<void>;
 
   constructor(host: HTMLElement) {
     this.host = host;
-    this.width = (540 * host.clientWidth) / Math.max(1, host.clientHeight);
+    this.width = (VIEW_HEIGHT * host.clientWidth) / Math.max(1, host.clientHeight);
     this.game = new Phaser.Game({
       type: Phaser.WEBGL,
       parent: host,
@@ -66,7 +66,7 @@ export class PhaserGame {
 
   resize() {
     this.width =
-      (540 * this.host.clientWidth) / Math.max(1, this.host.clientHeight);
+      (VIEW_HEIGHT * this.host.clientWidth) / Math.max(1, this.host.clientHeight);
     if (!this.game.isBooted) return;
     // FIT caches parent bounds. Update them before setGameSize or the canvas
     // keeps the previous letterbox after the pad unmounts.
@@ -77,13 +77,17 @@ export class PhaserGame {
     physics.bind(this.play!.physics.world, Phaser.Physics.Arcade);
   }
   render(sim: Simulation, _time: number) {
-    this.play?.renderState(sim, this.width);
+    this.play?.renderState(sim, this.width, this.height);
   }
   screen(x: number, y: number, sim: Simulation) {
+    const zoom = sim.cameraZoom || 1;
+    const viewX = sim.cameraX + (this.width / 2) * (1 - 1 / zoom);
+    const viewY = sim.cameraY + (this.height / 2) * (1 - 1 / zoom);
     return {
-      x: ((x - sim.cameraX) / this.width) * 100,
+      x: (((x - viewX) * zoom) / this.width) * 100,
       y:
-        (((y / this.height) * this.host.clientHeight) /
+        ((((y - viewY) * zoom) / this.height) *
+          this.host.clientHeight /
           this.host.parentElement!.clientHeight) *
         100,
     };

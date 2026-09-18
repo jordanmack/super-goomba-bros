@@ -1839,6 +1839,7 @@ test("fixed population and unique traits per character across a run", () => {
   const s = new Simulation(
     () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646,
   );
+  s.reset();
   assert.equal(s.npcs.length, T.population);
   assert.ok(new Set(s.npcs.map((n) => n.speed)).size > 1);
   const traits = s.npcs.map((n) => [n.speed, n.fear, n.reaction]);
@@ -3638,25 +3639,216 @@ test("dest-page spawn uses the pipe nearest the dest page, not the first listed"
   assert.ok(s.player.body.bounds.max.y > MAP_TOP + 10 * 32);
 });
 
-test("a giant traveler is clipped to the pipe opening while sliding in", () => {
-  const s = game();
-  give(s, s.player, "mushroom3x");
-  const entry = s.activeRoom.data.pipes.find((p) => p.direction === "down")!;
+function inClip(
+  clip: { x: number; y: number; w: number; h: number },
+  x: number,
+  y: number,
+) {
+  return x >= clip.x && x < clip.x + clip.w && y >= clip.y && y < clip.y + clip.h;
+}
+
+function assertLipClip(
+  clip: { x: number; y: number; w: number; h: number },
+  room: { offset: number },
+  pipe: { column: number; row: number; width: number; height: number },
+  dir: "down" | "up" | "right" | "left",
+  spriteW: number,
+  spriteH: number,
+) {
+  const mouthX = room.offset + pipe.column * 32;
+  const mouthY = MAP_TOP + pipe.row * 32;
+  const pipeW = pipe.width * 32;
+  const pipeH = pipe.height * 32;
+  if (dir === "down" || dir === "up") {
+    assert.ok(clip.w >= spriteW, "vertical clip is not cropped to pipe width");
+    assert.ok(clip.w > pipeW, "vertical clip is wider than the pipe");
+    assert.ok(clip.y + clip.h <= mouthY + 1e-6, "vertical clip stops at the lip");
+    assert.ok(
+      inClip(clip, mouthX + pipeW / 2, mouthY - 4),
+      "the part still above the lip is visible",
+    );
+    assert.ok(
+      inClip(clip, mouthX - spriteW / 2, mouthY - 4),
+      "overhang above the lip stays visible",
+    );
+    assert.equal(
+      inClip(clip, mouthX + pipeW / 2, mouthY + 4),
+      false,
+      "the part below the lip is hidden",
+    );
+    assert.equal(
+      inClip(clip, mouthX - spriteW / 2, mouthY + 4),
+      false,
+      "overhang beside the shaft is hidden once past the lip",
+    );
+  } else {
+    assert.ok(clip.h >= spriteH, "side clip is not cropped to pipe height");
+    assert.ok(clip.h > pipeH, "side clip is taller than the pipe");
+    assert.ok(clip.x + clip.w <= mouthX + 1e-6, "side clip stops at the mouth");
+    assert.ok(
+      inClip(clip, mouthX - 4, mouthY + pipeH / 2),
+      "the part still outside the mouth is visible",
+    );
+    assert.ok(
+      inClip(clip, mouthX - 4, mouthY - spriteH / 2),
+      "overhang outside the mouth stays visible",
+    );
+    assert.equal(
+      inClip(clip, mouthX + 4, mouthY + pipeH / 2),
+      false,
+      "the part inside the opening is hidden",
+    );
+    assert.equal(
+      inClip(clip, mouthX + 4, mouthY - spriteH / 2),
+      false,
+      "overhang above the shaft is hidden once inside",
+    );
+  }
+}
+
+function waitPipePhase(s: Simulation, actor: Actor, phase: "enter" | "exit") {
+  let frames = 0;
+  while (actor.pipeTravel?.phase !== phase && frames++ < 360)
+    s.step(dt, emptyInput());
+  assert.equal(actor.pipeTravel?.phase, phase);
+}
+
+test("3x and 8x pipe clips hide only the part past the lip", () => {
+  const down = game();
+  give(down, down.player, "mushroom3x");
+  const entry = down.activeRoom.data.pipes.find((p) => p.direction === "down")!;
+  const spriteW = 32 * down.player.scale;
+  const spriteH = 32 * down.player.scale;
   at(
-    s,
+    down,
     (entry.column + entry.width / 2) * 32,
-    MAP_TOP + entry.row * 32 - 14 * s.player.scale,
+    MAP_TOP + entry.row * 32 - 14 * down.player.scale,
   );
-  s.step(dt, { ...emptyInput(), down: true });
-  const clip = s.player.pipeTravel?.clip;
-  assert.ok(clip);
-  assert.equal(clip.w, entry.width * 32);
-  assert.ok(clip.w < 32 * s.player.scale);
-  assert.equal(clip.h, entry.row * 32);
-  assert.ok(
-    clip.h > 0,
-    "clip is the space outside the mouth, not the pipe interior",
+  down.step(dt, { ...emptyInput(), down: true });
+  assert.equal(down.player.pipeTravel?.phase, "enter");
+  assert.equal(down.player.pipeTravel?.dir, "down");
+  assertLipClip(
+    down.player.pipeTravel!.clip!,
+    down.activeRoom,
+    entry,
+    "down",
+    spriteW,
+    spriteH,
   );
+  waitPipePhase(down, down.player, "exit");
+  const dest = down.activeRoom.data.pipes[0];
+  assert.equal(down.player.pipeTravel?.dir, "left");
+  assertLipClip(
+    down.player.pipeTravel!.clip!,
+    down.activeRoom,
+    dest,
+    "left",
+    spriteW,
+    spriteH,
+  );
+  while (down.player.pipeTravel) down.step(dt, emptyInput());
+  tick(down, T.pipeCooldown + dt);
+  at(
+    down,
+    down.activeRoom.offset + dest.column * 32 - 12,
+    MAP_TOP + dest.row * 32 + 32,
+  );
+  down.step(dt, { ...emptyInput(), right: true });
+  assert.equal(down.player.pipeTravel?.phase, "enter");
+  assert.equal(down.player.pipeTravel?.dir, "right");
+  assertLipClip(
+    down.player.pipeTravel!.clip!,
+    down.activeRoom,
+    dest,
+    "right",
+    spriteW,
+    spriteH,
+  );
+  waitPipePhase(down, down.player, "exit");
+  const emerge = down.activeRoom.data.pipes.find((p) => p.column === 163)!;
+  assert.equal(down.player.pipeTravel?.dir, "up");
+  assertLipClip(
+    down.player.pipeTravel!.clip!,
+    down.activeRoom,
+    emerge,
+    "up",
+    spriteW,
+    spriteH,
+  );
+  down.physics.clear();
+
+  const npcPipe = goalPipeSim();
+  const n = npcPipe.s.npcs[0];
+  n.areaId = "40";
+  n.warned = true;
+  n.state = "run";
+  parkNpcs(npcPipe.s, [n]);
+  give(npcPipe.s, n, "mushroom3x");
+  standOnPipe(n, npcPipe.goalPipe);
+  tick(npcPipe.s, 0.15);
+  assert.ok(n.pipeTravel);
+  assert.equal(n.pipeTravel?.dir, "right");
+  const npcSprite = 32 * n.scale;
+  assertLipClip(
+    n.pipeTravel!.clip!,
+    npcPipe.sub,
+    npcPipe.sub.data.pipes.find(
+      (p) => p.column === npcPipe.sub.data.goal!.column,
+    )!,
+    "right",
+    npcSprite,
+    npcSprite,
+  );
+  waitPipePhase(npcPipe.s, n, "exit");
+  assert.ok(n.pipeTravel?.clip);
+  assert.ok(n.pipeTravel!.clip!.w > 64 || n.pipeTravel!.clip!.h > 64);
+  npcPipe.s.physics.clear();
+
+  const marioPipe = goalPipeSim();
+  marioPipe.s.marioActive = true;
+  marioPipe.s.mario.areaId = "40";
+  stillMario(marioPipe.s);
+  marioPipe.s.marioDecision = 0;
+  marioPipe.s.marioChase = 0;
+  marioPipe.s.marioPause = 0;
+  marioPipe.s.marioReaction = 0;
+  marioPipe.s.random = () => 0;
+  for (const c of marioPipe.s.obstacles) {
+    if (c.kind === "pipe" && c !== marioPipe.goalPipe) c.x = -1e6;
+  }
+  give(marioPipe.s, marioPipe.s.mario, "mushroom8x");
+  standOnPipe(marioPipe.s.mario, marioPipe.goalPipe);
+  marioPipe.s.cameraX = marioPipe.goalPipe.x - 400;
+  tick(marioPipe.s, dt);
+  assert.ok(marioPipe.s.mario.pipeTravel);
+  const marioClip = marioPipe.s.mario.pipeTravel!.clip!;
+  const goalData = marioPipe.sub.data.pipes.find(
+    (p) => p.column === marioPipe.sub.data.goal!.column,
+  )!;
+  assertLipClip(
+    marioClip,
+    marioPipe.sub,
+    goalData,
+    "right",
+    32 * T.hugeScale,
+    64 * T.hugeScale,
+  );
+  marioPipe.s.physics.clear();
+
+  const huge = goalPipeSim();
+  give(huge.s, huge.s.player, "mushroom8x");
+  standOnPipe(huge.s.player, huge.goalPipe);
+  tick(huge.s, 0.1, { down: true });
+  assert.ok(huge.s.player.pipeTravel);
+  assertLipClip(
+    huge.s.player.pipeTravel!.clip!,
+    huge.sub,
+    huge.sub.data.pipes.find((p) => p.column === huge.sub.data.goal!.column)!,
+    "right",
+    32 * T.hugeScale,
+    32 * T.hugeScale,
+  );
+  huge.s.physics.clear();
 });
 
 test("Mario cannot stomp a traveler in a pipe", () => {

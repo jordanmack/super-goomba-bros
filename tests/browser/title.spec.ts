@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   test,
   expect,
@@ -5,6 +7,10 @@ import {
   skipIntro,
   waitForStart,
 } from "./skip-intro.ts";
+
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  "/tmp/grok-goal-4fa5eedd6ee8/implementer/issue-115-evidence";
 
 const surfaces = [
   ["tagline", ".title-screen .level-label"],
@@ -269,3 +275,195 @@ test("play keeps the journey label and world intro after the title omits them", 
   await expect(page.locator(".smb-hud")).toContainText("WORLD");
   await expect(page.getByTestId("world")).toHaveText("1-1");
 });
+
+const SKY = { r: 92, g: 148, b: 252 };
+function isSky(pixel: { r: number; g: number; b: number; a: number }) {
+  return (
+    pixel.a > 200 &&
+    Math.abs(pixel.r - SKY.r) < 10 &&
+    Math.abs(pixel.g - SKY.g) < 10 &&
+    Math.abs(pixel.b - SKY.b) < 10
+  );
+}
+function isBlank(pixel: { r: number; g: number; b: number; a: number }) {
+  return pixel.a < 8 && pixel.r < 8 && pixel.g < 8 && pixel.b < 8;
+}
+
+async function readTitleLandmarks(page: Page) {
+  return page.evaluate(() => {
+    const g = (window as any).__game;
+    g.renderer.render(g.sim, 0);
+    const cam = g.renderer.play.cameras.main;
+    const source = g.renderer.game.canvas as HTMLCanvasElement;
+    const canvas = document.createElement("canvas");
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(source, 0, 0);
+    const view = cam.worldView;
+    const sample = (wx: number, wy: number) => {
+      const sx = Math.floor(((wx - view.x) / view.width) * canvas.width);
+      const sy = Math.floor(((wy - view.y) / view.height) * canvas.height);
+      const p = ctx.getImageData(sx, sy, 1, 1).data;
+      return {
+        wx,
+        wy,
+        sx,
+        sy,
+        r: p[0]!,
+        g: p[1]!,
+        b: p[2]!,
+        a: p[3]!,
+      };
+    };
+    const pipe = sample(28 * 32 + 16, 14 + 11 * 32 + 16);
+    const question = sample(16 * 32 + 16, 14 + 9 * 32 + 16);
+    const player = sample(
+      g.sim.player.body.position.x,
+      g.sim.player.body.bounds.max.y - 16,
+    );
+    const canvasBox = source.getBoundingClientRect();
+    return {
+      pipe,
+      question,
+      player,
+      npcs: g.sim.npcs.length,
+      zoom: cam.zoom,
+      cameraX: g.sim.cameraX,
+      cameraY: g.sim.cameraY,
+      playerX: g.sim.player.body.position.x,
+      worldView: { x: view.x, y: view.y, w: view.width, h: view.height },
+      canvas: {
+        left: canvasBox.left,
+        top: canvasBox.top,
+        width: canvasBox.width,
+        height: canvasBox.height,
+        bufferW: canvas.width,
+        bufferH: canvas.height,
+      },
+    };
+  });
+}
+
+function pagePoint(
+  canvas: { left: number; top: number; width: number; height: number; bufferW: number; bufferH: number },
+  sx: number,
+  sy: number,
+) {
+  return {
+    x: canvas.left + (sx / canvas.bufferW) * canvas.width,
+    y: canvas.top + (sy / canvas.bufferH) * canvas.height,
+  };
+}
+
+async function assertTitleComposition(page: Page, shotName: string) {
+  await waitForTitleFonts(page);
+  await waitForStart(page);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const marks = await readTitleLandmarks(page);
+  expect(marks.npcs, `${shotName} npc population`).toBe(0);
+  expect(isBlank(marks.pipe), `${shotName} pipe blank`).toBe(false);
+  expect(isBlank(marks.question), `${shotName} question blank`).toBe(false);
+  expect(isSky(marks.pipe), `${shotName} pipe is scenery`).toBe(false);
+  expect(isSky(marks.question), `${shotName} question is scenery`).toBe(false);
+  const pipePage = pagePoint(marks.canvas, marks.pipe.sx, marks.pipe.sy);
+  const qPage = pagePoint(marks.canvas, marks.question.sx, marks.question.sy);
+  for (const [name, selector] of surfaces) {
+    const box = await page.locator(selector).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    });
+    const hits = (pt: { x: number; y: number }) =>
+      pt.x >= box.left &&
+      pt.x <= box.right &&
+      pt.y >= box.top &&
+      pt.y <= box.bottom;
+    expect(hits(pipePage), `${shotName} ${name} covers pipe`).toBe(false);
+    expect(hits(qPage), `${shotName} ${name} covers question`).toBe(false);
+  }
+  const before = { x: marks.cameraX, y: marks.cameraY, z: marks.zoom };
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.sim.player.body.position.x = 2800;
+    g.renderer.render(g.sim, 0);
+  });
+  const after = await page.evaluate(() => {
+    const g = (window as any).__game;
+    return {
+      x: g.sim.cameraX,
+      y: g.sim.cameraY,
+      z: g.sim.cameraZoom,
+      playerX: g.sim.player.body.position.x,
+    };
+  });
+  expect(after.playerX).toBe(2800);
+  expect(after.x).toBeCloseTo(before.x, 5);
+  expect(after.y).toBeCloseTo(before.y, 5);
+  expect(after.z).toBeCloseTo(before.z, 5);
+}
+
+const compositionViewports = [
+  { file: "title-390.png", width: 390, height: 844 },
+  { file: "title-844.png", width: 844, height: 390 },
+  { file: "title-1440.png", width: 1440, height: 900 },
+] as const;
+
+for (const viewport of compositionViewports) {
+  test(`title still shows pipe and question blocks at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    await page.goto("/");
+    await assertTitleComposition(page, viewport.file);
+    mkdirSync(EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({
+      path: resolve(EVIDENCE_DIR, viewport.file),
+      fullPage: false,
+    });
+  });
+}
+
+test("GAME OVER title uses the same framed still as a cold load", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await assertTitleComposition(page, "cold-390");
+  const cold = await page.evaluate(() => {
+    const g = (window as any).__game;
+    return { x: g.sim.cameraX, y: g.sim.cameraY, z: g.sim.cameraZoom };
+  });
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.evaluate(() => {
+    const s = (window as any).__game.sim;
+    s.lives = 1;
+    s.kill(s.player, false);
+  });
+  await expect(page.getByRole("region", { name: "Title screen" })).toBeVisible({
+    timeout: 8000,
+  });
+  await assertTitleComposition(page, "gameover-390");
+  const back = await page.evaluate(() => {
+    const g = (window as any).__game;
+    return {
+      x: g.sim.cameraX,
+      y: g.sim.cameraY,
+      z: g.sim.cameraZoom,
+      npcs: g.sim.npcs.length,
+    };
+  });
+  expect(back.npcs).toBe(0);
+  expect(back.x).toBeCloseTo(cold.x, 5);
+  expect(back.y).toBeCloseTo(cold.y, 5);
+  expect(back.z).toBeCloseTo(cold.z, 5);
+});
+

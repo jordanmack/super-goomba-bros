@@ -174,3 +174,34 @@ export function pickWarningChirp(random: () => number) {
 }
 
 export const MAP_TOP = TUNING.groundY - 13 * 32;
+export const VIEW_HEIGHT = 540;
+// 1-1 opening: start hill through the first pipe (column 28, 2 tiles).
+export const TITLE_SHOT = { x: 0, y: 0, w: 30 * 32, h: VIEW_HEIGHT } as const;
+
+export function titleCamera(
+  viewWidth: number,
+  viewHeight: number,
+  shot: { x: number; y: number; w: number; h: number } = TITLE_SHOT,
+) {
+  const zoom = Math.min(1, viewWidth / shot.w, viewHeight / shot.h);
+  return {
+    scrollX: shot.x + (viewWidth / 2) * (1 / zoom - 1),
+    scrollY: shot.y + shot.h - viewHeight / 2 - viewHeight / (2 * zoom),
+    zoom,
+  };
+}
+
+export function cameraWorldView(
+  scrollX: number,
+  scrollY: number,
+  zoom: number,
+  viewWidth: number,
+  viewHeight: number,
+) {
+  return {
+    x: scrollX + viewWidth / 2 - viewWidth / (2 * zoom),
+    y: scrollY + viewHeight / 2 - viewHeight / (2 * zoom),
+    w: viewWidth / zoom,
+    h: viewHeight / zoom,
+  };
+}
