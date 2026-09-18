@@ -256,6 +256,8 @@ export class Play extends Phaser.Scene {
         "fireball",
         10,
       ).setRotation(((Math.floor(f.age * 12) % 4) * Math.PI) / 2);
+    for (const b of sim.bulletBills)
+      image(b.x, b.y, 32, 32, "bulletBill", 9).setFlipX(b.vx < 0);
     for (const p of sim.particles)
       image(
         p.x,

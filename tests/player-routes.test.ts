@@ -36,9 +36,11 @@ for (const [index, level] of CAMPAIGN.entries())
             down: !!(bits & 8),
             run: !!(bits & 16),
           });
-          // Movement must work without a lucky power-up.
+          // Movement must work without a lucky power-up. Bills are covered in
+          // cannon tests; these replays isolate traversal.
           for (const item of sim.items) sim.physics.remove(item.body);
           sim.items = [];
+          sim.bulletBills = [];
           assert.notEqual(
             sim.mode,
             "dead",

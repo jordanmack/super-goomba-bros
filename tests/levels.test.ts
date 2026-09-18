@@ -10,6 +10,8 @@ import {
 } from "../scripts/extract-levels.mjs";
 import { WORLD_1_1 } from "./fixtures/world-1-1.ts";
 import {
+  isCannonBarrel,
+  isCannonTile,
   isFlagpoleTile,
   isSmashExemptTile,
   isSolidTile,
@@ -65,6 +67,43 @@ test("World 1-1 decoded collision anchors match the existing reference map", () 
     ),
     sorted(stairs),
   );
+});
+
+test("cannon tiles stay solid and 8x-unsmashable, and all 31 barrels exist", () => {
+  assert.equal(isCannonBarrel(100), true);
+  assert.equal(isCannonTile(100), true);
+  assert.equal(isCannonTile(101), true);
+  assert.equal(isCannonTile(102), true);
+  assert.equal(isSolidTile(100), true);
+  assert.equal(isSolidTile(101), true);
+  assert.equal(isSolidTile(102), true);
+  assert.equal(isSmashExemptTile(100), true);
+  assert.equal(isSmashExemptTile(101), true);
+  assert.equal(isSmashExemptTile(102), true);
+  const counts: Record<string, number> = {
+    "21": 3,
+    "2a": 3,
+    "31": 2,
+    "32": 10,
+    "33": 13,
+  };
+  let total = 0;
+  for (const [id, expected] of Object.entries(counts)) {
+    const area = areas.find((a) => a.id === id);
+    assert.ok(area, id);
+    const barrels = area.tiles.flatMap((row, y) =>
+      row.flatMap((tile, x) => (isCannonBarrel(tile) ? [[x, y]] : [])),
+    );
+    assert.equal(barrels.length, expected, id);
+    for (const [column, row] of barrels) {
+      const object = area.objects.find(
+        (o) => o.opcode === 1 && o.column === column && o.row === row,
+      );
+      assert.ok(object, `${id} cannon at ${column},${row}`);
+    }
+    total += barrels.length;
+  }
+  assert.equal(total, 31);
 });
 
 test("spring tiles stay solid and 8x-unsmashable", () => {

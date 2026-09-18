@@ -1,5 +1,5 @@
 import { Body, PhysicsWorld, overlaps } from "./physics.ts";
-import { areaData, areaGaps, terrainRects } from "./levels.ts";
+import { areaData, areaGaps, isCannonBarrel, terrainRects } from "./levels.ts";
 import type { Area } from "./levels.ts";
 import { MAP_TOP, TUNING as T } from "./config.ts";
 import type { Actor, Obstacle } from "./simulation.ts";
@@ -13,6 +13,13 @@ export type Flagpole = {
   bottom: number;
   claim: FlagClaim | null;
   raise: number;
+};
+export type Cannon = {
+  column: number;
+  row: number;
+  x: number;
+  y: number;
+  timer: number;
 };
 
 export class Room {
@@ -30,6 +37,7 @@ export class Room {
     kind: number;
     phase: number;
   }[] = [];
+  cannons: Cannon[] = [];
   private swimFields = new Map<string, (point: Point) => Point[]>();
   coins: { x: number; y: number; collected: boolean }[] = [];
 
@@ -60,6 +68,14 @@ export class Room {
             x: offset + x * 32 + 16,
             y: MAP_TOP + y * 32 + 16,
             collected: false,
+          });
+        if (isCannonBarrel(tile))
+          this.cannons.push({
+            column: x,
+            row: y,
+            x: offset + x * 32 + 16,
+            y: MAP_TOP + y * 32 + 16,
+            timer: T.cannonReload + ((x * 13 + y * 7) % T.cannonReload),
           });
       }),
     );

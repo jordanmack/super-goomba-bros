@@ -257,6 +257,7 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
   const mushroom = crop(items, 0, 0, 16, 16);
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
+    bulletBill: crop(enemies, 304, 96, 16, 16),
     platform: crop(items, 80, 24, 48, 8),
     coin: crop(items, 0, 80, 16, 16),
     mushroom,

@@ -102,6 +102,14 @@ export const TUNING = {
   marioDefeatSeconds: 3,
   fireballSlots: 2,
   playerFireballScale: 3,
+  // NES BulletBillXSpdData $18 at 2x tiles.
+  bulletSpeed: 3,
+  bulletSize: 24,
+  // Cannon_Timer $0e plus LSFR select (~3/16) is about 80 frames.
+  cannonReload: 80,
+  cannonSlots: 3,
+  // PlayerEnemyDiff adc #$28 / cmp #$50: |dx| < 40 NES px.
+  cannonClose: 80,
   blockBounceSeconds: 0.22,
   pipeWidth: 64,
   pipeHeight: 64,

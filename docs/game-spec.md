@@ -365,7 +365,7 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   spawns already free (`emerge` 0, not frozen) and flies out; it does not use
   the emerge rise or the appear cue. Unrevealed hidden blocks stay hidden.
   Floors, stairs you stand on, moving platforms, the flagpole, the goal door,
-  a goal pipe, castle bridges, the axe, and springs stay. 8x never smashes a
+  a goal pipe, castle bridges, the axe, springs, and cannons stay. 8x never smashes a
   goal pipe or castle door. The door stays solid. 8x no longer passes through
   an intact pipe: contact destroys it, and that mouth cannot be entered after
   it is gone. Non-goal pipes stay smashable. When the player, an NPC, or Mario
@@ -389,6 +389,18 @@ break. Question blocks, used blocks, and unbreakable tiles are not broken this
 way. Player fireballs do not harm NPCs. A Mario fireball is a normal hit: it
 shrinks 2x or 3x to 1x and kills only 1x, matching a stomp or moving shell.
 Stars and 8x ignore that fireball.
+
+## Cannons and Bullet Bills
+
+Cannons are terrain (metatiles 100 barrel, 101 pedestal, 102 shaft). They stay
+solid. 8x does not smash them. Every cannon barrel in the level data fires; do
+not hard-code per stage. Timing follows SMB1. A cannon does not fire when the
+player is too close or in the same column. Bullet Bills travel horizontally at
+the original speed, ignore gravity, and are removed when they leave the area.
+Contact uses the same lethal terms as other hits for the player, NPCs, and
+Mario. A bill can be stomped. A star makes the player immune. An NPC killed by
+a bill counts in DIED. Escorted NPCs jump rather than walk a cannon firing
+lane as a matter of course. They may still be hit.
 
 ## Death and audio
 

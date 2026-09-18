@@ -23,9 +23,17 @@ export function stageTimer(area: Area) {
 export function isFlagpoleTile(id: number) {
   return id === 36 || id === 37;
 }
+export function isCannonBarrel(id: number) {
+  return id === 100;
+}
+export function isCannonTile(id: number) {
+  return id === 100 || id === 101 || id === 102;
+}
 export function isSmashExemptTile(id: number) {
-  // Springs 103-104 and castle bridge 137 stay solid for 8x.
-  return id === 103 || id === 104 || id === 137 || isFlagpoleTile(id);
+  // Springs 103-104, cannon 100-102, and castle bridge 137 stay solid for 8x.
+  return (
+    isCannonTile(id) || id === 103 || id === 104 || id === 137 || isFlagpoleTile(id)
+  );
 }
 export function isSolidTile(id: number) {
   if (isFlagpoleTile(id)) return false;

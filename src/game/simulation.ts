@@ -201,6 +201,14 @@ export type Fireball = {
   vy?: number;
   scale?: number;
 };
+export type BulletBill = {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  areaId: string;
+  cannonX: number;
+};
 export type MushroomKind = "mushroom" | "mushroom3x" | "mushroom8x";
 export type ItemKind = "star" | "flower" | "oneUp" | MushroomKind;
 export const isMushroom = (kind: ItemKind): kind is MushroomKind =>
@@ -487,6 +495,7 @@ export class Simulation {
   mario!: Actor;
   obstacles: Obstacle[] = [];
   fireballs: Fireball[] = [];
+  bulletBills: BulletBill[] = [];
   items: Item[] = [];
   particles: Particle[] = [];
   events: GameEvent[] = [];
@@ -667,6 +676,7 @@ export class Simulation {
     this.cameraY = 0;
     this.cameraZoom = 1;
     this.fireballs = [];
+    this.bulletBills = [];
     this.items = [];
     this.coinPops = [];
     this.particles = [];
@@ -2660,6 +2670,14 @@ export class Simulation {
       )
         this.kill(a, false);
     this.updateFireballs(dt);
+    this.updateCannons();
+    this.updateBulletBills(
+      dt,
+      playerBottom,
+      playerFalling,
+      marioBottom,
+      marioFalling,
+    );
     this.updateFlagpoles(dt);
     if (this.mode === "finishing") this.stepTally(dt);
   }
@@ -2905,6 +2923,13 @@ export class Simulation {
           : 1;
       this.move(n, direction * this.runSpeedFor(n));
       this.autoJump(n, direction);
+      if (
+        n.grounded &&
+        !n.navDrop &&
+        !n.navBackoff &&
+        this.cannonLaneAhead(n, direction)
+      )
+        this.jump(n);
     }
   }
 
@@ -3360,5 +3385,169 @@ export class Simulation {
       }
     }
     this.fireballs = this.fireballs.filter((f) => f.age < 5);
+  }
+
+  spawnBulletBill(
+    x: number,
+    y: number,
+    vx: number,
+    areaId = this.player.areaId ?? this.level.main,
+    cannonX = x,
+  ): BulletBill {
+    const bill: BulletBill = {
+      id: this.nextId++,
+      x,
+      y,
+      vx,
+      areaId,
+      cannonX,
+    };
+    this.bulletBills.push(bill);
+    return bill;
+  }
+
+  private cannonLaneAhead(n: Actor, direction: number) {
+    const room = this.roomFor(n);
+    const ny = n.body.position.y,
+      nx = n.body.position.x;
+    return room.cannons.some((c) => {
+      if (Math.abs(c.y - ny) > n.body.height / 2 + 16) return false;
+      const ahead = (c.x - nx) * direction;
+      return ahead > n.body.width / 2 && ahead < 320;
+    });
+  }
+
+  private viewWindow(room = this.activeRoom) {
+    const width = this.viewWidth;
+    const cam = Math.max(
+      room.offset,
+      Math.min(
+        room.offset + room.data.width * 32 - width,
+        this.player.body.position.x - width * 0.36,
+      ),
+    );
+    return { left: cam - 32, right: cam + width + 32 };
+  }
+
+  private updateCannons() {
+    if (this.pipeIntro) return;
+    for (const room of this.rooms.values()) {
+      if (room.data.type === "water" || !room.cannons.length) continue;
+      let live = this.bulletBills.filter(
+        (b) => b.areaId === room.data.id,
+      ).length;
+      for (const cannon of room.cannons) {
+        if (cannon.timer > 0) {
+          cannon.timer--;
+          continue;
+        }
+        if (live >= T.cannonSlots) continue;
+        if (this.tryFireCannon(room, cannon)) live++;
+        cannon.timer = T.cannonReload;
+      }
+    }
+  }
+
+  private tryFireCannon(room: Room, cannon: { x: number; y: number }) {
+    if (
+      this.player.areaId !== room.data.id ||
+      this.inPipe(this.player) ||
+      this.player.saved
+    )
+      return false;
+    const view = this.viewWindow(room);
+    if (cannon.x < view.left || cannon.x > view.right) return false;
+    const dx = this.player.body.position.x - cannon.x;
+    if (Math.abs(dx) < T.cannonClose) return false;
+    const vx = dx < 0 ? -T.bulletSpeed : T.bulletSpeed;
+    this.spawnBulletBill(cannon.x, cannon.y, vx, room.data.id, cannon.x);
+    return true;
+  }
+
+  private overlapBill(a: Actor, b: BulletBill) {
+    const half = T.bulletSize / 2;
+    return (
+      a.alive &&
+      !a.saved &&
+      !this.inPipe(a) &&
+      Math.abs(a.body.position.x - b.x) < a.body.width / 2 + half &&
+      Math.abs(a.body.position.y - b.y) < a.body.height / 2 + half
+    );
+  }
+
+  private stompBill(
+    a: Actor,
+    b: BulletBill,
+    falling: boolean,
+    bottom: number,
+  ) {
+    if (!this.overlapBill(a, b)) return false;
+    const billTop = b.y - T.bulletSize / 2;
+    return falling && bottom <= billTop + 2;
+  }
+
+  private strikeBill(a: Actor, byPlayer: boolean) {
+    if (a.starLeft > 0 || this.isHuge(a)) return;
+    if (a === this.mario) {
+      if (this.marioStun === 0) this.hitMarioByFireball(byPlayer);
+      return;
+    }
+    this.hurt(a);
+  }
+
+  private updateBulletBills(
+    dt: number,
+    playerBottom: number,
+    playerFalling: boolean,
+    marioBottom: number,
+    marioFalling: boolean,
+  ) {
+    const keep: BulletBill[] = [];
+    for (const b of this.bulletBills) {
+      b.x += b.vx * dt * 60;
+      const room = this.rooms.get(b.areaId);
+      if (!room) continue;
+      const half = T.bulletSize / 2;
+      const view = this.viewWindow(room);
+      if (
+        b.x < room.offset - half ||
+        b.x > room.offset + room.data.width * 32 + half ||
+        b.x < view.left ||
+        b.x > view.right
+      )
+        continue;
+      let hit = false;
+      if (this.stompBill(this.player, b, playerFalling, playerBottom)) {
+        Body.setVelocity(this.player.body, {
+          x: this.player.body.velocity.x,
+          y: -T.stompBounce,
+        });
+        hit = true;
+      } else if (this.overlapBill(this.player, b)) {
+        this.strikeBill(this.player, false);
+        hit = true;
+      } else if (
+        this.marioActive &&
+        this.stompBill(this.mario, b, marioFalling, marioBottom)
+      ) {
+        Body.setVelocity(this.mario.body, {
+          x: this.mario.body.velocity.x,
+          y: -T.stompBounce,
+        });
+        hit = true;
+      } else if (this.marioActive && this.overlapBill(this.mario, b)) {
+        this.strikeBill(this.mario, false);
+        hit = true;
+      } else {
+        for (const n of this.npcs) {
+          if (!this.overlapBill(n, b)) continue;
+          this.strikeBill(n, false);
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) keep.push(b);
+    }
+    this.bulletBills = keep;
   }
 }
