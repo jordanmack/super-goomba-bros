@@ -446,7 +446,7 @@ test("blocks bounce and disappear independently; item powers render with touch f
     };
   });
   expect(blocks).toEqual({ bounced: true, disappeared: true, scale: 64 });
-  await expect(page.locator(".power-state")).toContainText("GIANT");
+  await expect(page.locator(".power-state")).toHaveCount(0);
   await expect(page.locator(".danger, .danger-meter")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "B", exact: true }),
@@ -1349,15 +1349,31 @@ test("HUD coin counter increases on collection and persists across restart and n
   await skipIntro(page);
   const coins = page.getByTestId("coins");
   const score = page.getByTestId("score");
+  const hud = page.locator(".smb-hud");
   await expect(coins).toHaveText("00");
   await expect(score).toHaveText("000000");
   await expect(page.getByTestId("world")).toHaveText("1-1");
   await expect(page.getByTestId("time")).toBeVisible();
-  await expect(page.locator(".smb-hud")).toContainText("GOOMBA");
+  await expect(hud).toContainText("GOOMBA");
+  await expect(hud).toContainText("COINS");
+  await expect(hud).not.toContainText("Ⓒ");
+  await expect(page.locator(".smb-coins-spacer")).toHaveCount(0);
+  await expect(page.locator(".power-state")).toHaveCount(0);
+  const coinsCell = hud.locator(":scope > div").filter({ has: coins });
+  await expect(coinsCell.locator("span")).toHaveText("COINS");
+  await expect(coinsCell.locator("strong")).toHaveText("00");
+  const labelBox = (await coinsCell.locator("span").boundingBox())!;
+  const valueBox = (await coins.boundingBox())!;
+  expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(valueBox.y + 1);
+  const cellBoxes = [];
+  for (const cell of await hud.locator(":scope > div").all())
+    cellBoxes.push((await cell.boundingBox())!);
+  expect(cellBoxes).toHaveLength(4);
+  const cellTops = cellBoxes.map((box) => box.y);
+  expect(Math.max(...cellTops) - Math.min(...cellTops)).toBeLessThan(8);
   await expect(page.locator(".phase")).toHaveCount(0);
   await expect(page.getByTestId("lives")).toHaveCount(0);
-  const box = (await coins.boundingBox())!;
-  expect(box.y).toBeLessThan(80);
+  expect(valueBox.y).toBeLessThan(80);
   const collect = () =>
     page.evaluate(() => {
       const s = (window as any).__game.sim;

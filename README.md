@@ -63,7 +63,7 @@ Gameplay remains available. Reloading retries sound initialization.
 
 ## Rules
 
-The in-play header is one SMB1 line: GOOMBA, SCORE, coins, WORLD, and TIME.
+The in-play header is one SMB1 line: GOOMBA, SCORE, COINS, WORLD, and TIME.
 Lives stay on the WORLD intro. TIME counts down from the stage timer and kills
 at 0. At 100 it hurries the music. SCORE lasts the campaign, keeps across lives,
 and zeros on title and GAME OVER. A player-collected coin is +200. A same-size or smaller mushroom

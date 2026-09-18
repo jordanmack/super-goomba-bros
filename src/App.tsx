@@ -66,7 +66,6 @@ type Snapshot = {
   lives: number;
   living: number;
   elapsed: number;
-  power: string;
   flower: boolean;
   door: boolean;
   shouts: {
@@ -92,7 +91,6 @@ const initial: Snapshot = {
   lives: T.startingLives,
   living: T.population,
   elapsed: 0,
-  power: "",
   flower: false,
   door: true,
   shouts: [],
@@ -342,19 +340,6 @@ export default function App() {
             lives: sim.lives,
             living: sim.living(),
             elapsed: sim.elapsed,
-            power: [
-              sim.player.starLeft > 0
-                ? `STAR ${Math.ceil(sim.player.starLeft)}s`
-                : "",
-              sim.player.scale >= T.hugeScale
-                ? `HUGE ${Math.ceil(sim.player.hugeLeft)}s`
-                : sim.player.scale > 1
-                  ? "GIANT"
-                  : "",
-              sim.player.flower ? "FIRE: B" : "",
-            ]
-              .filter(Boolean)
-              .join(" / "),
             flower: sim.player.flower,
             door:
               !!sim.activeRoom.data.goal &&
@@ -527,15 +512,10 @@ export default function App() {
               <span>GOOMBA</span>
               <strong data-testid="score">{formatScore(state.score)}</strong>
             </div>
-            <div className="smb-coins">
-              <span className="smb-coins-spacer" aria-hidden="true">
-                &nbsp;
-              </span>
-              <strong>
-                <span aria-hidden="true">Ⓒ×</span>
-                <span data-testid="coins">
-                  {String(state.coins).padStart(2, "0")}
-                </span>
+            <div>
+              <span>COINS</span>
+              <strong data-testid="coins">
+                {String(state.coins).padStart(2, "0")}
               </strong>
             </div>
             <div>
@@ -645,11 +625,6 @@ export default function App() {
       )}
       {active && (
         <>
-          {state.power && (
-            <div className="power-state" role="status">
-              {state.power}
-            </div>
-          )}
           {!overlay &&
             state.shouts.map((stack) => (
               <div

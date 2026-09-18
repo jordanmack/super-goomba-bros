@@ -193,7 +193,7 @@ Saved NPCs stay safe and cannot return to danger.
 
 ## Counters and finish
 
-The in-play header is one non-wrapping SMB1 status block: `GOOMBA`, SCORE, coins,
+The in-play header is one non-wrapping SMB1 status block: `GOOMBA`, SCORE, `COINS`,
 WORLD, and TIME. Icon tools stay on the right and must not wrap over the
 playfield. Lives appear only on the WORLD n-n intro (`× 03`), not the in-play
 bar. There is no in-world elapsed WORLD overlay.

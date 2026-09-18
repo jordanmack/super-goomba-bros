@@ -291,9 +291,6 @@ p {
   font-weight: 400;
   letter-spacing: 1px;
 }
-.smb-coins-spacer {
-  visibility: hidden;
-}
 .in-game .brand {
   display: none;
 }
@@ -307,17 +304,6 @@ p {
   background: #31594d;
   color: #f4efc8;
   border-color: #6c8970;
-}
-.power-state {
-  position: absolute;
-  top: 111px;
-  left: 32px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #fff;
-  font-size: 8px;
-  z-index: 2;
 }
 .speech-stack {
   position: absolute;
@@ -891,12 +877,6 @@ p {
   .smb-hud strong {
     font-size: 10px;
   }
-  .power-state {
-    top: 98px;
-    left: 14px;
-    font-size: 6px;
-    gap: 6px;
-  }
   .play-footer {
     padding: 10px 12px 15px;
   }
@@ -1040,9 +1020,6 @@ p {
   }
   .counters small {
     font-size: 8px;
-  }
-  .power-state {
-    top: 73px;
   }
   .play-footer {
     padding: 6px 20px;
