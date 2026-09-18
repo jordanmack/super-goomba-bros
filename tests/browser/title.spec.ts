@@ -18,19 +18,29 @@ const viewports = [
   { name: "narrow short landscape", width: 568, height: 360 },
 ] as const;
 
-async function assertTitleType(page: Page) {
-  await page.goto("/");
+type TitleTypeRow = {
+  name: string;
+  fontFamily: string;
+  fontSize: number;
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+};
+
+async function waitForTitleFonts(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
     await document.fonts.load('16px "Press Start 2P"');
   });
-  const screen = page.getByRole("region", { name: "Title screen" });
-  await expect(screen).toBeVisible();
-  await expect(page.locator("main.at-title")).toBeVisible();
+}
+
+async function readTitleType(page: Page) {
   const headerBottom = await page.locator(".topbar").evaluate((el) => {
     return el.getBoundingClientRect().bottom;
   });
   const viewport = page.viewportSize()!;
+  const rows: TitleTypeRow[] = [];
   for (const [name, selector] of surfaces) {
     const loc = page.locator(selector);
     await expect(loc, name).toBeVisible();
@@ -47,14 +57,46 @@ async function assertTitleType(page: Page) {
         right: box.right,
       };
     });
-    expect(metrics.fontFamily, name).toMatch(/Press Start 2P/);
-    expect(metrics.fontSize, name).toBeGreaterThanOrEqual(16);
-    expect(metrics.fontSize % 8, name).toBe(0);
-    expect(metrics.top, name).toBeGreaterThanOrEqual(headerBottom);
-    expect(metrics.left, name).toBeGreaterThanOrEqual(0);
-    expect(metrics.bottom, name).toBeLessThanOrEqual(viewport.height);
-    expect(metrics.right, name).toBeLessThanOrEqual(viewport.width);
+    rows.push({ name, ...metrics });
   }
+  return { headerBottom, viewport, rows };
+}
+
+function assertTitleTypeMatrix(
+  metrics: Awaited<ReturnType<typeof readTitleType>>,
+) {
+  for (const row of metrics.rows) {
+    expect(row.fontFamily, row.name).toMatch(/Press Start 2P/);
+    expect(row.fontSize, row.name).toBeGreaterThanOrEqual(16);
+    expect(row.fontSize % 8, row.name).toBe(0);
+    expect(row.top, row.name).toBeGreaterThanOrEqual(metrics.headerBottom);
+    expect(row.left, row.name).toBeGreaterThanOrEqual(0);
+    expect(row.bottom, row.name).toBeLessThanOrEqual(metrics.viewport.height);
+    expect(row.right, row.name).toBeLessThanOrEqual(metrics.viewport.width);
+  }
+}
+
+function assertTitleTypeMatches(
+  actual: Awaited<ReturnType<typeof readTitleType>>,
+  expected: Awaited<ReturnType<typeof readTitleType>>,
+) {
+  assertTitleTypeMatrix(actual);
+  expect(actual.rows).toHaveLength(expected.rows.length);
+  for (let i = 0; i < expected.rows.length; i++) {
+    const cold = expected.rows[i]!;
+    const back = actual.rows[i]!;
+    expect(back.name, cold.name).toBe(cold.name);
+    expect(back.fontFamily, back.name).toBe(cold.fontFamily);
+    expect(back.fontSize, back.name).toBe(cold.fontSize);
+    expect(Math.abs(back.top - cold.top), back.name).toBeLessThan(2);
+    expect(Math.abs(back.left - cold.left), back.name).toBeLessThan(2);
+    expect(Math.abs(back.bottom - cold.bottom), back.name).toBeLessThan(2);
+    expect(Math.abs(back.right - cold.right), back.name).toBeLessThan(2);
+  }
+}
+
+async function assertTitleCopy(page: Page) {
+  const screen = page.getByRole("region", { name: "Title screen" });
   await expect(screen.getByText("A LITTLE COURAGE. A BIG MUSTACHE.")).toBeVisible();
   await expect(screen.getByRole("heading", { name: "Super Goomba Bros" })).toBeVisible();
   await expect(screen.getByRole("button", { name: "START GAME" })).toBeVisible();
@@ -62,6 +104,16 @@ async function assertTitleType(page: Page) {
   await expect(screen).not.toContainText("THE GREAT ESCAPE");
   await expect(screen).not.toContainText("WORLD 1 / THE GREAT ESCAPE");
   await expect(page.getByText("WORLD 1 / THE GREAT ESCAPE")).toHaveCount(0);
+}
+
+async function assertTitleType(page: Page) {
+  await page.goto("/");
+  await waitForTitleFonts(page);
+  const screen = page.getByRole("region", { name: "Title screen" });
+  await expect(screen).toBeVisible();
+  await expect(page.locator("main.at-title")).toBeVisible();
+  assertTitleTypeMatrix(await readTitleType(page));
+  await assertTitleCopy(page);
 }
 
 for (const viewport of viewports) {
@@ -118,11 +170,12 @@ function filledTitle(box: Awaited<ReturnType<typeof titleBoxes>>) {
   );
 }
 
-test("GAME OVER returns the title playfield to the cold-load size", async ({
+test("GAME OVER returns the title playfield and type to the cold-load metrics", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/");
+  await waitForTitleFonts(page);
   const screen = page.getByRole("region", { name: "Title screen" });
   await expect(screen).toBeVisible();
   await expect(page.locator("main.at-title")).toBeVisible();
@@ -130,6 +183,8 @@ test("GAME OVER returns the title playfield to the cold-load size", async ({
   const cold = await titleBoxes(page);
   expect(filledTitle(cold)).toBe(true);
   expect(Math.abs(cold.canvasTop - cold.playfieldTop)).toBeLessThan(5);
+  const coldType = await readTitleType(page);
+  assertTitleTypeMatrix(coldType);
 
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
@@ -173,11 +228,9 @@ test("GAME OVER returns the title playfield to the cold-load size", async ({
   expect(back.playfieldHeight).toBeGreaterThan(inGame.playfieldHeight + 40);
   expect(back.parentHeight).toBeGreaterThan(inGame.parentHeight + 40);
   expect(back.styleHeight).toBeGreaterThan(inGame.styleHeight + 40);
-  await expect(screen.getByText("A LITTLE COURAGE. A BIG MUSTACHE.")).toBeVisible();
-  await expect(
-    screen.getByRole("heading", { name: "Super Goomba Bros" }),
-  ).toBeVisible();
-  await expect(screen.getByRole("button", { name: "START GAME" })).toBeVisible();
+  await waitForTitleFonts(page);
+  assertTitleTypeMatches(await readTitleType(page), coldType);
+  await assertTitleCopy(page);
 });
 
 test("play keeps the journey label and world intro after the title omits them", async ({
