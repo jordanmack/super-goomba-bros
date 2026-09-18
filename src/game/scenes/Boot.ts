@@ -67,6 +67,14 @@ export class Boot extends Phaser.Scene {
       });
     }
     this.registry.set("portrait", art.portrait);
+    this.registry.set(
+      "itemIcons",
+      Object.fromEntries(
+        ["star", "mushroom", "mushroom3x", "mushroom8x", "flower", "oneUp"].map(
+          (key) => [key, art.assets[key as keyof typeof art.assets].toDataURL()],
+        ),
+      ),
+    );
     this.scene.start("Play");
   }
 }

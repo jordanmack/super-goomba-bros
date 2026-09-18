@@ -24,23 +24,33 @@ starts at World 1-1 and progresses in order.
 
 ## Controls
 
-| Action | Keyboard | Touch |
-| --- | --- | --- |
-| Walk | Left/Right or A/D | D-pad Left/Right |
-| Run | Shift, Z, or J | B |
-| Jump; swim upward in water | Space, Up, W, or K | A; Compact Up |
-| Enter a pipe | Down or S; walk into side entrances | D-pad Down |
-| Shoot with a flower | Shift, Z, or J (press) | B (press) |
-| Pause | Escape | Pause; NES Start |
+| Action | Keyboard | Touch | Gamepad |
+| --- | --- | --- | --- |
+| Walk | Left/Right or A/D | D-pad Left/Right | Stick or D-pad (deadzone 0.35) |
+| Run | Shift, Z, or J | B | B (East) |
+| Jump; swim upward in water | Space, Up, W, or K | A; Compact Up | A (South) |
+| Enter a pipe | Down or S; walk into side entrances | D-pad Down | Down |
+| Shoot with a flower | Shift, Z, or J (press) | B (press) | B (East) press |
+| Pause | Escape | Pause; NES Start | Start |
+| Select | | NES Select | Unused |
 
-The header Key bindings button shows this keyboard list.
+The header Key bindings button shows this keyboard list and the gamepad
+defaults. Help remaps Jump, Run, Left, Right, Down, and Pause. The map is the
+only setting stored in the browser. Invalid or missing maps use the defaults.
 
 Hold B to run. Jump keeps that ground speed in the air. Hold jump for extra
 height. A running jump is higher, as in SMB1, and clears original gaps. Compact is the default on-screen
-pad. A header button cycles Compact, NES, and hidden. Compact Up may jump; NES D-pad Up does
-not. Releasing direction stops horizontal movement. Springs provide their own
+pad. A header button cycles Compact, NES, and hidden. Compact Up may jump; NES D-pad Up and
+gamepad Up do not. The first gamepad stick or button use this session hides the
+on-screen pad. Unplug does not bring it back. Releasing direction stops horizontal movement. Springs provide their own
 stronger bounce. An unwarned NPC inside warning range automatically hears an
 urgent shout.
+
+On the title screen, consecutive `up up down down left right left right B A`
+unlocks a session-only power-up tray (star, 2x, 3x, 8x, flower, 1-up). Use
+arrow keys then letter B then letter A, or a gamepad D-pad plus B then A.
+WASD does not count. A click while playing drops that item in the player
+column. Reload clears the tray.
 
 Each touch, mouse pointer, and key has an independent hold. Sliding changes
 actions; sliding out releases them. Pause, restart, and interruptions clear input.

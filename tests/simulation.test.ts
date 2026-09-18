@@ -7,6 +7,7 @@ import {
   emptyInput,
 } from "../src/game/simulation.ts";
 import { MAP_TOP, PHRASES, TUNING as T, blockDrawY } from "../src/game/config.ts";
+import { firstEmptySpawnCell } from "../src/game/spawn-cell.ts";
 import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
@@ -6819,3 +6820,69 @@ test("SCORE may go negative from died penalties", () => {
   tick(s, dt);
   assert.ok(s.score < 0);
 });
+
+test("cheat drop spawns a free item in the first empty cell under the ceiling", () => {
+  const s = game();
+  const room = s.activeRoom;
+  const p = s.player.body.position;
+  const cell = firstEmptySpawnCell(
+    room.solids,
+    room.offset,
+    room.data.width,
+    p.x,
+    p.y,
+  );
+  assert.ok(cell);
+  const item = s.dropCheatItem("star");
+  assert.ok(item);
+  assert.equal(item.kind, "star");
+  assert.equal(item.emerge, 0);
+  assert.equal(item.body.frozen, false);
+  assert.equal(item.body.position.x, cell.x);
+  assert.equal(item.body.position.y, cell.y);
+  assert.ok(s.events.includes("appear"));
+  const brick = s.obstacles.find(
+    (c) => c.kind === "brick" && !c.hidden && c.body && c.y < p.y - 40,
+  )!;
+  at(s, brick.x, brick.y + 96);
+  const under = firstEmptySpawnCell(
+    s.activeRoom.solids,
+    s.activeRoom.offset,
+    s.activeRoom.data.width,
+    s.player.body.position.x,
+    s.player.body.position.y,
+  )!;
+  s.events.length = 0;
+  const dropped = s.dropCheatItem("mushroom");
+  assert.ok(dropped);
+  assert.equal(dropped.body.position.x, under.x);
+  assert.equal(dropped.body.position.y, under.y);
+  assert.ok(dropped.body.position.y > brick.y);
+  assert.ok(s.events.includes("appear"));
+});
+
+test("cheat drop ignores title, intro, dead, finishing, and pipe travel", () => {
+  const title = new Simulation(() => 0.5);
+  assert.equal(title.mode, "title");
+  assert.equal(title.dropCheatItem("star"), null);
+  const s = game();
+  s.mode = "intro";
+  assert.equal(s.dropCheatItem("flower"), null);
+  s.mode = "playing";
+  s.player.pipeTravel = {
+    phase: "enter",
+    dir: "down",
+    remaining: 1,
+    destArea: s.level.main,
+    destPage: 0,
+  };
+  assert.equal(s.dropCheatItem("oneUp"), null);
+  s.player.pipeTravel = undefined;
+  s.mode = "dead";
+  assert.equal(s.dropCheatItem("star"), null);
+  s.mode = "finishing";
+  assert.equal(s.dropCheatItem("star"), null);
+  s.mode = "gameover";
+  assert.equal(s.dropCheatItem("star"), null);
+});
+

@@ -16,12 +16,24 @@ import {
   VolumeX,
 } from "lucide-react";
 import { Simulation, emptyInput } from "./game/simulation";
-import type { Input, Mode, TallyPhase } from "./game/simulation";
+import type { Input, ItemKind, Mode, TallyPhase } from "./game/simulation";
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
 import { GameControls, KEY_BINDINGS, type PadAction } from "./game/controls";
 import { CAMPAIGN } from "./game/levels";
+import {
+  bindingLabel,
+  defaultPadMap,
+  GAMEPAD_BINDINGS,
+  PAD_REMAP_LABELS,
+  type PadBinding,
+  type PadMapAction,
+} from "./game/gamepad-map";
+import {
+  CHEAT_ITEM_LABELS,
+  CHEAT_ITEMS,
+} from "./game/spawn-cell";
 
 type PadLayout = "compact" | "nes" | "hidden";
 const PAD_LABEL: Record<PadLayout, string> = {
@@ -39,7 +51,10 @@ type Runtime = {
   paused: boolean;
   helpOpen: boolean;
   ignoreEscapeUntilUp: boolean;
+  padMap: Record<PadMapAction, PadBinding>;
+  remapTarget: PadMapAction | null;
   clearInput: () => void;
+  controls?: GameControls;
 };
 type Snapshot = {
   mode: Mode;
@@ -113,6 +128,11 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [padLayout, setPadLayout] = useState<PadLayout>("compact");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [sonamiUnlocked, setSonamiUnlocked] = useState(false);
+  const [itemIcons, setItemIcons] = useState<Record<string, string>>({});
+  const [padMap, setPadMap] = useState(defaultPadMap);
+  const [remapTarget, setRemapTarget] = useState<PadMapAction | null>(null);
+  const hidPad = useRef(false);
   const helpButton = useRef<HTMLButtonElement>(null);
   const helpCloseButton = useRef<HTMLButtonElement>(null);
   const helpWasOpen = useRef(false);
@@ -163,6 +183,8 @@ export default function App() {
         paused: false,
         helpOpen: false,
         ignoreEscapeUntilUp: false,
+        padMap: defaultPadMap(),
+        remapTarget: null,
         clearInput: () => {},
       };
       runtime.current = game;
@@ -172,6 +194,7 @@ export default function App() {
         .then(() => {
           if (disposed) return;
           renderer.bindPhysics(sim.physics);
+          let sonamiDone = false;
           controls = new GameControls(
             renderer.play!.input,
             surface.current!,
@@ -193,11 +216,51 @@ export default function App() {
             () => {
               game.helpOpen = false;
               setHelpOpen(false);
+              game.controls?.cancelRemap();
               if (!game.paused && sim.mode === "playing") startAudio(game);
             },
+            {
+              onSonami: () => {
+                if (sonamiDone) return;
+                sonamiDone = true;
+                setSonamiUnlocked(true);
+                void game.audio
+                  .start()
+                  .then(() => game.audio.event("coin"))
+                  .catch(() => {});
+              },
+              onTitleStart: () => {
+                if (game.sim.mode !== "title") return;
+                game.sim.lives = T.startingLives;
+                game.sim.reset("intro");
+                game.audio.resetMusic();
+                game.clearInput();
+                game.paused = false;
+                setPaused(false);
+                game.helpOpen = false;
+                setHelpOpen(false);
+                startAudio(game);
+                (document.activeElement as HTMLElement)?.blur();
+              },
+              onGamepadUse: () => {
+                if (hidPad.current) return;
+                hidPad.current = true;
+                setPadLayout("hidden");
+              },
+              onPadMapChange: (map) => {
+                game.padMap = map;
+                setPadMap(map);
+              },
+              onRemapChange: (target) => {
+                game.remapTarget = target;
+                setRemapTarget(target);
+              },
+            },
           );
+          game.controls = controls;
           game.clearInput = () => controls?.clear();
           setPortrait(renderer.game.registry.get("portrait"));
+          setItemIcons(renderer.game.registry.get("itemIcons") ?? {});
           if (!audio.available) {
             audio.disable();
             setMuted(true);
@@ -217,6 +280,7 @@ export default function App() {
         lastShoutCount = 0;
       const update = (now: number, frameDelta: number) => {
         const delta = Math.min(0.1, frameDelta / 1000);
+        controls?.poll();
         const frozen = game.paused || game.helpOpen;
         renderer.game.anims.globalTimeScale = frozen ? 0 : 1;
         if (!frozen) {
@@ -369,8 +433,15 @@ export default function App() {
     const game = runtime.current;
     if (game) {
       game.helpOpen = false;
+      game.controls?.cancelRemap();
       if (!game.paused && game.sim.mode === "playing") startAudio(game);
     }
+  };
+  const dropCheat = (kind: ItemKind) => {
+    const game = runtime.current;
+    if (!game || game.paused) return;
+    game.sim.dropCheatItem(kind);
+    (document.activeElement as HTMLElement)?.blur();
   };
   const toggleHelp = () => {
     if (runtime.current?.sim.mode === "finishing") return;
@@ -531,6 +602,31 @@ export default function App() {
           )}
         </div>
       </header>
+      {sonamiUnlocked && (
+        <div
+          className="cheat-tray"
+          role="toolbar"
+          aria-label="Power-up tray"
+          inert={paused || helpOpen || undefined}
+        >
+          {CHEAT_ITEMS.map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              className="cheat-item"
+              aria-label={CHEAT_ITEM_LABELS[kind]}
+              title={CHEAT_ITEM_LABELS[kind]}
+              onClick={() => dropCheat(kind)}
+            >
+              {itemIcons[kind] ? (
+                <img src={itemIcons[kind]} alt="" />
+              ) : (
+                <span>{CHEAT_ITEM_LABELS[kind]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
       {!active && !helpOpen && (
         <section className="title-screen" aria-label="Title screen">
           <p className="level-label">A LITTLE COURAGE. A BIG MUSTACHE.</p>
@@ -778,6 +874,43 @@ export default function App() {
               </div>
             ))}
           </dl>
+          <p className="level-label">GAMEPAD</p>
+          <dl className="bindings">
+            {GAMEPAD_BINDINGS.map((row) => (
+              <div key={row.action}>
+                <dt>{row.action}</dt>
+                <dd>{row.keys}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="remap-list">
+            {(Object.keys(PAD_REMAP_LABELS) as PadMapAction[]).map((action) => (
+              <button
+                key={action}
+                type="button"
+                className={
+                  remapTarget === action ? "remap-row listening" : "remap-row"
+                }
+                onClick={() =>
+                  runtime.current?.controls?.beginRemap(action)
+                }
+              >
+                <span>{PAD_REMAP_LABELS[action]}</span>
+                <span>
+                  {remapTarget === action
+                    ? "Press a button"
+                    : bindingLabel(padMap[action])}
+                </span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => runtime.current?.controls?.resetPadMap()}
+          >
+            RESET GAMEPAD
+          </button>
           <button
             ref={helpCloseButton}
             className="primary"

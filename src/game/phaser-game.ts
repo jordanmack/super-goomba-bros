@@ -29,6 +29,7 @@ export class PhaserGame {
       render: { preserveDrawingBuffer: true },
       scale: { mode: Phaser.Scale.FIT, expandParent: false },
       input: {
+        gamepad: true,
         activePointers: 5,
         windowEvents: false,
         touch: { target: document, capture: false },

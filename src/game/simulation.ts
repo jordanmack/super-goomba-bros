@@ -20,6 +20,7 @@ import {
 } from "./levels.ts";
 import { Room } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
+import { firstEmptySpawnCell } from "./spawn-cell.ts";
 
 export type Input = {
   left: boolean;
@@ -1192,6 +1193,33 @@ export class Simulation {
   private reveal(c: Obstacle) {
     c.used = true;
     if (c.body) c.body.headOnly = false;
+  }
+
+  dropCheatItem(kind: ItemKind) {
+    if (this.mode !== "playing" || this.inPipe(this.player)) return null;
+    const room = this.activeRoom;
+    const p = this.player.body.position;
+    const cell = firstEmptySpawnCell(
+      room.solids,
+      room.offset,
+      room.data.width,
+      p.x,
+      p.y,
+    );
+    if (!cell) return null;
+    const body = this.physics.rectangle(cell.x, cell.y, 24, 28, false);
+    const item: Item = {
+      id: this.nextId++,
+      kind,
+      body,
+      emerge: 0,
+      originY: cell.y,
+      direction: this.player.facing || 1,
+      age: 0,
+    };
+    this.items.push(item);
+    this.events.push("appear");
+    return item;
   }
 
   private spawnItem(

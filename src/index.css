@@ -354,6 +354,36 @@ p {
     2px 2px 0 #000;
   text-align: center;
 }
+.cheat-tray {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  pointer-events: none;
+}
+.cheat-item {
+  pointer-events: auto;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  border: 2px solid #fff;
+  color: #fff;
+}
+.cheat-item img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
 .play-footer {
   position: relative;
   flex-shrink: 0;
@@ -667,6 +697,29 @@ p {
   margin: 0;
   color: #fff5d5;
 }
+.remap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(480px, 100%);
+}
+.remap-row {
+  display: grid;
+  grid-template-columns: minmax(8em, 1fr) 2fr;
+  gap: 10px 16px;
+  width: 100%;
+  text-align: left;
+  font-size: 8px;
+  line-height: 1.8;
+  padding: 8px 10px;
+  background: #000;
+  border: 2px solid #fff;
+  color: #fff5d5;
+}
+.remap-row.listening {
+  border-color: #f8dd8a;
+  color: #f8dd8a;
+}
 .overlay .level-label {
   color: #b9d495;
   margin: 0;
@@ -799,6 +852,10 @@ p {
     gap: 6px;
   }
   .bindings div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .remap-row {
     grid-template-columns: 1fr;
     gap: 4px;
   }

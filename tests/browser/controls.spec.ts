@@ -234,7 +234,7 @@ test("interruptions clear holds and do not restore them on finger motion or key 
       await page.getByRole("button", { name: "RESUME", exact: true }).tap();
     await touch(page, "touchmove", [right]);
     await page.evaluate(() =>
-      window.dispatchEvent(
+      document.dispatchEvent(
         new KeyboardEvent("keydown", {
           code: "ArrowLeft",
           repeat: true,

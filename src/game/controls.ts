@@ -1,8 +1,36 @@
 import type Phaser from "phaser";
 import { emptyInput } from "./simulation";
 import type { Input, Mode } from "./simulation";
+import {
+  capturePadBinding,
+  GAMEPAD_DEADZONE,
+  defaultPadMap,
+  loadPadMap,
+  mappedHolds,
+  padActivity,
+  pickActivePad,
+  sameBinding,
+  savePadMap,
+  type PadBinding,
+  type PadMapAction,
+  type PadSnapshot,
+} from "./gamepad-map";
+import {
+  advanceSonami,
+  SONAMI_LENGTH,
+  sonamiStepFromKey,
+  padSonamiMismatch,
+  sonamiStepsFromPad,
+} from "./sonami";
 
 export type PadAction = keyof Input | "start" | "select" | "up";
+export type ControlHooks = {
+  onSonami: () => void;
+  onTitleStart: () => void;
+  onGamepadUse: () => void;
+  onPadMapChange: (map: Record<PadMapAction, PadBinding>) => void;
+  onRemapChange: (target: PadMapAction | null) => void;
+};
 type ControlState = {
   input: Input;
   pulses: Partial<Input>;
@@ -10,6 +38,8 @@ type ControlState = {
   helpOpen: boolean;
   ignoreEscapeUntilUp: boolean;
   sim: { mode: Mode };
+  padMap: Record<PadMapAction, PadBinding>;
+  remapTarget: PadMapAction | null;
 };
 const KEYS: Record<string, keyof Input> = {
   ArrowLeft: "left",
@@ -46,7 +76,13 @@ export class GameControls {
   private releases: (() => void)[] = [];
   private captured = new Set<number>();
   private togglePause: () => void;
+  private hooks: ControlHooks;
   private startHeld = false;
+  private sonamiIndex = 0;
+  private prevPad: PadSnapshot | null = null;
+  private padIndex: number | null = null;
+  private gamepadUsed = false;
+  private padNeedRelease = new Set<PadAction>();
 
   constructor(
     input: Phaser.Input.InputPlugin,
@@ -55,11 +91,15 @@ export class GameControls {
     togglePause: () => void,
     interrupt: () => void,
     closeHelp: () => void,
+    hooks: ControlHooks,
   ) {
     this.input = input;
     this.root = root;
     this.state = state;
     this.togglePause = togglePause;
+    this.hooks = hooks;
+    this.state.padMap = loadPadMap();
+    this.hooks.onPadMapChange(this.state.padMap);
     const event = (
       name: string,
       fn: (pointer: Phaser.Input.Pointer) => void,
@@ -95,6 +135,17 @@ export class GameControls {
     event("pointerupoutside", up);
     event("pointermove", move);
 
+    const listen = (
+      target: EventTarget,
+      name: string,
+      callback: (event: Event) => void,
+      options?: AddEventListenerOptions | boolean,
+    ) => {
+      target.addEventListener(name, callback, options);
+      this.releases.push(() =>
+        target.removeEventListener(name, callback, options),
+      );
+    };
     const key = (e: KeyboardEvent, pressed: boolean) => {
       if (e.code === "Escape") {
         if (!pressed) {
@@ -104,15 +155,22 @@ export class GameControls {
         if (e.repeat) return;
         if (state.helpOpen || state.ignoreEscapeUntilUp) {
           state.ignoreEscapeUntilUp = true;
-          if (state.helpOpen) closeHelp();
+          if (state.remapTarget) this.cancelRemap();
+          else if (state.helpOpen) closeHelp();
           return;
         }
         if (state.sim.mode !== "title" && state.sim.mode !== "finishing") {
           togglePause();
           return;
         }
+        if (state.sim.mode === "title" && this.sonamiIndex > 0)
+          this.sonamiIndex = 0;
       }
       if (state.helpOpen) return;
+      if (state.sim.mode === "title" && pressed && !e.repeat) {
+        const step = sonamiStepFromKey(e.code);
+        if ((step || this.sonamiIndex > 0) && this.feedSonami(step)) return;
+      }
       const action = KEYS[e.code],
         id = `key:${e.code}`;
       if (!action) return;
@@ -132,24 +190,18 @@ export class GameControls {
       else this.held.delete(id);
       this.sync();
     };
-    const keyDown = (e: KeyboardEvent) => key(e, true),
-      keyUp = (e: KeyboardEvent) => key(e, false);
-    input.keyboard!.on("keydown", keyDown).on("keyup", keyUp);
-    this.releases.push(() =>
-      input.keyboard?.off("keydown", keyDown).off("keyup", keyUp),
-    );
+    const keyDown = (e: Event) => key(e as KeyboardEvent, true),
+      keyUp = (e: Event) => key(e as KeyboardEvent, false);
+    listen(document, "keydown", keyDown, true);
+    listen(document, "keyup", keyUp, true);
+    listen(window, "gamepaddisconnected", (event) => {
+      const index = (event as GamepadEvent).gamepad?.index;
+      if (this.padIndex !== null && index !== this.padIndex) return;
+      this.clearPadHolds();
+      this.prevPad = null;
+      this.padIndex = null;
+    });
 
-    const listen = (
-      target: EventTarget,
-      name: string,
-      callback: (event: Event) => void,
-      options?: AddEventListenerOptions | boolean,
-    ) => {
-      target.addEventListener(name, callback, options);
-      this.releases.push(() =>
-        target.removeEventListener(name, callback, options),
-      );
-    };
     const clearAndInterrupt = () => {
       this.clear();
       interrupt();
@@ -264,6 +316,157 @@ export class GameControls {
     });
   }
 
+  poll() {
+    const snap = this.activePad();
+    if (!snap) {
+      if (this.padIndex !== null) this.clearPadHolds();
+      this.prevPad = null;
+      this.padIndex = null;
+      return;
+    }
+    if (this.padIndex !== null && this.padIndex !== snap.index) {
+      this.clearPadHolds();
+      this.prevPad = null;
+    }
+    if (padActivity(snap)) this.padIndex = snap.index;
+    if (!this.gamepadUsed && padActivity(snap)) {
+      this.gamepadUsed = true;
+      this.clearPointerHolds();
+      this.hooks.onGamepadUse();
+    }
+    if (this.state.remapTarget) {
+      const captured = capturePadBinding(this.prevPad, snap);
+      if (captured) {
+        const current = this.state.padMap[this.state.remapTarget];
+        if (sameBinding(captured, current)) this.cancelRemap();
+        else this.applyRemap(this.state.remapTarget, captured);
+      }
+      this.prevPad = snap;
+      return;
+    }
+    if (this.state.sim.mode === "title" && !this.state.helpOpen) {
+      const prevButtons = this.prevPad?.buttons ?? null;
+      if (this.sonamiIndex > 0 && padSonamiMismatch(prevButtons, snap.buttons))
+        this.sonamiIndex = 0;
+      for (const step of sonamiStepsFromPad(prevButtons, snap.buttons)) {
+        if (this.feedSonami(step)) {
+          this.latchPadHolds();
+          break;
+        }
+      }
+    }
+    this.prevPad = snap;
+    if (this.state.helpOpen) {
+      this.clearPadHolds();
+      return;
+    }
+    const holds = mappedHolds(snap, this.state.padMap, GAMEPAD_DEADZONE);
+    const live = this.playing();
+    this.applyPadHold("left", holds.left, live);
+    this.applyPadHold("right", holds.right, live);
+    this.applyPadHold("jump", holds.jump, live);
+    this.applyPadHold("run", holds.run, live);
+    this.applyPadHold("down", holds.down, live);
+    this.applyPadHold(
+      "start",
+      holds.pause,
+      this.state.sim.mode === "playing" || this.state.sim.mode === "title",
+    );
+    this.sync();
+  }
+  clearPointerHolds() {
+    for (const id of [...this.held.keys()])
+      if (id.startsWith("pointer:")) this.held.delete(id);
+    this.sync();
+  }
+  beginRemap(action: PadMapAction) {
+    this.state.remapTarget = action;
+    this.hooks.onRemapChange(action);
+    this.clearPadHolds();
+  }
+  resetPadMap() {
+    this.state.padMap = defaultPadMap();
+    savePadMap(this.state.padMap);
+    this.state.remapTarget = null;
+    this.latchPadHolds();
+    this.hooks.onPadMapChange(this.state.padMap);
+    this.hooks.onRemapChange(null);
+  }
+  private applyRemap(action: PadMapAction, binding: PadBinding) {
+    this.state.padMap = { ...this.state.padMap, [action]: binding };
+    savePadMap(this.state.padMap);
+    this.state.remapTarget = null;
+    this.latchPadHolds();
+    this.hooks.onPadMapChange(this.state.padMap);
+    this.hooks.onRemapChange(null);
+  }
+  cancelRemap() {
+    this.state.remapTarget = null;
+    this.latchPadHolds();
+    this.hooks.onRemapChange(null);
+  }
+  private feedSonami(step: ReturnType<typeof sonamiStepFromKey>) {
+    this.sonamiIndex = advanceSonami(this.sonamiIndex, step);
+    if (this.sonamiIndex < SONAMI_LENGTH) return false;
+    this.sonamiIndex = 0;
+    this.hooks.onSonami();
+    return true;
+  }
+  private setPadHold(action: PadAction, pressed: boolean) {
+    const id = `pad:${action}`;
+    if (pressed) this.held.set(id, action);
+    else this.held.delete(id);
+  }
+  private applyPadHold(action: PadAction, physical: boolean, enable: boolean) {
+    if (!physical) this.padNeedRelease.delete(action);
+    this.setPadHold(
+      action,
+      enable && physical && !this.padNeedRelease.has(action),
+    );
+  }
+  private latchPadHolds() {
+    const snap = this.activePad();
+    if (snap) {
+      const holds = mappedHolds(snap, this.state.padMap, GAMEPAD_DEADZONE);
+      if (holds.left) this.padNeedRelease.add("left");
+      if (holds.right) this.padNeedRelease.add("right");
+      if (holds.jump) this.padNeedRelease.add("jump");
+      if (holds.run) this.padNeedRelease.add("run");
+      if (holds.down) this.padNeedRelease.add("down");
+      if (holds.pause) this.padNeedRelease.add("start");
+    }
+    for (const [id, action] of this.held)
+      if (id.startsWith("pad:") && action) this.padNeedRelease.add(action);
+  }
+  private clearPadHolds() {
+    for (const id of [...this.held.keys()])
+      if (id.startsWith("pad:")) this.held.delete(id);
+    this.startHeld = [...this.held.values()].some((action) => action === "start");
+    this.sync();
+  }
+  private snapshotPad(
+    index: number,
+    buttons: ReadonlyArray<{ pressed?: boolean } | GamepadButton>,
+    axes: ReadonlyArray<{ value?: number } | number>,
+  ): PadSnapshot {
+    return {
+      index,
+      buttons: [...buttons].map((button) =>
+        typeof button === "object" ? !!button.pressed : !!button,
+      ),
+      axes: [...axes].map((axis) =>
+        typeof axis === "number" ? axis : (axis?.value ?? 0),
+      ),
+    };
+  }
+  private activePad(): PadSnapshot | null {
+    const snaps: PadSnapshot[] = [];
+    for (const native of navigator.getGamepads?.() ?? []) {
+      if (!native?.connected) continue;
+      snaps.push(this.snapshotPad(native.index, native.buttons, native.axes));
+    }
+    return pickActivePad(snaps, this.padIndex);
+  }
   private playing() {
     return !this.state.paused && this.state.sim.mode === "playing";
   }
@@ -293,9 +496,16 @@ export class GameControls {
     for (const action of pressed)
       if (action in next) next[action as keyof Input] = true;
     const start = pressed.has("start");
-    if (start && !this.startHeld && this.playing()) {
-      this.togglePause();
-      return;
+    if (start && !this.startHeld) {
+      if (this.state.sim.mode === "playing") {
+        this.togglePause();
+        return;
+      }
+      if (this.state.sim.mode === "title" && !this.state.helpOpen) {
+        this.startHeld = true;
+        this.hooks.onTitleStart();
+        return;
+      }
     }
     this.startHeld = [...this.held.values()].some((action) => action === "start");
     for (const action of ["jump", "fire", "down"] as const)
@@ -312,6 +522,7 @@ export class GameControls {
       );
   }
   clear() {
+    this.latchPadHolds();
     this.held.clear();
     this.startHeld = false;
     this.state.ignoreEscapeUntilUp = false;

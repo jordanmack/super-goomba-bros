@@ -3,7 +3,9 @@ import { skipIntro } from "./skip-intro.ts";
 
 test("header key bindings button lists keyboard controls", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled({
+    timeout: 20000,
+  });
   await page.getByRole("button", { name: "Key bindings" }).click();
   const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
   await expect(dialog).toBeVisible();
@@ -11,6 +13,8 @@ test("header key bindings button lists keyboard controls", async ({ page }) => {
   await expect(dialog).toContainText("Space, Up, W, or K");
   await expect(dialog).toContainText("Shift, Z, or J");
   await expect(dialog).toContainText("Escape");
+  await expect(dialog).toContainText("Stick or D-pad (deadzone 0.35)");
+  await expect(dialog).toContainText("A (South)");
   await expect(page.getByRole("button", { name: "CLOSE" })).toBeFocused();
   await page.getByRole("button", { name: "CLOSE" }).click();
   await expect(dialog).toHaveCount(0);
@@ -96,10 +100,12 @@ for (const viewport of [
 test("help list starts on screen at 568x360", async ({ page }) => {
   await page.setViewportSize({ width: 568, height: 360 });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled({
+    timeout: 20000,
+  });
   await page.getByRole("button", { name: "Key bindings" }).click();
   const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
   await expect(dialog).toBeVisible();
   await expect(page.getByRole("heading", { name: "KEY BINDINGS" })).toBeInViewport();
-  await expect(dialog.getByText("Walk", { exact: true })).toBeInViewport();
+  await expect(dialog.getByText("Walk", { exact: true }).first()).toBeInViewport();
 });

@@ -74,16 +74,50 @@ jump. A is jump. B is run (hold) and fire (press, flower required). NES Start
 pauses. Select does nothing. Hidden removes the on-screen pad and gives that
 space to the playfield. The pad must sit below the game, not over it.
 
-| Action | Keyboard | Touch |
-| --- | --- | --- |
-| Walk | Left/Right or A/D | D-pad Left/Right |
-| Run | Shift, Z, or J | B |
-| Jump or swim upward | Space, Up, W, or K | A; Compact Up |
-| Enter pipe | Down or S | D-pad Down |
-| Fire with a flower | Shift, Z, or J (press) | B (press) |
-| Pause | Escape | Pause; NES Start |
+Phaser gamepad input is on. The first active pad merges into the same Input
+flags as keyboard and touch. Stick and D-pad walk, with stick deadzone 0.35.
+Down enters a pipe. D-pad Up and stick Up do not jump. South (A) jumps and
+swims. East (B) holds run and presses fire if the player has a flower. Start
+pauses in play and starts the game on the title screen. Select is unused.
+Disconnect clears that pad's holds.
 
-A header Key bindings button shows this keyboard list in a dialog.
+The first gamepad button or stick use this session hides the on-screen pad.
+The header cycle still works. Unplug does not force the pad back.
+
+Help lists the keyboard and gamepad defaults. Remap Jump, Run, Left, Right,
+Down, and Pause by pressing a controller button or D-pad direction. Esc or the
+previous binding cancels. There is no separate Fire row; a Run press still
+pulses fire. The map is the only localStorage setting. Invalid or missing maps
+fall back to the defaults. Reset to defaults is in Help.
+
+| Action | Keyboard | Touch | Gamepad |
+| --- | --- | --- | --- |
+| Walk | Left/Right or A/D | D-pad Left/Right | Stick or D-pad (deadzone 0.35) |
+| Run | Shift, Z, or J | B | B (East) |
+| Jump or swim upward | Space, Up, W, or K | A; Compact Up | A (South) |
+| Enter pipe | Down or S | D-pad Down | Down |
+| Fire with a flower | Shift, Z, or J (press) | B (press) | B (East) press |
+| Pause | Escape | Pause; NES Start | Start |
+| Select | | NES Select | Unused |
+
+A header Key bindings button shows this keyboard list and the gamepad
+defaults in a dialog.
+
+On the title screen, the consecutive sequence up, up, down, down, left, right,
+left, right, B, A unlocks a session-only power-up tray. Extra keys before the
+sequence are fine. A wrong key in the middle starts the sequence over.
+Completing it does not press Start Game. Keyboard uses the arrow keys, then
+letter B, then letter A. Letter A is not walk. WASD does not count as the
+final A. A gamepad uses the D-pad plus B then A the same way. Unlock plays the
+coin sound. Mute still unlocks and skips the sound. Reload clears the tray.
+Nothing is stored.
+
+The tray sits at the bottom of the playfield, above the on-screen pad, with
+star, 2x, 3x, 8x, flower, and 1-up. A click while playing spawns that item in
+the player column at the first empty cell under the ceiling above the player,
+or the top of the area if there is no ceiling. The item is already free, not
+inside a solid, and plays the appear cue. Ignore clicks on the title, intro,
+GAME OVER, dead, or finishing screens, and while the player is in a pipe.
 
 A side pipe can also be entered by walking into its opening. There is no Hide
 or manual Warn button.
