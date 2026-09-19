@@ -140,6 +140,7 @@ export type Actor = {
   vineIgnore?: number;
   vineReturn?: { area: string; page: number };
   pipeWait?: number;
+  pipeEscapeTried?: string;
   pipeTravel?: {
     phase: "enter" | "exit";
     dir: "down" | "up" | "right" | "left";
@@ -149,6 +150,7 @@ export type Actor = {
     arrival?: "rise" | "fall" | "stand" | "drop" | "warp";
     destLevel?: number;
     clip?: PipeClip;
+    escape?: boolean;
   };
   navVx?: number;
   navDelay?: number;
@@ -376,8 +378,8 @@ export class Simulation {
     if (entrance === 3) return "drop";
     return "fall";
   }
-  private tryPipe(actor: Actor, down: boolean, right: boolean) {
-    if ((actor.pipeWait ?? 0) > 0 || this.inPipe(actor)) return false;
+  private enterablePipe(actor: Actor, down: boolean, right: boolean) {
+    if ((actor.pipeWait ?? 0) > 0 || this.inPipe(actor)) return;
     const room = this.roomFor(actor),
       p = actor.body.position;
     const pipe = room.data.pipes.find((pipe) => {
@@ -398,14 +400,85 @@ export class Simulation {
         p.y < top + 64
       );
     });
-    if (!pipe) return false;
+    if (!pipe) return;
     const mouthX = room.offset + (pipe.column + pipe.width / 2) * 32;
     const mouth = room.obstacles.find(
       (c) => c.kind === "pipe" && Math.abs(c.x - mouthX) < 1,
     );
-    if (mouth?.broken) return false;
+    if (mouth?.broken) return;
     if (this.isHuge(actor) && !(mouth && this.isGoalPipe(room, mouth)))
+      return;
+    const destination =
+      pipe.destinations.find((d) => d.world === this.level.world) ??
+      (room.data.id === "29" ? { area: this.level.main, page: 0 } : undefined);
+    if (!destination) return;
+    if (this.warpLevelFor(destination) !== undefined && actor !== this.player)
+      return;
+    return pipe;
+  }
+  private isGoalPipeData(
+    room: Room,
+    pipe: { column: number; row: number },
+  ) {
+    const goal = room.data.goal;
+    return (
+      goal?.kind === "pipe" &&
+      goal.column === pipe.column &&
+      goal.row === pipe.row
+    );
+  }
+  private aboveExitCeiling(a: Actor) {
+    const room = this.roomFor(a);
+    const goal = room.data.goal;
+    if (goal?.kind !== "pipe") return false;
+    if (Math.abs(a.body.position.x - room.goalX) >= 512) return false;
+    const opening = MAP_TOP + goal.row * 32;
+    const feet = a.body.bounds.max.y;
+    if (feet >= opening - 40) return false;
+    const support = this.solids.find(
+      (s) =>
+        !s.headOnly &&
+        a.body.bounds.max.x > s.bounds.min.x &&
+        a.body.bounds.min.x < s.bounds.max.x &&
+        Math.abs(s.bounds.min.y - feet) < 3,
+    );
+    if (!support) return false;
+    const ceilingTop = MAP_TOP + 2 * 32;
+    return (
+      Math.abs(support.bounds.min.y - ceilingTop) < 8 ||
+      support.bounds.max.y < opening
+    );
+  }
+  private npcCanDrop(a: Actor) {
+    return (
+      this.roomFor(a).data.type === "castle" || this.aboveExitCeiling(a)
+    );
+  }
+  private tryNpcPipeEscape(n: Actor) {
+    if (!n.warned) return false;
+    const room = this.roomFor(n);
+    const pipe = this.enterablePipe(n, true, true);
+    if (!pipe) {
+      n.pipeEscapeTried = undefined;
       return false;
+    }
+    if (this.isGoalPipeData(room, pipe)) return false;
+    const key = `${room.data.id}:${pipe.column}:${pipe.row}`;
+    if (n.pipeEscapeTried === key) return false;
+    n.pipeEscapeTried = key;
+    const roll = (this.pipeEscapeRandom ?? this.random)();
+    if (roll >= T.npcPipeEscapeChance) return false;
+    return this.tryPipe(n, true, true, true);
+  }
+  private tryPipe(
+    actor: Actor,
+    down: boolean,
+    right: boolean,
+    escape = false,
+  ) {
+    const pipe = this.enterablePipe(actor, down, right);
+    if (!pipe) return false;
+    const room = this.roomFor(actor);
     const destination =
       pipe.destinations.find((d) => d.world === this.level.world) ??
       (room.data.id === "29" ? { area: this.level.main, page: 0 } : undefined);
@@ -446,6 +519,7 @@ export class Simulation {
       arrival,
       destLevel,
       clip: pipeClip(room.offset, room.data.width * 32, pipe, dir),
+      escape: escape || undefined,
     };
     actor.idleDrop = undefined;
     actor.facing = dir === "down" ? actor.facing : 1;
@@ -473,6 +547,11 @@ export class Simulation {
       else Body.setPosition(actor.body, { x: p.x - move, y: p.y });
       travel.remaining -= move;
       if (travel.remaining > 0) continue;
+      if (travel.phase === "enter" && travel.escape) {
+        actor.pipeTravel = undefined;
+        this.save(actor);
+        continue;
+      }
       if (travel.phase === "enter") {
         this.beginPipeExit(actor, travel);
         if (this.mode !== "playing" && this.mode !== "finishing") return;
@@ -865,6 +944,7 @@ export class Simulation {
   private timerStarted = false;
   private awarded = { warned: 0, saved: 0, died: 0, flag: false, mario: 0 };
   random: () => number;
+  pipeEscapeRandom?: () => number;
 
   constructor(random = Math.random, physics = new PhysicsWorld()) {
     this.physics = physics;
@@ -1293,7 +1373,8 @@ export class Simulation {
         s.bounds.min.y <= T.groundY &&
         !enclosedWell(solids, s.bounds),
     );
-    if (!supported && !wall && this.roomFor(a).data.type === "castle") {
+    const dropDown = this.npcCanDrop(a);
+    if (!supported && !wall && dropDown) {
       if (support) {
         const x =
           direction > 0
@@ -1315,12 +1396,7 @@ export class Simulation {
         }
       }
     }
-    if (
-      (a.navDetourBelow || this.roomFor(a).data.type === "castle") &&
-      !wall &&
-      safeDrop &&
-      !supported
-    )
+    if ((dropDown || a.navDetourBelow) && !wall && safeDrop && !supported)
       return;
     if ((a.navRetry ?? 0) > 0 && !inWell) {
       if (!supported) this.move(a, 0);
@@ -1329,9 +1405,7 @@ export class Simulation {
     const pace = this.runSpeedFor(a);
     const impulse = this.roomFor(a).onSpring(a)
       ? T.springImpulse
-      : a.scale > 1
-        ? T.giantJumpSpeed
-        : T.runJumpSpeed;
+      : jumpArc(pace).impulse;
     const launch = planJump(
       a.body,
       solids,
@@ -1347,7 +1421,7 @@ export class Simulation {
           half,
           a.body.height / 2,
         ),
-      this.roomFor(a).data.type === "castle",
+      dropDown,
     );
     if (launch) {
       this.launchJump(a, launch.vx, impulse, launch.delay);
@@ -3387,6 +3461,7 @@ export class Simulation {
         this.move(n, 0);
         continue;
       }
+      if (this.tryNpcPipeEscape(n)) continue;
       if (room.data.type === "water") {
         this.swim(n);
         continue;
@@ -3430,7 +3505,7 @@ export class Simulation {
         n.blockedFor = Math.abs(p.x - n.lastX) < 8 ? n.blockedFor + dt : 0;
         n.lastX = p.x;
         if (n.blockedFor > 0.5 && n.grounded) {
-          this.jump(n, T.giantJumpSpeed);
+          this.jump(n, jumpArc(this.runSpeedFor(n)).impulse);
           n.blockedFor = 0;
         }
       }
@@ -3440,6 +3515,8 @@ export class Simulation {
         n.state = "run";
         n.wait = -0.01;
       }
+      if (this.aboveExitCeiling(n) && n.grounded)
+        n.navDetourBelow ??= MAP_TOP + 2 * 32 + 24;
       const direction =
         n.navDetourBelow ||
         (room.data.goal?.kind === "pipe" && p.x > room.goalX + 20)

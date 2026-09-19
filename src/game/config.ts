@@ -47,7 +47,6 @@ export const TUNING = {
   // Small and Super Mario share these; only the body is taller.
   jumpSpeed: 8,
   runJumpSpeed: 10,
-  giantJumpSpeed: 15,
   jumpHoldGravity: 900,
   jumpFallGravity: 3150,
   walkJumpHoldGravity: 843.75,
@@ -73,6 +72,7 @@ export const TUNING = {
   vineGrowSpeed: 2,
   vineClimbSpeed: 2,
   vineIgnore: 0.4,
+  npcPipeEscapeChance: 0.2,
   springImpulse: 17,
   swimImpulse: 4.5,
   swimGravity: 0.25,

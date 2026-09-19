@@ -6,7 +6,7 @@ import {
   Simulation as RulesSimulation,
   emptyInput,
 } from "../src/game/simulation.ts";
-import { MAP_TOP, PHRASES, TUNING as T, blockDrawY } from "../src/game/config.ts";
+import { MAP_TOP, PHRASES, TUNING as T, blockDrawY, jumpArc } from "../src/game/config.ts";
 import { firstEmptySpawnCell, spawnCellCenter } from "../src/game/spawn-cell.ts";
 import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
 import { ENEMY_BALANCE_LIFT, ENEMY_FISH } from "../src/game/room.ts";
@@ -322,6 +322,93 @@ test("a warned NPC reverses out of a one-tile well when the forward wall is too 
   );
 });
 
+function soloNpc(s: Simulation, n = s.npcs[0]) {
+  for (const other of s.npcs) {
+    if (other === n) continue;
+    s.physics.remove(other.body);
+  }
+  s.npcs = [n];
+  s.player.saved = true;
+  Body.setFrozen(s.player.body, true);
+  return n;
+}
+
+function bonusPipe(s: Simulation) {
+  const pipe = s.activeRoom.data.pipes.find((p) => p.direction === "down")!;
+  const x = s.activeRoom.offset + (pipe.column + pipe.width / 2) * 32;
+  const top = MAP_TOP + pipe.row * 32;
+  return { pipe, x, top };
+}
+
+function standOnBonusPipe(s: Simulation, n: Actor) {
+  const { x, top } = bonusPipe(s);
+  Body.setPosition(n.body, { x, y: top - n.body.height / 2 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.grounded = true;
+}
+
+test("a warned NPC that enters a non-goal pipe is counted saved after the animation", () => {
+  const s = game();
+  const n = soloNpc(s);
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  s.pipeEscapeRandom = () => 0;
+  standOnBonusPipe(s, n);
+  const startSaved = s.saved;
+  const startArea = n.areaId;
+  tick(s, dt);
+  assert.ok(n.pipeTravel, "enters the pipe");
+  assert.equal(n.pipeTravel?.phase, "enter");
+  assert.equal(n.pipeTravel?.escape, true);
+  assert.equal(n.saved, false);
+  assert.equal(s.saved, startSaved);
+  let frames = 0;
+  while (n.pipeTravel && frames++ < 360) tick(s, dt);
+  assert.equal(n.pipeTravel, undefined);
+  assert.equal(n.saved, true);
+  assert.equal(s.saved, startSaved + 1);
+  assert.ok(s.events.includes("saved"));
+  assert.equal(n.areaId, startArea);
+  assert.equal(s.rooms.has("42"), false);
+});
+
+test("a failed NPC pipe-escape roll does not become a guaranteed entry", () => {
+  const s = game();
+  const n = soloNpc(s);
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  let rolls = 0;
+  s.pipeEscapeRandom = () => {
+    rolls += 1;
+    return rolls === 1 ? 0.99 : 0;
+  };
+  standOnBonusPipe(s, n);
+  tick(s, 0.5);
+  assert.ok(rolls >= 1, "rolled once at the pipe");
+  assert.equal(n.saved, false);
+  assert.equal(n.pipeTravel, undefined);
+  assert.ok(
+    rolls === 1 || !n.pipeEscapeTried,
+    `re-rolled while still at the pipe: ${rolls} rolls`,
+  );
+});
+
+test("an unwarned NPC ignores an enterable pipe", () => {
+  const s = game();
+  const n = soloNpc(s);
+  n.warned = false;
+  n.state = "idle";
+  n.wait = 0;
+  s.pipeEscapeRandom = () => 0;
+  standOnBonusPipe(s, n);
+  tick(s, 0.5);
+  assert.equal(n.saved, false);
+  assert.equal(n.pipeTravel, undefined);
+  assert.equal(s.saved, 0);
+});
+
 test("a warned NPC on the World 1-1 last pipe does not stay in the stair well", () => {
   const s = game();
   const n = s.npcs[0];
@@ -527,6 +614,7 @@ test("mixed NPC speeds cross every staircase and gap across different runs", () 
     );
     s.reset();
     s.marioReturn = 1e6;
+    s.pipeEscapeRandom = () => 1;
     for (const n of s.npcs) n.warned = true;
     tick(s, 100);
     assert.equal(s.saved, T.population, `All NPCs escape in seed ${start}`);
@@ -965,6 +1053,188 @@ test("a giant NPC can still complete the stair and pipe route", () => {
   n.warned = true;
   tick(s, 100);
   assert.equal(n.saved, true);
+});
+
+function takeoffsWhileFleeing(
+  s: Simulation,
+  n: Actor,
+  seconds = 8,
+) {
+  const takeoffs: number[] = [];
+  let lastGrounded = n.grounded;
+  for (let i = 0; i < Math.round(seconds * 60) && n.alive && !n.saved; i++) {
+    s.step(dt, emptyInput());
+    if (lastGrounded && !n.grounded && n.body.velocity.y < 0)
+      takeoffs.push(Math.abs(n.body.velocity.y));
+    lastGrounded = n.grounded;
+  }
+  return takeoffs;
+}
+
+test("giant NPC takeoff uses the player jump model, never a size boost", () => {
+  for (const kind of ["mushroom", "mushroom3x", "mushroom8x"] as const) {
+    const s = game();
+    s.pipeEscapeRandom = () => 1;
+    const n = soloNpc(s);
+    give(s, n, kind);
+    n.warned = true;
+    n.state = "run";
+    n.wait = 0;
+    const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
+    Body.setPosition(n.body, {
+      x: pipe.body!.bounds.min.x - 80,
+      y: T.groundY - n.body.height / 2,
+    });
+    Body.setVelocity(n.body, { x: T.runSpeed, y: 0 });
+    const takeoffs = takeoffsWhileFleeing(s, n, 6);
+    assert.ok(takeoffs.length > 0, `${kind} NPC jumped`);
+    for (const speed of takeoffs) {
+      assert.ok(
+        speed <= T.runJumpSpeed + 0.5,
+        `${kind} NPC takeoff ${speed} exceeded player jump impulse`,
+      );
+    }
+    s.physics.clear();
+  }
+});
+
+test("Mario Super and 8x takeoff uses jumpArc only", () => {
+  for (const form of ["super", "8x"] as const) {
+    const s = game();
+    for (const npc of s.npcs) s.kill(npc, false);
+    s.marioActive = true;
+    Body.setFrozen(s.mario.body, false);
+    if (form === "super") s.setMarioStage(1);
+    else give(s, s.mario, "mushroom8x");
+    const gap = GAPS[0][0];
+    Body.setPosition(s.mario.body, {
+      x: gap - 120,
+      y: T.groundY - s.mario.body.height / 2,
+    });
+    Body.setVelocity(s.mario.body, { x: T.runSpeed, y: 0 });
+    s.cameraX = gap - 320;
+    at(s, gap + 200, T.groundY - 14);
+    s.mario.facing = 1;
+    s.marioPause = 0;
+    s.marioReaction = 0;
+    s.marioLook = 10;
+    s.marioJumpWait = 0;
+    s.marioChase = 8;
+    s.marioAim = gap + 200;
+    s.marioDecision = 10;
+    s.marioIgnore = 0;
+    s.marioTarget = s.player.id;
+    const takeoffs: number[] = [];
+    let lastGrounded = s.mario.grounded;
+    for (let i = 0; i < 240 && s.marioActive && s.mario.alive; i++) {
+      s.cameraX = s.mario.body.position.x - 200;
+      s.step(dt, emptyInput());
+      if (lastGrounded && !s.mario.grounded && s.mario.body.velocity.y < 0)
+        takeoffs.push(Math.abs(s.mario.body.velocity.y));
+      lastGrounded = s.mario.grounded;
+      if (takeoffs.length > 0) break;
+    }
+    assert.ok(takeoffs.length > 0, `${form} Mario jumped`);
+    const expected = jumpArc(T.runSpeed).impulse;
+    for (const speed of takeoffs) {
+      assert.ok(
+        speed <= expected + 0.5,
+        `${form} Mario takeoff ${speed} used a size-boosted impulse`,
+      );
+    }
+    s.physics.clear();
+  }
+});
+
+test("a warned NPC on the World 1-2 ceiling above the exit leaves the slab", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  const n = soloNpc(s);
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.areaId = "40";
+  s.pipeEscapeRandom = () => 1;
+  const ceilingY = MAP_TOP + 2 * 32;
+  Body.setPosition(n.body, { x: 5348, y: ceilingY - n.body.height / 2 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  let leftSlab = false;
+  for (
+    let frame = 0;
+    frame < 60 * 30 && n.alive && !n.saved;
+    frame++
+  ) {
+    s.step(dt, emptyInput());
+    leftSlab ||= n.body.bounds.max.y > ceilingY + 24;
+    if (n.saved || leftSlab) break;
+  }
+  assert.ok(n.alive);
+  assert.ok(
+    n.saved || leftSlab,
+    `stayed on the 1-2 ceiling: ${JSON.stringify(n.body.position)} feet=${n.body.bounds.max.y}`,
+  );
+  if (!n.saved) {
+    for (
+      let frame = 0;
+      frame < 60 * 45 && n.alive && !n.saved;
+      frame++
+    )
+      s.step(dt, emptyInput());
+  }
+  assert.ok(
+    n.saved,
+    `left the slab but did not reach rescue: ${JSON.stringify(n.body.position)}`,
+  );
+  s.physics.clear();
+});
+
+test("a warned NPC on the World 4-2 ceiling above the exit leaves the slab", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  const n = soloNpc(s);
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.areaId = "41";
+  s.pipeEscapeRandom = () => 1;
+  const ceilingY = MAP_TOP + 2 * 32;
+  const goalX = s.roomFor(n).goalX;
+  Body.setPosition(n.body, { x: goalX, y: ceilingY - n.body.height / 2 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  let leftSlab = false;
+  for (
+    let frame = 0;
+    frame < 60 * 30 && n.alive && !n.saved;
+    frame++
+  ) {
+    s.step(dt, emptyInput());
+    leftSlab ||= n.body.bounds.max.y > ceilingY + 24;
+    if (n.saved || leftSlab) break;
+  }
+  assert.ok(n.alive);
+  assert.ok(
+    n.saved || leftSlab,
+    `stayed on the 4-2 ceiling: ${JSON.stringify(n.body.position)} feet=${n.body.bounds.max.y}`,
+  );
+  if (!n.saved) {
+    for (
+      let frame = 0;
+      frame < 60 * 90 && n.alive && !n.saved;
+      frame++
+    )
+      s.step(dt, emptyInput());
+  }
+  assert.ok(
+    n.saved,
+    `left the slab but did not reach rescue: ${JSON.stringify(n.body.position)}`,
+  );
+  s.physics.clear();
 });
 
 test("Mario avoids stars and touching a star holder kills him until his return", () => {

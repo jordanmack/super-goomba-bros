@@ -39,7 +39,9 @@ settings unless a rule below explicitly fixes their relationship.
   (`AltEntranceControl = 2` in SMB1 `VerticalPipeEntry`). Destination-record
   `entrance` is unread. Solid pipes with no entry direction are arrival mouths.
 - Pipe travel preserves elapsed time, powers, NPC states, broken blocks, items,
-  and counters within the stage. It does not itself rescue a character.
+  and counters within the stage. A fleeing NPC that finishes entering a
+  non-goal enterable pipe is rescued and does not arrive in the destination.
+  Goal pipes still carry NPCs through. Pipe travel does not rescue the player.
 - Stages whose route starts off the main area (1-2, 2-2, 4-2, 7-2) play that
   overworld pipe strip as a script on first arrival. After the WORLD n-n intro,
   walk, jump, and pipe input are ignored. The player auto-walks into the pipe
@@ -201,7 +203,9 @@ gaps and do not rapidly flip direction on a small block. A warning starts their
 reaction delay and then their escape.
 
 Warned NPCs move toward a rescue door. They plan landings, use platforms and
-springs, back up for higher routes, and find lower paths through castle passages.
+springs, back up for higher routes, and find lower paths through castle passages
+and down from a ceiling above an exit. A fleeing NPC that meets a non-goal
+enterable pipe may duck in and count as saved after the entry animation.
 Swimmers, including warned fish, route around coral and pipes toward the rescue
 door. NPCs keep moving and can collect items
 outside the camera view, including while the player is in another area.
@@ -257,7 +261,8 @@ Live scoring during play:
 - Same-size or smaller mushroom (no size change): +1000
 
 Warned increases on the first warning heard by an NPC. A later death does not
-reduce it. Saved increases only when an NPC reaches a rescue door alive.
+reduce it. Saved increases when an NPC reaches a rescue door alive, or when a fleeing NPC
+finishes entering a non-goal enterable pipe.
 No character can count twice. Warn and rescue still exist for score only.
 
 The castle door is always open. Reaching it completes the stage:
@@ -294,7 +299,10 @@ Castle breakdown points:
 - Each firework: +500, added to SCORE as that firework fires, with the original
   fireworks cue. Fireworks burst above the castle against the sky.
 
-Pipe travel still does not rescue. The player may backtrack to find more NPCs.
+Pipe travel can rescue a fleeing NPC on a non-goal enterable pipe. That NPC
+leaves play after the entry animation and does not arrive in the destination.
+Goal pipes still carry NPCs through to the next area, where they save at that
+area's door. The player may backtrack to find more NPCs.
 
 ## Mario
 
