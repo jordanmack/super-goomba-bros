@@ -3,6 +3,8 @@ import {
   PhysicsWorld,
   clearVolumeHold,
   hugeFloorAt,
+  hugeFloorSolid,
+  hugeFlushVolume,
   hugeFlushWithFloor,
   hugeHoldAt,
   hugeHoldFloor,
@@ -2083,6 +2085,7 @@ export class Simulation {
       return;
     const feet = a.body.bounds.max.y;
     const box = a.body.bounds;
+    const walkPair = this.hugeWalkPair(a, room);
     const smashed: string[] = [];
     const col0 = Math.floor((box.min.x - room.offset) / 32);
     const col1 = Math.floor((box.max.x - room.offset - 0.01) / 32);
@@ -2107,6 +2110,21 @@ export class Simulation {
           box.min.y >= y + 16 - 0.1
         )
           continue;
+        // Elevated merged-pair solids stay two bodies so persist can hold
+        // after the floor AABB overlap ends. Overhead tiles still smash.
+        if (
+          walkPair &&
+          walkPair.some((sol) => {
+            const b = sol.bounds;
+            return (
+              x + 16 > b.min.x &&
+              x - 16 < b.max.x &&
+              y + 16 > b.min.y &&
+              y - 16 < b.max.y
+            );
+          })
+        )
+          continue;
         smashed.push(key);
         this.burst(x, y, false);
       }
@@ -2115,6 +2133,42 @@ export class Simulation {
     for (const key of smashed) room.smashedTiles.add(key);
     this.rebuildTerrain(room);
     this.events.push("break");
+  }
+
+  // Stood-on elevated floor and flush wall, or the armed pair after floor
+  // overlap ends. Ground-level walls still smash.
+  private hugeWalkPair(a: Actor, room: Room) {
+    const box = a.body.bounds;
+    const holdY = a.body.volumeHoldY ?? box.max.y;
+    if (Math.abs(holdY - T.groundY) < 12) return;
+    const floor =
+      hugeHoldFloor(
+        a.body.volumeHoldFloor,
+        room.solids,
+        box.min.x,
+        a.body.width,
+        a.body.volumeHoldFloorSpan,
+      ) ?? hugeFloorSolid(box.max.y, box.min.x, a.body.width, room.solids);
+    if (!floor) return;
+    const volume =
+      hugeHoldVolume(
+        a.body.volumeHoldVolume,
+        room.solids,
+        box.min.x,
+        a.body.width,
+        a.body.volumeHoldVolumeSpan,
+        a.body.volumeHoldFloorSpan,
+        a.body.volumeHoldY,
+      ) ??
+      hugeFlushVolume(
+        a.body.volumeHoldY ?? box.max.y,
+        box.min.x,
+        a.body.width,
+        room.solids,
+        floor,
+      );
+    if (!volume) return;
+    return [floor, volume];
   }
 
   private smashableTerrain(

@@ -457,7 +457,9 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   spawns already free (`emerge` 0, not frozen) and flies out; it does not use
   the emerge rise or the appear cue. Unrevealed hidden blocks stay hidden.
   Floors, stairs you stand on, moving platforms, the flagpole, the goal door,
-  a goal pipe, castle bridges, the axe, springs, and cannons stay. 8x never smashes a
+  a goal pipe, castle bridges, the axe, springs, and cannons stay. The elevated
+  flush wall of a stood-on merged wall+floor also stays, so 8x can keep walking
+  after the floor AABB overlap ends. Ground-level walls still smash. 8x never smashes a
   goal pipe or castle door. The door stays solid. 8x no longer passes through
   an intact pipe: contact destroys it, and that mouth cannot be entered after
   it is gone. Non-goal pipes stay smashable. When the player, an NPC, or Mario
