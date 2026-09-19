@@ -3374,6 +3374,442 @@ test("Mario actively acquires visible NPCs even on a high random roll", () => {
   assert.equal(s.marioTarget, s.npcs[0].id);
 });
 
+function huntReady(s: Simulation, x: number) {
+  s.marioActive = true;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  s.marioLook = 0;
+  s.marioJumpWait = 10;
+  s.marioChase = 0;
+  s.marioIgnore = 0;
+  s.marioDecision = 10;
+  s.marioTarget = null;
+  s.marioHuntItem = false;
+  s.brickTarget = null;
+  s.marioStun = 0;
+  s.marioSeenAgo = 0;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, {
+    x,
+    y: T.groundY - s.mario.body.height / 2,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  s.mario.facing = 1;
+  s.cameraX = Math.max(0, x - 200);
+}
+
+function stillNpc(n: Actor, x: number) {
+  n.warned = false;
+  n.state = "idle";
+  n.idleWalking = false;
+  n.wait = 99;
+  n.homeX = x;
+  Body.setPosition(n.body, { x, y: T.groundY - n.body.height / 2 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+}
+
+function looseItem(s: Simulation, kind: ItemKind, x: number) {
+  const box = s.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && c.content !== "1-up",
+  )!;
+  const previous = s.random;
+  s.random = () => 0.5;
+  s.hitBlock(box, s.player);
+  s.random = previous;
+  const item = s.items.at(-1)!;
+  item.kind = kind;
+  item.emerge = 0;
+  item.hold = 0;
+  item.clip = undefined;
+  Body.setFrozen(item.body, false);
+  Body.setPosition(item.body, { x, y: T.groundY - 16 });
+  Body.setVelocity(item.body, { x: 0, y: 0 });
+  return item;
+}
+
+test("an elevated unreachable actor does not beat a loose power-up", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  at(s, 2500);
+  stillNpc(n, 280);
+  Body.setPosition(n.body, { x: 280, y: T.groundY - 200 });
+  const item = looseItem(s, "mushroom", 360);
+  huntReady(s, 200);
+  tick(s, dt);
+  assert.equal(s.marioTarget, item.id);
+  assert.notEqual(s.marioTarget, n.id);
+  assert.equal(s.marioHuntItem, true);
+});
+
+test("an easy nearby stomp beats a loose power-up", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  at(s, 2500);
+  stillNpc(n, 280);
+  const item = looseItem(s, "mushroom", 240);
+  huntReady(s, 200);
+  tick(s, dt);
+  assert.equal(s.marioTarget, n.id);
+  assert.equal(s.marioHuntItem, false);
+  assert.notEqual(s.marioTarget, item.id);
+  assert.ok(s.marioChase > T.marioItemDetourSeconds);
+});
+
+test("a fleeing crowd beats a question block, including when Mario is small", () => {
+  const s = crowdGame(6);
+  s.setMarioStage(0);
+  parkNpcs(s, s.npcs.slice(0, 6));
+  at(s, 2500);
+  const block = s.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && Math.abs(c.x - 528) < 1,
+  )!;
+  huntReady(s, 200);
+  tick(s, dt);
+  const crowdIds = new Set(s.npcs.slice(0, 6).map((n) => n.id));
+  assert.ok(crowdIds.has(s.marioTarget!), `target ${s.marioTarget}`);
+  assert.notEqual(s.brickTarget, block.id);
+  assert.equal(s.marioHuntItem, false);
+});
+
+test("a visible loose star pulls Mario off a long empty chase", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const star = looseItem(s, "star", 280);
+  huntReady(s, 200);
+  s.marioTarget = s.player.id;
+  s.marioChase = 5;
+  s.marioHuntItem = false;
+  s.marioLook = 0;
+  tick(s, dt);
+  assert.equal(s.marioTarget, star.id);
+  assert.equal(s.marioHuntItem, true);
+  assert.ok(s.marioChase > 0 && s.marioChase <= T.marioItemDetourSeconds);
+  s.marioReaction = 0;
+  tick(s, 0.2);
+  assert.ok(s.mario.body.velocity.x > 0, "Mario runs toward the star");
+});
+
+test("small Mario does not dive a 2x or larger player", () => {
+  const s = game();
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom");
+  huntReady(s, 200);
+  s.setMarioStage(0);
+  Body.setPosition(s.mario.body, {
+    x: 200,
+    y: T.groundY - s.mario.body.height / 2,
+  });
+  at(s, 280, T.groundY - s.player.body.height / 2);
+  const item = looseItem(s, "flower", 360);
+  s.marioLook = 0;
+  s.marioTarget = null;
+  s.marioChase = 0;
+  tick(s, dt);
+  assert.notEqual(s.marioTarget, s.player.id);
+  assert.equal(s.marioTarget, item.id);
+
+  const dive = game();
+  parkNpcs(dive, []);
+  give(dive, dive.player, "mushroom");
+  huntReady(dive, 200);
+  dive.setMarioStage(0);
+  Body.setPosition(dive.mario.body, {
+    x: 200,
+    y: T.groundY - dive.mario.body.height / 2,
+  });
+  at(dive, 280, T.groundY - dive.player.body.height / 2);
+  dive.marioTarget = dive.player.id;
+  dive.marioHuntItem = false;
+  dive.marioAim = dive.player.body.position.x;
+  dive.marioChase = 2;
+  dive.marioReaction = 0;
+  dive.marioLook = 10;
+  dive.marioJumpWait = 0;
+  tick(dive, 0.25);
+  assert.equal(dive.mario.grounded, true);
+  assert.ok(dive.mario.body.velocity.y >= 0);
+
+  const superDive = game();
+  parkNpcs(superDive, []);
+  give(superDive, superDive.player, "mushroom");
+  huntReady(superDive, 200);
+  superDive.setMarioStage(1);
+  Body.setPosition(superDive.mario.body, {
+    x: 200,
+    y: T.groundY - superDive.mario.body.height / 2,
+  });
+  at(superDive, 280, T.groundY - superDive.player.body.height / 2);
+  superDive.marioTarget = superDive.player.id;
+  superDive.marioHuntItem = false;
+  superDive.marioAim = superDive.player.body.position.x;
+  superDive.marioChase = 2;
+  superDive.marioReaction = 0;
+  superDive.marioLook = 10;
+  superDive.marioJumpWait = 0;
+  tick(superDive, 0.25);
+  assert.equal(superDive.mario.grounded, false);
+  assert.ok(superDive.mario.body.velocity.y < 0);
+});
+
+test("a fleeing crowd beats a loose power-up", () => {
+  const s = crowdGame(6);
+  parkNpcs(s, s.npcs.slice(0, 6));
+  at(s, 2500);
+  const item = looseItem(s, "mushroom", 240);
+  huntReady(s, 200);
+  tick(s, dt);
+  const crowdIds = new Set(s.npcs.slice(0, 6).map((n) => n.id));
+  assert.ok(crowdIds.has(s.marioTarget!), `target ${s.marioTarget}`);
+  assert.notEqual(s.marioTarget, item.id);
+  assert.equal(s.marioHuntItem, false);
+});
+
+test("a loose power-up beats a question block", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const item = looseItem(s, "flower", 280);
+  huntReady(s, 200);
+  s.setMarioStage(0);
+  Body.setPosition(s.mario.body, {
+    x: 200,
+    y: T.groundY - s.mario.body.height / 2,
+  });
+  tick(s, dt);
+  assert.equal(s.marioTarget, item.id);
+  assert.equal(s.marioHuntItem, true);
+  assert.equal(s.brickTarget, null);
+});
+
+test("Super Mario still takes a nearby unused question block", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const block = s.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && Math.abs(c.x - 528) < 1,
+  )!;
+  huntReady(s, 450);
+  tick(s, dt);
+  assert.equal(s.brickTarget, block.id);
+  assert.equal(s.marioTarget, null);
+  assert.equal(s.marioHuntItem, false);
+  assert.ok(s.marioChase > 0 && s.marioChase <= T.marioItemDetourSeconds);
+});
+
+test("an item detour expiry does not immediately re-lock the same target", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const star = looseItem(s, "star", 280);
+  huntReady(s, 200);
+  s.marioTarget = star.id;
+  s.marioHuntItem = true;
+  s.marioChase = dt;
+  s.marioLook = 0;
+  s.marioIgnore = 0;
+  tick(s, dt);
+  assert.equal(s.marioTarget, null);
+  assert.equal(s.marioHuntItem, false);
+  assert.ok(s.marioIgnore > 0);
+  s.marioLook = 0;
+  tick(s, dt);
+  assert.notEqual(s.marioTarget, star.id);
+  assert.equal(s.marioHuntItem, false);
+});
+
+test("Mario drops a used question block instead of jumping at it", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const block = s.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && Math.abs(c.x - 528) < 1,
+  )!;
+  block.used = true;
+  huntReady(s, 450);
+  s.brickTarget = block.id;
+  s.marioChase = 2;
+  s.marioLook = 10;
+  s.marioJumpWait = 0;
+  s.marioReaction = 0;
+  tick(s, dt);
+  assert.equal(s.brickTarget, null);
+  assert.equal(s.marioChase, 0);
+  assert.equal(s.mario.grounded, true);
+});
+
+test("collecting the hunted item clears Mario's item chase", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const star = looseItem(s, "star", 200);
+  huntReady(s, 200);
+  s.marioTarget = star.id;
+  s.marioHuntItem = true;
+  s.marioChase = 2;
+  s.marioLook = 10;
+  Body.setPosition(star.body, { ...s.mario.body.position });
+  tick(s, dt);
+  assert.equal(s.items.length, 0);
+  assert.equal(s.marioTarget, null);
+  assert.equal(s.marioHuntItem, false);
+  assert.equal(s.marioChase, 0);
+  assert.ok(s.mario.starLeft > 0);
+});
+
+test("small Mario walks farther for a question block than Super Mario", () => {
+  const far = game();
+  parkNpcs(far, []);
+  at(far, 2500);
+  const block = far.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && Math.abs(c.x - 528) < 1,
+  )!;
+  huntReady(far, 200);
+  far.setMarioStage(1);
+  Body.setPosition(far.mario.body, {
+    x: 200,
+    y: T.groundY - far.mario.body.height / 2,
+  });
+  tick(far, dt);
+  assert.notEqual(far.brickTarget, block.id);
+
+  const small = game();
+  parkNpcs(small, []);
+  at(small, 2500);
+  huntReady(small, 200);
+  small.setMarioStage(0);
+  Body.setPosition(small.mario.body, {
+    x: 200,
+    y: T.groundY - small.mario.body.height / 2,
+  });
+  tick(small, dt);
+  assert.equal(small.brickTarget, block.id);
+});
+
+test("star and 8x runners do not add to crowd pressure", () => {
+  const s = crowdGame(6);
+  s.npcs[0].starLeft = T.starSeconds;
+  give(s, s.npcs[1], "mushroom8x");
+  tick(s, 0.7);
+  assert.equal(s.marioCrowd, 4);
+});
+
+test("Mario jumps for an elevated hunted flower", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const flower = looseItem(s, "flower", 260);
+  Body.setPosition(flower.body, { x: 260, y: T.groundY - 80 });
+  huntReady(s, 220);
+  s.marioTarget = flower.id;
+  s.marioHuntItem = true;
+  s.marioAim = flower.body.position.x;
+  s.marioChase = 2;
+  s.marioLook = 10;
+  s.marioReaction = 0;
+  s.marioJumpWait = 0;
+  tick(s, dt);
+  assert.equal(s.mario.grounded, false);
+  assert.ok(s.mario.body.velocity.y < 0);
+});
+
+test("Fire Mario still shoots while chasing a loose item", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  s.elapsed = T.fireballsAt;
+  const star = looseItem(s, "star", 280);
+  huntReady(s, 200);
+  s.setMarioStage(2);
+  s.marioTarget = star.id;
+  s.marioHuntItem = true;
+  s.marioAim = star.body.position.x;
+  s.marioChase = 2;
+  s.marioLook = 10;
+  s.marioReaction = 0;
+  s.marioJumpWait = 10;
+  tick(s, dt);
+  assert.equal(s.fireballs.length, 1);
+  assert.equal(s.fireballs[0]!.owner, "mario");
+});
+
+test("an airborne easy stomp is not stolen by a loose item", () => {
+  const s = game();
+  const n = s.npcs[0];
+  parkNpcs(s, [n]);
+  at(s, 2500);
+  stillNpc(n, 280);
+  huntReady(s, 200);
+  tick(s, dt);
+  assert.equal(s.marioTarget, n.id);
+  const item = looseItem(s, "mushroom", 240);
+  s.marioLook = 0;
+  s.mario.grounded = false;
+  Body.setVelocity(s.mario.body, { x: 2, y: -6 });
+  tick(s, dt);
+  assert.equal(s.marioTarget, n.id);
+  assert.notEqual(s.marioTarget, item.id);
+  assert.equal(s.marioHuntItem, false);
+});
+
+test("another collector taking Mario's hunted item clears the detour", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const mushroom = looseItem(s, "mushroom", 360);
+  huntReady(s, 200);
+  s.marioTarget = mushroom.id;
+  s.marioHuntItem = true;
+  s.marioChase = 2;
+  s.marioLook = 10;
+  Body.setPosition(s.player.body, { ...mushroom.body.position });
+  tick(s, dt);
+  assert.equal(s.items.length, 0);
+  assert.equal(s.marioTarget, null);
+  assert.equal(s.marioHuntItem, false);
+  assert.equal(s.marioChase, 0);
+});
+
+test("Mario does not seek coins or 1-up mushrooms", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 2500);
+  const oneUp = looseItem(s, "oneUp", 280);
+  s.activeRoom.coins.push({ x: 260, y: T.groundY - 16, collected: false });
+  const mushroom = looseItem(s, "mushroom", 360);
+  huntReady(s, 200);
+  tick(s, dt);
+  assert.equal(s.marioTarget, mushroom.id);
+  assert.notEqual(s.marioTarget, oneUp.id);
+
+  const idle = game();
+  parkNpcs(idle, []);
+  at(idle, 2500);
+  const leftover = looseItem(idle, "oneUp", 280);
+  huntReady(idle, 400);
+  tick(idle, dt);
+  assert.notEqual(idle.marioTarget, leftover.id);
+  assert.equal(idle.marioHuntItem, false);
+  idle.marioReaction = 0;
+  tick(idle, 0.2);
+  assert.ok(idle.mario.body.velocity.x >= 0);
+
+  const coinsOnly = game();
+  parkNpcs(coinsOnly, []);
+  at(coinsOnly, 2500);
+  coinsOnly.activeRoom.coins.push({
+    x: 280,
+    y: T.groundY - 16,
+    collected: false,
+  });
+  huntReady(coinsOnly, 200);
+  tick(coinsOnly, dt);
+  assert.equal(coinsOnly.marioHuntItem, false);
+  assert.equal(coinsOnly.marioTarget, null);
+});
+
 test("Mario cannot reverse a jump to follow a dodge", () => {
   const s = game();
   s.marioActive = true;

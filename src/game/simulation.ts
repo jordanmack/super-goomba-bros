@@ -909,6 +909,7 @@ export class Simulation {
   marioChase = 0;
   marioIgnore = 0;
   marioTarget: number | null = null;
+  marioHuntItem = false;
   marioAim = 0;
   marioReaction = 0;
   marioLook = 0;
@@ -1058,6 +1059,7 @@ export class Simulation {
     this.marioDeath = this.playerDeath = null;
     this.marioStage = 1;
     this.marioTarget = null;
+    this.marioHuntItem = false;
     this.marioAim =
       this.marioReaction =
       this.marioLook =
@@ -1868,6 +1870,7 @@ export class Simulation {
         this.lives++;
         this.events.push("oneUp");
       }
+      this.clearHuntedItem(item);
       return;
     }
     if (item.kind === "star") a.starLeft = T.starSeconds;
@@ -1889,6 +1892,15 @@ export class Simulation {
     this.physics.remove(item.body);
     this.items = this.items.filter((i) => i !== item);
     this.events.push("power");
+    this.clearHuntedItem(item);
+  }
+
+  private clearHuntedItem(item: Item) {
+    if (this.marioTarget !== item.id) return;
+    this.marioTarget = null;
+    this.marioHuntItem = false;
+    this.marioChase = 0;
+    this.marioLook = 0;
   }
 
   private rollMushroom(): MushroomKind {
@@ -2278,6 +2290,7 @@ export class Simulation {
       if (p.y > 640 || item.age > 40) {
         this.physics.remove(item.body);
         this.items = this.items.filter((i) => i !== item);
+        this.clearHuntedItem(item);
       }
     }
   }
@@ -2318,6 +2331,7 @@ export class Simulation {
     this.setMarioStage(0);
     this.marioReturn = T.marioDefeatSeconds;
     this.marioTarget = null;
+    this.marioHuntItem = false;
     this.marioChase = this.marioStun = 0;
     Body.setFrozen(this.mario.body, true);
     this.fireballs = this.fireballs.filter((f) => f.owner === "player");
@@ -3593,6 +3607,8 @@ export class Simulation {
         n.shell === "none" &&
         n.warned &&
         n.state === "run" &&
+        n.starLeft <= 0 &&
+        !this.isHuge(n) &&
         Math.abs(n.body.velocity.x) > 1 &&
         n.body.position.x >= this.cameraX &&
         n.body.position.x <= this.cameraX + this.viewWidth &&
@@ -3611,14 +3627,267 @@ export class Simulation {
 
   private investigate(target: Actor, duration: number) {
     this.marioTarget = target.id;
-    this.marioAim =
-      target.body.position.x +
-      target.body.velocity.x * 14 +
-      (this.random() - 0.5) * 24;
+    this.marioHuntItem = false;
+    this.brickTarget = null;
+    this.aimMarioAt(target.body.position.x, target.body.velocity.x);
     this.marioChase = duration;
     this.marioReaction =
       (T.marioReaction + this.random() * 0.15) * (1 - this.marioPressure * 0.4);
     this.marioSeenAgo = 0;
+  }
+
+  private aimMarioAt(x: number, vx = 0) {
+    this.marioAim = x + vx * 14 + (this.random() - 0.5) * 24;
+    this.marioSeenAgo = 0;
+  }
+
+  private lockMarioActor(target: Actor) {
+    if (
+      this.marioTarget === target.id &&
+      !this.marioHuntItem &&
+      this.marioChase > 0
+    ) {
+      this.brickTarget = null;
+      this.aimMarioAt(target.body.position.x, target.body.velocity.x);
+      this.marioChase = T.marioChaseSeconds;
+      return;
+    }
+    this.investigate(target, T.marioChaseSeconds + this.random());
+  }
+
+  private easyStompCandidate(a: Actor) {
+    if (
+      !a.alive ||
+      a.saved ||
+      this.inPipe(a) ||
+      this.invincible(a) ||
+      this.isHuge(a)
+    )
+      return false;
+    if (a.kind === "koopa" && a.shell !== "none") return false;
+    if (
+      this.marioStage === 0 &&
+      a === this.player &&
+      a.scale >= T.mushroomScale
+    )
+      return false;
+    return true;
+  }
+
+  private easyStompWindow(a: Actor, m: { x: number; y: number }) {
+    const dist = Math.abs(a.body.position.x - m.x);
+    if (dist <= 8 || dist >= 125) return false;
+    if (a.body.position.y < m.y - 160) return false;
+    if (rayBlocked(this.solids, m, a.body.position)) return false;
+    return true;
+  }
+
+  private isEasyStomp(a: Actor, m: { x: number; y: number }) {
+    if (!this.easyStompCandidate(a) || !this.easyStompWindow(a, m))
+      return false;
+    if (this.mario.grounded) return true;
+    return (
+      this.mario.body.velocity.y > 0.2 &&
+      this.mario.body.bounds.max.y < a.body.bounds.max.y
+    );
+  }
+
+  private nearestEasyStomp(candidates: Actor[], m: { x: number; y: number }) {
+    return candidates
+      .filter((a) => this.isEasyStomp(a, m))
+      .sort(
+        (a, b) =>
+          Math.abs(a.body.position.x - m.x) - Math.abs(b.body.position.x - m.x),
+      )[0];
+  }
+
+  private detectableCrowd(
+    sees: (a: Actor) => boolean,
+    hearsCrowd: (a: Actor) => boolean,
+  ) {
+    const m = this.mario.body.position;
+    return this.runningCrowd()
+      .filter((a) => sees(a) || hearsCrowd(a))
+      .sort(
+        (a, b) =>
+          Math.abs(a.body.position.x - m.x) - Math.abs(b.body.position.x - m.x),
+      )[0];
+  }
+
+  private marioCanHunt(item: Item) {
+    if (item.emerge > 0 || item.hold > 0) return false;
+    return (
+      item.kind === "mushroom" ||
+      item.kind === "mushroom3x" ||
+      item.kind === "mushroom8x" ||
+      item.kind === "flower" ||
+      item.kind === "star"
+    );
+  }
+
+  private looseHuntItem(m: { x: number; y: number }) {
+    return this.items
+      .filter(
+        (item) =>
+          this.marioCanHunt(item) &&
+          Math.abs(item.body.position.x - m.x) < T.marioSight &&
+          item.body.position.y > m.y - 160 &&
+          !rayBlocked(this.solids, m, item.body.position),
+      )
+      .sort(
+        (a, b) =>
+          Math.abs(a.body.position.x - m.x) - Math.abs(b.body.position.x - m.x),
+      )[0];
+  }
+
+  private lockMarioItem(item: Item) {
+    this.brickTarget = null;
+    if (
+      this.marioHuntItem &&
+      this.marioTarget === item.id &&
+      this.marioChase > 0
+    ) {
+      this.aimMarioAt(item.body.position.x, item.body.velocity.x);
+      return;
+    }
+    this.marioTarget = item.id;
+    this.marioHuntItem = true;
+    this.aimMarioAt(item.body.position.x, item.body.velocity.x);
+    this.marioChase = T.marioItemDetourSeconds;
+    this.marioReaction =
+      (T.marioReaction + this.random() * 0.15) * (1 - this.marioPressure * 0.4);
+  }
+
+  private visibleQuestion(m: { x: number; y: number }) {
+    return this.obstacles
+      .filter((c) => {
+        if (
+          c.kind !== "brick" ||
+          !c.question ||
+          c.used ||
+          c.broken ||
+          c.hidden
+        )
+          return false;
+        if (Math.abs(c.x - m.x) >= T.marioSight) return false;
+        if (c.y + T.brickSize / 2 < m.y - 160) return false;
+        const solids = c.body
+          ? this.solids.filter((s) => s !== c.body)
+          : this.solids;
+        return !rayBlocked(solids, m, {
+          x: c.x,
+          y: c.y + T.brickSize / 2 + 2,
+        });
+      })
+      .sort((a, b) => Math.abs(a.x - m.x) - Math.abs(b.x - m.x))[0];
+  }
+
+  private lockMarioQuestion(block: Obstacle) {
+    if (
+      this.brickTarget === block.id &&
+      this.marioChase > 0 &&
+      !this.marioHuntItem &&
+      this.marioTarget === null
+    ) {
+      this.marioAim = block.x;
+      this.marioSeenAgo = 0;
+      return;
+    }
+    this.brickTarget = block.id;
+    this.marioTarget = null;
+    this.marioHuntItem = false;
+    this.marioAim = block.x;
+    this.marioChase = T.marioItemDetourSeconds;
+    this.marioReaction =
+      (T.marioReaction + this.random() * 0.15) * (1 - this.marioPressure * 0.4);
+    this.marioSeenAgo = 0;
+  }
+
+  private pickMarioGoal(
+    m: { x: number; y: number },
+    candidates: Actor[],
+    sees: (a: Actor) => boolean,
+    hearsCrowd: (a: Actor) => boolean,
+    runners: Set<number>,
+  ) {
+    const currentActor = this.marioHuntItem
+      ? undefined
+      : candidates.find((a) => a.id === this.marioTarget);
+    const keepAirStomp =
+      !!currentActor &&
+      !this.mario.grounded &&
+      this.easyStompCandidate(currentActor) &&
+      this.easyStompWindow(currentActor, m);
+    const stomp = this.nearestEasyStomp(candidates, m);
+    if (stomp || keepAirStomp) {
+      this.lockMarioActor(
+        currentActor &&
+          (this.isEasyStomp(currentActor, m) || keepAirStomp)
+          ? currentActor
+          : stomp!,
+      );
+      return;
+    }
+    const crowd = this.detectableCrowd(sees, hearsCrowd);
+    if (crowd) {
+      const keepCrowd =
+        currentActor &&
+        (sees(currentActor) || hearsCrowd(currentActor)) &&
+        this.runningCrowd().some((n) => n.id === currentActor.id);
+      this.lockMarioActor(keepCrowd && currentActor ? currentActor : crowd);
+      return;
+    }
+    if (this.marioIgnore === 0) {
+      const item = this.looseHuntItem(m);
+      if (item) {
+        const currentItem = this.marioHuntItem
+          ? this.items.find((i) => i.id === this.marioTarget)
+          : undefined;
+        const keepItem =
+          !!currentItem &&
+          this.marioCanHunt(currentItem) &&
+          Math.abs(currentItem.body.position.x - m.x) < T.marioSight &&
+          !rayBlocked(this.solids, m, currentItem.body.position);
+        this.lockMarioItem(keepItem && currentItem ? currentItem : item);
+        return;
+      }
+      const block = this.visibleQuestion(m);
+      if (block) {
+        const huntingThis =
+          this.brickTarget === block.id &&
+          this.marioChase > 0 &&
+          !this.marioHuntItem &&
+          this.marioTarget === null;
+        if (
+          this.marioStage === 0 ||
+          huntingThis ||
+          Math.abs(block.x - m.x) < 160
+        ) {
+          this.lockMarioQuestion(block);
+          return;
+        }
+      }
+    }
+    const target = currentActor;
+    if (target && !this.marioHuntItem && (sees(target) || hearsCrowd(target))) {
+      this.brickTarget = null;
+      this.aimMarioAt(target.body.position.x, target.body.velocity.x);
+      this.marioChase = T.marioChaseSeconds;
+      return;
+    }
+    if (this.marioChase === 0 && this.marioIgnore === 0) {
+      const noticed = candidates
+        .filter((a) => sees(a) || hearsCrowd(a))
+        .sort(
+          (a, b) =>
+            Math.abs(a.body.position.x - m.x) *
+              (runners.has(a.id) ? 1 - this.marioPressure * 0.5 : 1) -
+            Math.abs(b.body.position.x - m.x) *
+              (runners.has(b.id) ? 1 - this.marioPressure * 0.5 : 1),
+        )[0];
+      if (noticed)
+        this.investigate(noticed, T.marioChaseSeconds + this.random());
+    }
   }
 
   private placeHunterMario() {
@@ -3689,6 +3958,7 @@ export class Simulation {
       this.marioDecision = 3;
       this.marioChase = 0;
       this.marioTarget = null;
+      this.marioHuntItem = false;
       this.marioLook = T.marioReaction;
       this.marioJumpWait = 0.8;
       this.marioPause = this.marioReaction = this.marioSeenAgo = 0;
@@ -3732,6 +4002,8 @@ export class Simulation {
     if (pursuing && (this.marioChase === 0 || this.marioSeenAgo > 1.4)) {
       this.marioChase = 0;
       this.marioTarget = null;
+      this.marioHuntItem = false;
+      this.brickTarget = null;
       this.marioIgnore = 0.3;
       this.mario.facing = 1;
     }
@@ -3765,6 +4037,8 @@ export class Simulation {
     if (starThreat) {
       this.marioRunning = true;
       this.marioTarget = null;
+      this.marioHuntItem = false;
+      this.brickTarget = null;
       this.marioChase = 0;
       const direction = Math.sign(m.x - starThreat.body.position.x) || -1;
       if (water) {
@@ -3791,27 +4065,7 @@ export class Simulation {
     // Jumps keep their launch direction while targets can dodge.
     if (this.marioLook <= 0) {
       this.marioLook = 0.22 + this.random() * 0.15;
-      const target = candidates.find((a) => a.id === this.marioTarget);
-      if (target && (sees(target) || hearsCrowd(target))) {
-        this.marioAim =
-          target.body.position.x +
-          target.body.velocity.x * 14 +
-          (this.random() - 0.5) * 24;
-        this.marioSeenAgo = 0;
-        this.marioChase = T.marioChaseSeconds;
-      } else if (this.marioChase === 0 && this.marioIgnore === 0) {
-        const noticed = candidates
-          .filter((a) => sees(a) || hearsCrowd(a))
-          .sort(
-            (a, b) =>
-              Math.abs(a.body.position.x - m.x) *
-                (runners.has(a.id) ? 1 - this.marioPressure * 0.5 : 1) -
-              Math.abs(b.body.position.x - m.x) *
-                (runners.has(b.id) ? 1 - this.marioPressure * 0.5 : 1),
-          )[0];
-        if (noticed)
-          this.investigate(noticed, T.marioChaseSeconds + this.random());
-      }
+      this.pickMarioGoal(m, candidates, sees, hearsCrowd, runners);
     }
     let direction = this.mario.facing;
     this.marioRunning = false;
@@ -3820,12 +4074,21 @@ export class Simulation {
       const distance = Math.abs(this.marioAim - m.x);
       direction =
         distance > 18 ? Math.sign(this.marioAim - m.x) : this.mario.facing;
+      const huntActor = this.marioHuntItem
+        ? undefined
+        : candidates.find((a) => a.id === this.marioTarget);
+      const skipDive =
+        this.marioStage === 0 &&
+        huntActor === this.player &&
+        this.player.scale >= T.mushroomScale;
       if (
+        huntActor &&
         distance > 8 &&
         distance < 125 &&
         this.mario.grounded &&
         this.marioJumpWait <= 0 &&
-        !this.wallAhead(this.mario, direction)
+        !this.wallAhead(this.mario, direction) &&
+        !skipDive
       ) {
         this.marioJumpWait = 0.65 + this.random() * 0.35;
         // Commit toward the predicted landing point, with bounded inaccuracy.
@@ -3840,6 +4103,21 @@ export class Simulation {
         );
         this.move(this.mario, launch);
         this.jump(this.mario);
+      } else if (
+        this.marioHuntItem &&
+        this.mario.grounded &&
+        this.marioJumpWait <= 0 &&
+        !this.wallAhead(this.mario, direction)
+      ) {
+        const item = this.items.find((i) => i.id === this.marioTarget);
+        if (
+          item &&
+          Math.abs(item.body.position.x - m.x) < 125 &&
+          item.body.bounds.max.y < this.mario.body.bounds.min.y
+        ) {
+          this.marioJumpWait = 0.65 + this.random() * 0.35;
+          this.jump(this.mario);
+        }
       }
       if (
         this.marioStage === 2 &&
@@ -3860,8 +4138,15 @@ export class Simulation {
       }
     }
     const brick = this.obstacles.find(
-      (c) => c.id === this.brickTarget && !c.broken,
+      (c) => c.id === this.brickTarget && !c.broken && !c.used,
     );
+    if (this.brickTarget !== null && !brick) {
+      this.brickTarget = null;
+      if (!this.marioHuntItem && this.marioTarget === null) {
+        this.marioChase = 0;
+        this.marioLook = 0;
+      }
+    }
     if (brick && Math.abs(brick.x - m.x) < 160) {
       direction = Math.sign(brick.x - m.x) || 1;
       if (
@@ -3899,12 +4184,16 @@ export class Simulation {
     // A jump commits to its takeoff velocity; Mario cannot steer after a dodge.
     if (water) {
       const target = candidates.find((a) => a.id === this.marioTarget);
+      const huntItem = this.marioHuntItem
+        ? this.items.find((item) => item.id === this.marioTarget)
+        : undefined;
       if (this.marioReaction > 0 || this.marioPause > 0)
         Body.setVelocity(this.mario.body, { x: 0, y: 0 });
       else
         this.swim(
           this.mario,
-          target?.body.position ?? { x: m.x + direction * 200, y: m.y },
+          target?.body.position ??
+            huntItem?.body.position ?? { x: m.x + direction * 200, y: m.y },
         );
     } else if (!this.mario.grounded && this.mario.navVx !== undefined) {
       this.move(this.mario, this.mario.navVx);
@@ -3939,6 +4228,7 @@ export class Simulation {
           });
         } else if (!this.hurt(a)) continue;
         this.marioTarget = null;
+        this.marioHuntItem = false;
         this.marioChase = 0;
         this.marioLook = 0;
         this.marioReaction = 0.15;

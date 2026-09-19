@@ -331,7 +331,23 @@ hitting a 2x or 3x player still uses shrink-then-kill.
 
 Running NPCs in view increase capped crowd pressure. More pressure makes Mario
 return sooner, react faster, run faster, and attack more often. Idle, dead,
-saved, and offscreen NPCs do not contribute. Pressure fades when the crowd stops.
+saved, offscreen, star, and 8x NPCs do not contribute. Pressure fades when the
+crowd stops.
+
+After he flees a visible star holder, he picks the next goal from high to low:
+
+1. An easy nearby stomp (clear sight, about 8-125px). Size does not change this,
+   except a small Mario does not dive a 2x or larger player.
+2. An on-screen crowd of fleeing NPCs. Star and 8x holders do not add.
+3. A visible, already-emerged mushroom, 3x mushroom, 8x mushroom, flower, or
+   star, only when 1 and 2 are not live. He detours about two seconds, then
+   reassesses. He does not chase coins or 1-up mushrooms.
+4. A visible unused question block. Stronger when he is small
+   (`marioStage === 0`). Never above 1-3.
+5. The existing chase timer and patrol.
+
+He keeps his reaction delay, committed jump direction, Fire Mario fireballs
+while chasing, and the 6s chase timer.
 
 Mario can walk and run. He uses running to pursue crowds and evade star holders.
 Fire Mario fires aggressively while still trying to stomp targets. In water,

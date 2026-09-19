@@ -95,6 +95,7 @@ export const TUNING = {
   firstMarioAt: 3,
   marioSight: 520,
   marioChaseSeconds: 6,
+  marioItemDetourSeconds: 2,
   marioReaction: 0.25,
   marioCrowdLimit: 5,
   marioCrowdRange: 800,
