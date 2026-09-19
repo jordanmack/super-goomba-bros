@@ -902,6 +902,7 @@ export class Simulation {
   private finishElapsed = 0;
   deadLeft = 0;
   marioActive = false;
+  marioEntered = false;
   marioReturn = T.firstMarioAt as number;
   marioDecision = 0;
   marioChase = 0;
@@ -1046,6 +1047,7 @@ export class Simulation {
     this.introLeft = mode === "intro" ? T.introSeconds : 0;
     this.gameoverLeft = 0;
     this.marioActive = false;
+    this.marioEntered = false;
     this.marioReturn = T.firstMarioAt;
     this.marioDecision = this.marioChase = this.marioIgnore = 0;
     this.brickTarget = null;
@@ -3642,8 +3644,19 @@ export class Simulation {
     return false;
   }
 
+  private enterMarioDoor() {
+    this.expireHuge(this.mario, false);
+    this.marioActive = false;
+    this.marioEntered = true;
+    this.mario.navVx = undefined;
+    this.mario.navDelay = undefined;
+    this.mario.navHoldX = undefined;
+    Body.setFrozen(this.mario.body, true);
+  }
+
   private updateMario(dt: number) {
     if (!this.marioActive) {
+      if (this.marioEntered) return;
       this.marioReturn -=
         dt * (this.mario.alive ? 1 + this.marioPressure * 1.8 : 1);
       if (this.marioDeath) {
@@ -3675,20 +3688,22 @@ export class Simulation {
     }
     if (this.inPipe(this.mario)) return;
     const huntRoom = this.roomFor(this.mario);
-    if (
-      this.isHuge(this.mario) &&
-      huntRoom.data.goal &&
-      huntRoom.data.goal.kind !== "pipe" &&
-      huntRoom.atDoor(this.mario)
-    ) {
-      this.expireHuge(this.mario, false);
-      this.marioActive = false;
-      this.marioReturn = 2.5 + this.random() * 2.5;
-      this.mario.navVx = undefined;
-      this.mario.navDelay = undefined;
-      this.mario.navHoldX = undefined;
-      Body.setFrozen(this.mario.body, true);
-      return;
+    if (huntRoom.data.goal && huntRoom.data.goal.kind !== "pipe") {
+      if (huntRoom.atDoor(this.mario)) {
+        this.enterMarioDoor();
+        return;
+      }
+      if (this.mario.body.position.x >= huntRoom.goalX) {
+        Body.setPosition(this.mario.body, {
+          x: huntRoom.goalX - 1,
+          y: this.mario.body.position.y,
+        });
+        Body.setVelocity(this.mario.body, {
+          x: 0,
+          y: this.mario.body.velocity.y,
+        });
+        return;
+      }
     }
     this.marioIgnore = Math.max(0, this.marioIgnore - dt);
     this.marioDecision -= dt;

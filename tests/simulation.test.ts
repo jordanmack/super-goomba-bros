@@ -2922,7 +2922,7 @@ test("Mario first appears at three seconds, and later returns keep their delay",
   assert.equal(s.marioActive, false);
   tick(s, 2 * dt);
   assert.equal(s.marioActive, true);
-  Body.setPosition(s.mario.body, { x: GOAL_X + 200, y: 400 });
+  Body.setPosition(s.mario.body, { x: s.cameraX - 700, y: 400 });
   tick(s, dt);
   assert.equal(s.marioActive, false);
   tick(s, 3 + dt);
@@ -2938,7 +2938,7 @@ test("time escalates Mario and returning does not reset it", () => {
   s.marioReturn = 0;
   tick(s, dt);
   assert.equal(s.marioActive, true);
-  Body.setPosition(s.mario.body, { x: GOAL_X + 200, y: 400 });
+  Body.setPosition(s.mario.body, { x: s.cameraX - 700, y: 400 });
   tick(s, dt);
   assert.equal(s.marioActive, false);
   assert.equal(s.phase, 2);
@@ -7013,6 +7013,7 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
     y: T.groundY - 14 * marioDoor.mario.scale,
   });
   Body.setVelocity(marioDoor.mario.body, { x: 0, y: 0 });
+  const marioDoorReturn = marioDoor.marioReturn;
   tick(marioDoor, dt);
   assert.equal(marioDoor.mario.scale, 1);
   assert.equal(marioDoor.marioStage, 1);
@@ -7022,6 +7023,112 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   assert.equal(marioDoor.mario.alive, true);
   assert.equal(marioDoor.marioActive, false);
   assert.equal(marioDoor.mario.body.frozen, true);
+  assert.equal(marioDoor.marioReturn, marioDoorReturn);
+  marioDoor.marioReturn = 0;
+  tick(marioDoor, 5);
+  assert.equal(marioDoor.marioActive, false);
+});
+
+function parkMarioAtDoor(s: Simulation) {
+  s.marioActive = true;
+  stillMario(s);
+  parkNpcs(s, []);
+  Body.setPosition(s.mario.body, {
+    x: s.activeRoom.goalX + 4,
+    y: T.groundY - 14 * s.mario.scale,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+}
+
+function assertMarioEnteredDoor(s: Simulation) {
+  const kills = s.marioKills;
+  const ret = s.marioReturn;
+  const goalX = s.activeRoom.goalX;
+  tick(s, dt);
+  assert.equal(s.marioActive, false);
+  assert.equal(s.mario.alive, true);
+  assert.equal(s.mario.body.frozen, true);
+  assert.equal(s.marioReturn, ret);
+  assert.ok(
+    s.mario.body.position.x <= goalX + 32,
+    `Mario walked past the door to ${s.mario.body.position.x}, door ${goalX}`,
+  );
+  assert.equal(s.marioKills, kills);
+  s.marioReturn = 0;
+  tick(s, 5);
+  assert.equal(s.marioActive, false);
+  assert.equal(s.marioKills, kills);
+}
+
+test("any-size Mario enters a castle door and does not return", () => {
+  const superMario = game();
+  parkMarioAtDoor(superMario);
+  assertMarioEnteredDoor(superMario);
+
+  const small = game();
+  small.setMarioStage(0);
+  parkMarioAtDoor(small);
+  assertMarioEnteredDoor(small);
+
+  const fire = game();
+  fire.setMarioStage(2);
+  parkMarioAtDoor(fire);
+  assertMarioEnteredDoor(fire);
+});
+
+test("Mario walking to the castle door never passes it", () => {
+  const s = game();
+  parkNpcs(s, []);
+  s.marioActive = true;
+  s.marioStun = 0;
+  s.marioLook = 10;
+  s.marioPause = 0;
+  s.marioChase = 0;
+  s.marioReaction = 0;
+  s.marioDecision = 99;
+  s.marioJumpWait = 99;
+  Body.setFrozen(s.mario.body, false);
+  const goalX = s.activeRoom.goalX;
+  Body.setPosition(s.mario.body, {
+    x: goalX - 48,
+    y: T.groundY - 14 * s.mario.scale,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  s.mario.facing = 1;
+  s.cameraX = goalX - 400;
+  const ret = s.marioReturn;
+  let farthest = s.mario.body.position.x;
+  for (let i = 0; i < 180; i++) {
+    tick(s, dt);
+    farthest = Math.max(farthest, s.mario.body.position.x);
+    assert.ok(
+      s.mario.body.position.x < goalX + 32,
+      `Mario passed the door to ${s.mario.body.position.x} on frame ${i}`,
+    );
+    if (!s.marioActive) break;
+  }
+  assert.equal(s.marioActive, false);
+  assert.equal(s.mario.body.frozen, true);
+  assert.ok(farthest < goalX + 32, `farthest ${farthest} door ${goalX}`);
+  assert.equal(s.marioReturn, ret);
+  s.marioReturn = 0;
+  tick(s, 5);
+  assert.equal(s.marioActive, false);
+});
+
+test("MARIO tally still counts after Mario enters the door", () => {
+  const s = game();
+  s.marioKills = 1;
+  parkMarioAtDoor(s);
+  assertMarioEnteredDoor(s);
+  assert.equal(s.marioKills, 1);
+  s.timeLeft = 0;
+  s.score = 0;
+  s.finish();
+  s.tallyPhase = "mario";
+  s.tallyHold = T.tallyLineSeconds;
+  tick(s, dt);
+  assert.equal(s.score, T.marioScore);
 });
 
 test("star-defeating 8x Mario does not shrink-blink or play pipe", () => {
