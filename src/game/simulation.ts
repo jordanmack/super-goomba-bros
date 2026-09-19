@@ -265,12 +265,7 @@ export const mushroomScale = (kind: MushroomKind) =>
     : kind === "mushroom3x"
       ? T.giantScale
       : T.mushroomScale;
-export const fireballScaleFor = (scale: number) =>
-  scale >= T.hugeScale
-    ? T.hugeScale
-    : scale >= T.giantScale
-      ? T.playerFireballScale
-      : 1;
+export const fireballScaleFor = (scale: number) => scale;
 export const itemSpriteSize = (kind: ItemKind) =>
   kind === "mushroom8x" ? 48 : 32;
 /** Draw Y so a larger sprite shares the 32px item's visible bottom. */
@@ -1571,6 +1566,7 @@ export class Simulation {
     )
       return false;
     if (a.scale > 1) {
+      a.flower = false;
       this.setGoombaScale(a, 1, true);
       this.events.push("shrink");
       return true;

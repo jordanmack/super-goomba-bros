@@ -403,10 +403,11 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   and not 8x still scores 1000 and does not change his stage. Shrink and grow
   blink between the two sizes. Growth resolves overlap with scenery. Giant
   NPCs can back up to leave low ceilings. The first damaging stomp or hit on
-  2x or 3x form shrinks to small instead of killing. 8x ignores those hits. A
-  flower can remain on the small form.
-- 2x keeps player fireballs at 1x. 3x uses the current giant fireball scale.
-  8x fireballs match that size. Existing shots keep their launch size.
+  2x or 3x form shrinks to small instead of killing, and also removes a
+  flower. 8x ignores those hits. Collecting a flower never changes Goomba
+  or NPC size.
+- Player fireballs match the shooter's scale at every size. Existing shots
+  keep their launch size.
 - 8x lasts the star duration, then the player and NPCs become 3x. A same-size
   or smaller mushroom does not reset that timer. While 8x, overlap destroys
   breakable bricks, question and content blocks, pipes, and unbreakable wall
@@ -428,14 +429,18 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   8x use the same smash rule. The character can still walk. 8x ignores stomp,
   fireball, moving shell, side contact, and player attacks.
 - A flower gives the player fireballs and a white palette. NPCs can show the
-  flower palette but do not shoot. Mario becomes SMB1 Fire Mario.
-- Powers can coexist. 2x, 3x, and flower powers last for the stage; stars and
-  8x expire. Restart and a new stage clear them.
+  flower palette but do not shoot. Mario becomes SMB1 Fire Mario. Collecting
+  a flower never changes Goomba or NPC size. A damaging hit while large
+  strips the flower with the size for those actors. A small Goomba or NPC
+  with a flower still dies on that hit. Mario keeps his SMB1 power ladder.
+- Powers can coexist. 2x, 3x, and flower powers last for the stage until a
+  damaging hit strips the flower with the size; stars and 8x expire.
+  Restart and a new stage clear them.
 
 Mario and a fire-powered player each keep at most two of their own fireballs
 in play. Either may throw again when a slot is free. Size does not change that
-rate. 2x keeps player fireballs at 1x. 3x uses the giant fireball scale. 8x
-fireballs match that size. Existing shots keep their launch size. Fireballs bounce
+rate. Player fireballs match the shooter's scale. Existing shots keep their
+launch size. Fireballs bounce
 on surfaces and stop at walls. Only a 3x or 8x player's fireball breaks an ordinary
 breakable brick on side or bottom contact. Top contact bounces and does not
 break. Question blocks, used blocks, and unbreakable tiles are not broken this
@@ -480,7 +485,8 @@ lane as a matter of course. They may still be hit.
 A campaign starts with three lives. Lives persist across stages in one
 campaign. Play Again resets to three. One successful attack kills an
 unprotected player. 2x and 3x form shrinks on the first damaging stomp, shell,
-or fireball hit; that size is not full immunity. 8x ignores those hits.
+or fireball hit and loses a flower; that size is not full immunity. 8x ignores
+those hits.
 Falling out of the level also kills, except 8x. TIME 0 still kills 8x. Stars
 grant full immunity. Death spends a life. If lives remain, the original-style
 black intro shows WORLD n-n and the player Goomba × remaining lives at

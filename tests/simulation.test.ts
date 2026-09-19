@@ -1247,7 +1247,7 @@ test("mushroom grow and shrink blink between the two sizes", () => {
   assert.equal(s.displayScale(s.player), 1);
 });
 
-test("first damaging stomp shrinks a mushroom player and keeps the flower", () => {
+test("first damaging stomp shrinks a mushroom player and strips the flower", () => {
   const s = game();
   give(s, s.player, "flower");
   give(s, s.player, "mushroom");
@@ -1256,13 +1256,42 @@ test("first damaging stomp shrinks a mushroom player and keeps the flower", () =
   tick(s, dt);
   assert.equal(s.player.alive, true);
   assert.equal(s.player.scale, 1);
-  assert.equal(s.player.flower, true);
+  assert.equal(s.player.flower, false);
   assert.ok(s.events.includes("shrink"));
   s.marioActive = false;
   tick(s, T.transformSeconds + dt, { fire: true });
-  assert.equal(s.fireballs.length, T.fireballSlots);
-  assert.ok(s.fireballs.every((f) => (f.scale ?? 1) === 1));
+  assert.equal(s.fireballs.length, 0);
   assert.equal(s.player.alive, true);
+});
+
+test("first damaging stomp shrinks a mushroom NPC and strips the flower", () => {
+  const s = game();
+  const n = s.npcs[0];
+  give(s, n, "flower");
+  give(s, n, "mushroom");
+  parkNpcs(s, [n]);
+  at(s, 4000);
+  marioStomp(s, n);
+  tick(s, dt);
+  assert.equal(n.alive, true);
+  assert.equal(n.scale, 1);
+  assert.equal(n.flower, false);
+  assert.ok(s.events.includes("shrink"));
+});
+
+test("a small actor who collects a flower stays small and gains fire", () => {
+  const s = game();
+  assert.equal(s.player.scale, 1);
+  give(s, s.player, "flower");
+  assert.equal(s.player.scale, 1);
+  assert.equal(s.player.flower, true);
+  tick(s, dt, { fire: true });
+  assert.equal(s.fireballs.length, 1);
+  assert.equal(s.fireballs[0]!.scale, 1);
+  const n = s.npcs[0];
+  give(s, n, "flower");
+  assert.equal(n.scale, 1);
+  assert.equal(n.flower, true);
 });
 
 test("first damaging stomp shrinks a mushroom NPC instead of killing it", () => {
@@ -1481,7 +1510,7 @@ test("player fireballs match Goomba size and share a two-shot cap", () => {
   assert.equal(s.fireballs.length, 2);
   assert.equal(s.events.filter((event) => event === "fire").length, 2);
   assert.equal(s.fireballs[0].scale, 1);
-  assert.equal(s.fireballs[1].scale, 1);
+  assert.equal(s.fireballs[1].scale, T.mushroomScale);
   assert.equal(s.player.scale, T.mushroomScale);
   tick(s, dt, { fire: true });
   assert.equal(owned(s, "player").length, T.fireballSlots);
@@ -1489,12 +1518,62 @@ test("player fireballs match Goomba size and share a two-shot cap", () => {
   give(s, s.player, "mushroom3x");
   s.fireballs[1].age = 5;
   tick(s, 2 * dt, { fire: true });
-  assert.equal(s.fireballs.at(-1)!.scale, T.playerFireballScale);
+  assert.equal(s.fireballs.at(-1)!.scale, T.giantScale);
   give(s, s.player, "mushroom8x");
   s.fireballs[0].age = 5;
   tick(s, 2 * dt, { fire: true });
   assert.equal(s.fireballs.at(-1)!.scale, T.hugeScale);
   assert.equal(first.scale, 1);
+});
+
+test("a 2x fireball collides at 2x and does not smash bricks", () => {
+  const s = game();
+  stillMario(s);
+  s.setMarioStage(0);
+  parkNpcs(s, []);
+  Body.setPosition(s.mario.body, { x: 200, y: 300 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  const gap = s.mario.body.width / 2 + 9;
+  s.fireballs.push({
+    id: 1,
+    x: 200 + gap,
+    y: 300,
+    vx: 0,
+    age: 0,
+    owner: "player",
+    scale: 1,
+  });
+  tick(s, dt);
+  assert.equal(s.marioStage, 0);
+  assert.equal(s.marioActive, true);
+  s.fireballs = [];
+  Body.setPosition(s.mario.body, { x: 200, y: 300 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  s.fireballs.push({
+    id: 2,
+    x: 200 + gap,
+    y: 300,
+    vx: 0,
+    age: 0,
+    owner: "player",
+    scale: T.mushroomScale,
+  });
+  tick(s, dt);
+  assert.equal(s.marioActive, false);
+
+  const bricks = game();
+  at(bricks, 80);
+  const brick = openBrick(bricks);
+  shoot(
+    bricks,
+    brick.body!.bounds.min.x - 6 * T.mushroomScale - 8,
+    brick.y,
+    6,
+    T.mushroomScale,
+  );
+  tick(bricks, 8 * dt);
+  assert.equal(brick.broken, false);
+  assert.ok(bricks.solids.includes(brick.body!));
 });
 
 test("Mario and the player each throw again when a fireball slot is free", () => {
