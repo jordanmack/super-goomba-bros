@@ -71,7 +71,8 @@ Original asset sources and frame details are in the
 Walk and run use original SMB1 caps scaled to 32-pixel tiles (2x NES). Hold B
 to run. Jump keeps the horizontal speed from the ground (a walk jump or a
 running jump). Hold jump for extra height. A running jump is higher and
-farther, matching SMB1, so original gaps stay reachable. Normal and giant
+farther, matching SMB1 (about five tiles for the small player), so original
+gaps stay reachable. Normal and giant
 forms use the same jump physics; giant only reaches higher because the body
 is taller. Jump does not repeat from a held press. Walking off a ledge keeps
 the last ground

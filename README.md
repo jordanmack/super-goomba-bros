@@ -39,7 +39,8 @@ defaults. Help remaps Jump, Run, Left, Right, Down, and Pause. The map is the
 only setting stored in the browser. Invalid or missing maps use the defaults.
 
 Hold B to run. Jump keeps that ground speed in the air. Hold jump for extra
-height. A running jump is higher, as in SMB1, and clears original gaps. Compact is the default on-screen
+height. A running jump is higher, as in SMB1 (about five tiles for the small
+player), and clears original gaps. Compact is the default on-screen
 pad. A header button cycles Compact, NES, and hidden. Compact Up may jump; NES D-pad Up and
 gamepad Up do not. The first gamepad stick or button use this session hides the
 on-screen pad. Unplug does not bring it back. Releasing direction stops horizontal movement. Springs provide their own

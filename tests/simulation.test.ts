@@ -116,10 +116,24 @@ test("holding jump adds height, and giant form uses the same jump", () => {
   assert.equal(tap.jumps, 1);
   assert.equal(hold.jumps, 1);
   // SMB1: held walk ~4 tiles, held run ~5 tiles; tap is shorter.
+  // #96 measured small-player held run at 155 px = 4.84 tiles (in band; no retune).
+  const tile = 32;
   assert.ok(tap.height > 30 && tap.height < 80, `tap jump ${tap.height}`);
   assert.ok(stand.height > 110 && stand.height < 145, `stand jump ${stand.height}`);
   assert.ok(hold.height > 120 && hold.height < 155, `walk jump ${hold.height}`);
   assert.ok(run.height > 145 && run.height < 180, `run jump ${run.height}`);
+  assert.ok(
+    stand.height / tile >= 3.5 && stand.height / tile < 4.5,
+    `stand jump ${stand.height / tile} tiles`,
+  );
+  assert.ok(
+    hold.height / tile >= 4 && hold.height / tile < 4.5,
+    `walk jump ${hold.height / tile} tiles`,
+  );
+  assert.ok(
+    run.height / tile >= 4 && run.height / tile <= 5,
+    `run jump ${run.height / tile} tiles, want SMB1 4-5`,
+  );
   assert.ok(run.height - hold.height > 15, "running jump is higher");
   assert.ok(hold.height - tap.height > 25, "hold jump is extra height");
   assert.ok(Math.abs(hold.height - giant.height) < 2);
