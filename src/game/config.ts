@@ -125,7 +125,10 @@ export const TUNING = {
   pipeWidth: 64,
   pipeHeight: 64,
   brickSize: 32,
+  // Exhaustion and 8x smash cap. SMB1 BrickWithCoins has no per-block count.
   multiCoinCount: 10,
+  // BrickCoinTimer $0b ticks of the 21-frame interval from the first hit.
+  multiCoinTimerFrames: 11 * 21,
   flagRaiseSeconds: 1,
   groundY: 430,
   bloodBurst: 64,

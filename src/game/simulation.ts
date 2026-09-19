@@ -92,6 +92,7 @@ export type Obstacle = {
   bounce: number;
   content?: string | null;
   coinsLeft?: number;
+  coinTimerFrames?: number;
 };
 export type Vine = {
   id: number;
@@ -1658,6 +1659,7 @@ export class Simulation {
     const prize =
       c.content === "1-up" ||
       c.content === "vine" ||
+      c.content === "coins" ||
       (c.hidden && c.content === "coin");
     if (
       !c.question &&
@@ -1686,6 +1688,16 @@ export class Simulation {
     if (c.content === "vine") {
       this.reveal(c);
       this.sproutVine(c);
+      this.events.push("bump");
+      return;
+    }
+    if (c.content === "coins") {
+      const timedOut = c.coinTimerFrames === 0;
+      if (c.coinTimerFrames === undefined)
+        c.coinTimerFrames = T.multiCoinTimerFrames;
+      this.popCoin(hitter, c.x, c.y);
+      c.coinsLeft = Math.max(0, (c.coinsLeft ?? T.multiCoinCount) - 1);
+      if (c.coinsLeft <= 0 || timedOut) this.reveal(c);
       this.events.push("bump");
       return;
     }
@@ -3059,7 +3071,11 @@ export class Simulation {
           ...this.npcs,
           this.mario,
         ].filter((a) => !this.inPipe(a)));
-    for (const c of this.obstacles) c.bounce = Math.max(0, c.bounce - dt);
+    for (const c of this.obstacles) {
+      c.bounce = Math.max(0, c.bounce - dt);
+      if (c.coinTimerFrames !== undefined)
+        c.coinTimerFrames = Math.max(0, c.coinTimerFrames - dt * 60);
+    }
     const phase =
       this.elapsed >= T.fireballsAt ? 2 : this.elapsed >= T.fasterAt ? 1 : 0;
     if (phase !== this.phase) {
@@ -3975,7 +3991,8 @@ export class Simulation {
               this.reveal(brick);
               brick.bounce = T.blockBounceSeconds;
               this.events.push("bump");
-            } else if (brick) this.breakBrick(brick);
+            } else if (brick && brick.content !== "coins")
+              this.breakBrick(brick);
           }
           f.age = 6;
         }

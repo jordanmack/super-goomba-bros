@@ -386,7 +386,14 @@ a character landing from above. Hidden coin blocks release a coin, then stay as
 a used platform. A player head hit adds that coin to the count and SCORE. A
 Mario head hit pops and plays sound only. Hidden 1-up blocks and the original
 non-hidden 1-up bricks release the green 1-up mushroom, not a red mushroom or
-other power. The omitted castle stop block stays omitted so the rescue door
+other power. A brick with `content: "coins"` yields one coin per head hit. That
+coin uses the same player, Mario, or NPC scoring rule as other coins, and the
+remaining count goes down by one. Hits continue until remaining is 0 or the
+original first-hit window expires (`BrickCoinTimer` $0b ticks of the 21-frame
+interval, in `TUNING.multiCoinTimerFrames`); then it becomes a used block. SMB1
+does not author a per-block coin count, so remaining starts at
+`TUNING.multiCoinCount`. A large player or Mario never breaks an unspent
+multi-coin brick. The omitted castle stop block stays omitted so the rescue door
 remains open.
 
 An item emerges before it can be collected. While it rises, only the part above

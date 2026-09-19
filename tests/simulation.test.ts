@@ -5130,6 +5130,111 @@ test("8x smash launches each item kind on a real step without emerge", () => {
   }
 });
 
+test("multi-coin bricks yield one coin per head hit until spent or the SMB1 window ends", () => {
+  const s = game();
+  const multi = s.obstacles.find((c) => c.content === "coins")!;
+  assert.equal(multi.coinsLeft, T.multiCoinCount);
+  assert.equal(multi.hidden, false);
+  assert.equal(multi.question, false);
+  const score = s.score;
+  s.hitBlock(multi, s.player);
+  assert.equal(multi.broken, false);
+  assert.equal(multi.used, false);
+  assert.equal(s.coins, 1);
+  assert.equal(s.score, score + T.coinScore);
+  assert.equal(multi.coinsLeft, T.multiCoinCount - 1);
+  assert.equal(multi.coinTimerFrames, T.multiCoinTimerFrames);
+  assert.ok(s.events.includes("coin"));
+  assert.ok(s.events.includes("bump"));
+  assert.equal(s.coinPops.length, 1);
+  for (let n = 2; n <= T.multiCoinCount; n++) {
+    multi.bounce = 0;
+    s.hitBlock(multi, s.player);
+    assert.equal(s.coins, n);
+    assert.equal(s.score, score + T.coinScore * n);
+    assert.equal(multi.coinsLeft, T.multiCoinCount - n);
+  }
+  assert.equal(multi.used, true);
+  assert.equal(multi.broken, false);
+  assert.ok(s.solids.includes(multi.body!));
+  s.events.length = 0;
+  multi.bounce = 0;
+  s.hitBlock(multi, s.player);
+  assert.equal(s.coins, T.multiCoinCount);
+  assert.equal(multi.used, true);
+  assert.equal(s.events.includes("coin"), false);
+  assert.ok(s.events.includes("bump"));
+
+  const large = game();
+  const largeBrick = large.obstacles.find((c) => c.content === "coins")!;
+  give(large, large.player, "mushroom");
+  assert.ok(large.player.scale > 1);
+  large.hitBlock(largeBrick, large.player);
+  assert.equal(largeBrick.broken, false);
+  assert.equal(largeBrick.used, false);
+  assert.equal(large.coins, 1);
+  assert.equal(largeBrick.coinsLeft, T.multiCoinCount - 1);
+
+  const marioHit = game();
+  marioHit.marioActive = true;
+  const marioBrick = marioHit.obstacles.find((c) => c.content === "coins")!;
+  marioHit.score = 0;
+  marioHit.coins = 0;
+  marioHit.hitBlock(marioBrick, marioHit.mario);
+  assert.equal(marioBrick.broken, false);
+  assert.equal(marioBrick.used, false);
+  assert.equal(marioHit.coins, 0);
+  assert.equal(marioHit.score, 0);
+  assert.ok(marioHit.events.includes("coin"));
+  assert.equal(marioHit.coinPops.length, 1);
+
+  const npcHit = game();
+  const n = npcHit.npcs[0]!;
+  const npcBrick = npcHit.obstacles.find((c) => c.content === "coins")!;
+  npcHit.score = 0;
+  npcHit.coins = 0;
+  npcHit.events.length = 0;
+  npcHit.hitBlock(npcBrick, n);
+  assert.equal(npcBrick.broken, false);
+  assert.equal(npcHit.coins, 0);
+  assert.equal(npcHit.score, 0);
+  assert.ok(npcHit.events.includes("coin"));
+  assert.equal(npcHit.coinPops.length, 1);
+
+  const timed = game();
+  parkNpcs(timed, []);
+  const timedBrick = timed.obstacles.find((c) => c.content === "coins")!;
+  timed.hitBlock(timedBrick, timed.player);
+  assert.equal(timed.coins, 1);
+  assert.equal(timedBrick.used, false);
+  at(timed, 80);
+  tick(timed, T.multiCoinTimerFrames / 60);
+  assert.equal(timedBrick.coinTimerFrames, 0);
+  timedBrick.bounce = 0;
+  timed.hitBlock(timedBrick, timed.player);
+  assert.equal(timed.coins, 2);
+  assert.equal(timedBrick.used, true);
+  assert.ok((timedBrick.coinsLeft ?? 0) > 0);
+  assert.equal(timedBrick.broken, false);
+
+  const fire = game();
+  const fireBrick = fire.obstacles.find((c) => c.content === "coins")!;
+  isolateSolid(fire, fireBrick.body!);
+  fire.obstacles = [fireBrick];
+  const radius = 6 * T.playerFireballScale;
+  shoot(
+    fire,
+    fireBrick.body!.bounds.min.x - radius - 8,
+    fireBrick.y,
+    6,
+    T.playerFireballScale,
+  );
+  tick(fire, 6 * dt);
+  assert.equal(fireBrick.broken, false);
+  assert.equal(fireBrick.used, false);
+  assert.equal(fire.coins, 0);
+});
+
 test("8x smash claims remaining multi-coins for the player; NPC smash pops without scoring", () => {
   const s = game();
   parkNpcs(s, []);
@@ -5142,6 +5247,22 @@ test("8x smash claims remaining multi-coins for the player; NPC smash pops witho
   assert.equal(s.coins, coins + T.multiCoinCount);
   assert.equal(s.score, score + T.coinScore * T.multiCoinCount);
   assert.ok(!s.solids.includes(multi.body!));
+
+  const partial = game();
+  parkNpcs(partial, []);
+  const partialBrick = partial.obstacles.find((c) => c.content === "coins")!;
+  partial.hitBlock(partialBrick, partial.player);
+  partialBrick.bounce = 0;
+  partial.hitBlock(partialBrick, partial.player);
+  const left = partialBrick.coinsLeft!;
+  assert.equal(left, T.multiCoinCount - 2);
+  const partialCoins = partial.coins;
+  const partialScore = partial.score;
+  at(partial, partialBrick.x, T.groundY - 14);
+  give(partial, partial.player, "mushroom8x");
+  assert.equal(partialBrick.broken, true);
+  assert.equal(partial.coins, partialCoins + left);
+  assert.equal(partial.score, partialScore + T.coinScore * left);
 
   const s2 = game();
   const n = s2.npcs[0];
