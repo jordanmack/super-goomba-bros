@@ -220,13 +220,16 @@ higher feet does not hurt Mario and does not take that hit.
 A falling player that lands on an NPC does not bounce upward. That landing does
 not kill or warn the NPC. Side contact is not a bounce. After the landing
 contact ends, the NPC can be warned without leaving the warning radius.
-A stomp on a walking Koopa, from the player or Mario, turns the Koopa into a
-stationary shell. Mario bounces from that stomp. The player does not hop.
-That is not a death and has no blood.
-A stopped shell is kicked by a side bump or a stomp, in the kicker's direction.
-A moving shell that is stomped stops. Side contact with a moving shell kills
+A Mario stomp on a walking Koopa turns the Koopa into a
+stationary shell. Mario bounces from that stomp. The player cannot shell, kick,
+or stop a Koopa. Landing on a walking Koopa leaves it walking. The player does
+not hop. That is not a death and has no blood.
+A stopped shell is kicked by Mario's side bump or stomp, in Mario's direction.
+The player cannot kick a stopped shell. A moving shell that Mario stomps stops.
+The player cannot stop a moving shell. Side contact with a moving shell kills
 unprotected characters and uses Mario's existing damage rules, with a short
-grace after the kick. Moving shells use the original shell speed, reverse on
+grace after the kick. Landing on or touching a moving shell still kills the
+player. Moving shells use the original shell speed, reverse on
 walls, and fall off ledges. A stopped shell shakes and then walks again on the
 original wake timer, keeping its warned flag. Fireballs, pits, and other moving
 shells still kill. A shelled Koopa is still living and can still be saved.

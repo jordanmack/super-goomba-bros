@@ -7339,7 +7339,7 @@ test("a falling player does not shell an 8x Koopa", () => {
   assert.equal(n.shell, "none");
 });
 
-test("stomping a walking Koopa shells it without a player hop, and is not a death", () => {
+test("a falling player does not shell a walking Koopa, hop, or kill it", () => {
   const s = game();
   const n = troopa(s);
   parkNpcs(s, [n]);
@@ -7354,14 +7354,14 @@ test("stomping a walking Koopa shells it without a player hop, and is not a deat
   assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.ok(n.alive);
   assert.equal(n.saved, false);
-  assert.equal(n.shell, "stopped");
+  assert.equal(n.shell, "none");
   assert.equal(n.warned, true);
   assert.equal(s.living(), T.population);
   assert.equal(s.events.includes("splat"), false);
   assert.equal(s.particles.length, 0);
 });
 
-test("a falling player shells an unwarned walking Koopa without hopping or warning it", () => {
+test("a falling player landing on an unwarned walking Koopa does not shell or warn it", () => {
   const s = game();
   const n = troopa(s);
   parkNpcs(s, [n]);
@@ -7375,7 +7375,7 @@ test("a falling player shells an unwarned walking Koopa without hopping or warni
   assert.ok(s.player.body.velocity.y > 0);
   assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.ok(n.alive);
-  assert.equal(n.shell, "stopped");
+  assert.equal(n.shell, "none");
   assert.equal(n.warned, false);
   assert.equal(s.warned, 0);
   assert.equal(s.events.includes("warn"), false);
@@ -7432,7 +7432,7 @@ test("side contact with a walking Koopa does not hurt or shell it", () => {
   assert.equal(s.events.includes("kick"), false);
 });
 
-test("a stopped shell is kicked by a side bump at original shell speed", () => {
+test("Mario kicks a stopped shell at original shell speed", () => {
   const s = game();
   const n = troopa(s);
   parkNpcs(s, [n]);
@@ -7440,13 +7440,12 @@ test("a stopped shell is kicked by a side bump at original shell speed", () => {
   Body.setVelocity(n.body, { x: 0, y: 0 });
   n.idleWalking = false;
   n.wait = 99;
-  at(s, 200, 415 - 30);
-  Body.setVelocity(s.player.body, { x: 0, y: 4 });
-  tick(s, dt);
-  assert.equal(n.shell, "stopped");
-  at(s, 100, 415);
-  tick(s, dt);
-  at(s, 180, 415);
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  at(s, 4000);
+  stillMario(s);
+  Body.setPosition(s.mario.body, { x: 192, y: 415 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
   tick(s, dt);
   assert.equal(n.shell, "moving");
   assert.equal(n.facing, 1);
@@ -7454,70 +7453,111 @@ test("a stopped shell is kicked by a side bump at original shell speed", () => {
   assert.equal(T.shellSpeed, 6);
   assert.ok(s.events.includes("kick"));
   assert.ok(n.alive);
+  tick(s, 2 * dt);
+  assert.ok(
+    bodiesOverlap(s.mario, n),
+    "still overlapping, so Mario survival is from kick grace",
+  );
+  assert.ok(s.mario.alive);
 });
 
-test("stomping a stopped shell kicks it the kicker's way", () => {
+test("player side contact does not kick a stopped shell", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.idleWalking = false;
+  n.wait = 99;
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  at(s, 180, 415);
+  tick(s, dt);
+  assert.equal(n.shell, "stopped");
+  assert.equal(n.body.velocity.x, 0);
+  assert.equal(s.events.includes("kick"), false);
+  assert.ok(n.alive);
+  assert.ok(s.player.alive);
+});
+
+test("Mario stomping a stopped shell kicks it Mario's way", () => {
   const s = game();
   const n = troopa(s);
   parkNpcs(s, [n]);
   n.idleWalking = false;
   n.wait = 99;
   Body.setPosition(n.body, { x: 200, y: 415 });
-  at(s, 200, 415 - 30);
-  Body.setVelocity(s.player.body, { x: 0, y: 4 });
-  tick(s, dt);
-  assert.equal(n.shell, "stopped");
-  at(s, 80, 415);
-  tick(s, dt);
-  at(s, 188, 415 - 30);
-  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  at(s, 4000);
+  stillMario(s);
+  Body.setPosition(s.mario.body, { x: 188, y: 375 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 10 });
   const kicks = s.events.filter((e) => e === "kick").length;
   tick(s, dt);
   assert.equal(n.shell, "moving");
   assert.equal(n.facing, 1);
   assert.equal(n.body.velocity.x, T.shellSpeed);
   assert.equal(s.events.filter((e) => e === "kick").length, kicks + 1);
+  assert.ok(s.mario.body.velocity.y < 0);
+  assert.ok(n.alive);
+});
+
+test("a falling player does not kick a stopped shell", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  n.idleWalking = false;
+  n.wait = 99;
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  at(s, 188, 415 - 30);
+  Body.setVelocity(s.player.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(n.shell, "stopped");
+  assert.equal(s.events.includes("kick"), false);
   assert.ok(s.player.body.velocity.y > 0);
   assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.ok(s.player.alive);
+  assert.ok(n.alive);
 });
 
-test("stomping a moving shell stops it; side contact kills after kick grace", () => {
+test("a falling player does not stop a moving shell and dies", () => {
   const s = game();
   const n = troopa(s);
   parkNpcs(s, [n]);
   Body.setPosition(n.body, { x: 200, y: 415 });
   n.idleWalking = false;
   n.wait = 99;
-  n.shell = "stopped";
-  n.wakeLeft = T.shellWake;
-  at(s, 192, 415);
-  tick(s, dt);
-  assert.equal(n.shell, "moving");
-  assert.ok(s.player.alive);
-  tick(s, 2 * dt);
-  assert.ok(
-    Math.abs(n.body.position.x - s.player.body.position.x) < 24,
-    "still overlapping, so survival is from kick grace",
-  );
-  assert.ok(s.player.alive);
-  tick(s, 0.3);
-  assert.ok(s.player.alive);
+  n.shell = "moving";
+  n.facing = 1;
+  n.kickIgnore = 0;
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
   at(s, n.body.position.x, n.body.position.y - 30);
   Body.setVelocity(s.player.body, { x: 0, y: 4 });
   tick(s, dt);
-  assert.equal(n.shell, "stopped");
-  assert.ok(s.player.body.velocity.y > 0);
-  assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
-  assert.ok(s.player.alive);
-  at(s, 80, 415);
-  tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.equal(s.player.alive, false);
+  assert.ok(s.events.includes("splat"));
+});
+
+test("player side contact with a moving shell kills after no kick grace", () => {
+  const s = game();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  Body.setPosition(n.body, { x: 200, y: 415 });
+  n.idleWalking = false;
+  n.wait = 99;
   n.shell = "moving";
   n.facing = 1;
+  n.kickIgnore = 0;
   Body.setVelocity(n.body, { x: T.shellSpeed, y: 0 });
   at(s, n.body.position.x + 8, 415);
   Body.setVelocity(s.player.body, { x: 0, y: 0 });
   tick(s, dt);
+  assert.equal(n.shell, "moving");
   assert.equal(s.player.alive, false);
   assert.ok(s.events.includes("splat"));
 });
@@ -7534,10 +7574,8 @@ test("a stopped shell wakes on the original timer and keeps warned or idle", () 
     Body.setPosition(n.body, { x: 200, y: 415 });
     n.idleWalking = false;
     n.wait = 99;
-    at(s, 200, 415 - 30);
-    Body.setVelocity(s.player.body, { x: 0, y: 4 });
-    tick(s, dt);
-    assert.equal(n.shell, "stopped");
+    n.shell = "stopped";
+    n.wakeLeft = T.shellWake;
     at(s, 40, 415);
     tick(s, T.shellWake - 0.05);
     assert.equal(n.shell, "stopped");

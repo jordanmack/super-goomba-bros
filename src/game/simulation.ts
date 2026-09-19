@@ -2420,7 +2420,6 @@ export class Simulation {
         this.player.body.bounds.max.y >= this.npcTop(n)
       ) {
         this.bouncedNpcs.add(n);
-        if (n.kind === "koopa" && !this.isHuge(n)) this.koopaStomp(n, this.player);
       }
     }
   }
@@ -2637,10 +2636,7 @@ export class Simulation {
         this.overlapActors(n, a) &&
         !this.shellStomps.has(n) &&
         n.kickIgnore !== a.id;
-      if (side(this.player)) {
-        if (n.shell === "stopped") this.kickShell(n, this.player);
-        else this.shellHits(this.player, n);
-      }
+      if (side(this.player) && n.shell === "moving") this.shellHits(this.player, n);
       if (
         this.marioActive &&
         this.mario.alive &&
