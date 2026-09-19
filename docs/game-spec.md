@@ -317,8 +317,9 @@ Side contact alone is not a stomp, including grounded contact and air overlap
 with equal feet. He still hunts a giant player and giant NPCs, including 8x.
 2x and 3x size is not star immunity. 8x (player, NPC, or Mario) cannot be
 killed or shrunk by stomp, fireball, moving shell, side contact, or player
-attacks, and does not die from falling out of the level. TIME 0 still kills
-8x. Any contact between 8x and an enemy is one hit, not a star-kill, and does
+attacks. Falling out of the level still kills player and NPC 8x. 8x Mario
+who falls out ends the hunt and returns on the existing timer. TIME 0 still
+kills 8x. Any contact between 8x and an enemy is one hit, not a star-kill, and does
 not require a falling stomp: 8x player or 8x NPC contact drops Mario one power
 stage; 8x Mario contact shrinks 2x or 3x to 1x and kills only 1x. Both sides
 8x means no hit. A player or NPC star still defeats him on contact. Mario
@@ -404,11 +405,12 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   2x. Star and flower stay in the pool. Any 2x or 3x mushroom grows small
   Mario to Super Mario. `mushroom8x` grows an active Mario to 8x
   (`hugeScale`). While 8x, Mario uses the same smash and walk rules as the
-  player and 8x NPCs. 8x lasts the star duration, then Mario becomes Super
-  Mario (stage 1, big). He does not become 3x or small. Fire Mario who took
-  8x also expires to Super Mario. A same-size or smaller mushroom does not
-  reset that timer. An extra mushroom while Mario is already Super or Fire
-  and not 8x still scores 1000 and does not change his stage. Shrink and grow
+  player and 8x NPCs. 8x lasts 15 seconds, independent of the star, then
+  Mario becomes Super Mario (stage 1, big). He does not become 3x or small.
+  Fire Mario who took 8x also expires to Super Mario. A same-size or smaller
+  mushroom does not reset that timer. An extra mushroom while Mario is already
+  Super or Fire and not 8x still scores 1000 and does not change his stage.
+  Shrink and grow
   blink between the two sizes. Growth resolves overlap with scenery. Giant
   NPCs can back up to leave low ceilings. The first damaging stomp or hit on
   2x or 3x form shrinks to small instead of killing, and also removes a
@@ -416,11 +418,12 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   or NPC size.
 - Player fireballs match the shooter's scale at every size. Existing shots
   keep their launch size.
-- 8x lasts the star duration, then the player and NPCs become 3x. A same-size
-  or smaller mushroom does not reset that timer. While 8x, overlap destroys
-  breakable bricks, question and content blocks, pipes, and unbreakable wall
-  tiles that are not floors. Destroyed solids play the brick-break burst and
-  lose collision. A question or content block yields its prize first, then
+- 8x lasts 15 seconds, independent of the star, then the player and NPCs
+  become 3x. A same-size or smaller mushroom does not reset that timer.
+  While 8x, overlap destroys breakable bricks, question and content blocks,
+  pipes, and unbreakable wall tiles that are not floors. Destroyed solids play
+  the brick-break burst and lose collision. A question or content block yields
+  its prize first, then
   breaks. Player coin contents add to the coin count. Mario or NPC coin
   contents pop and play sound only. An 8x smash on a multi-coin
   brick claims all remaining coins at once, then the brick is gone. An item
@@ -495,7 +498,7 @@ campaign. Play Again resets to three. One successful attack kills an
 unprotected player. 2x and 3x form shrinks on the first damaging stomp, shell,
 or fireball hit and loses a flower; that size is not full immunity. 8x ignores
 those hits.
-Falling out of the level also kills, except 8x. TIME 0 still kills 8x. Stars
+Falling out of the level also kills, including 8x. TIME 0 still kills 8x. Stars
 grant full immunity. Death spends a life. If lives remain, the original-style
 black intro shows WORLD n-n and the player Goomba × remaining lives at
 playfield scale, then the current stage restarts with cleared counters,

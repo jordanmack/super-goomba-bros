@@ -103,7 +103,7 @@ export const TUNING = {
   mushroomScale: 2,
   giantScale: 3,
   hugeScale: 8,
-  hugeSeconds: 10,
+  hugeSeconds: 15,
   mushroom3xChance: 0.25,
   mushroom8xChance: 0.1,
   transformSeconds: 0.8,

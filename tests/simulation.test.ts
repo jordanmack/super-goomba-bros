@@ -4642,7 +4642,9 @@ test("lives, world intro, and game over follow a campaign attempt", () => {
 });
 
 test("mushrooms grow 2x, 3x, or timed 8x; same or smaller score 1000", () => {
-  assert.equal(T.hugeSeconds, T.starSeconds);
+  assert.equal(T.hugeSeconds, 15);
+  assert.equal(T.starSeconds, 10);
+  assert.notEqual(T.hugeSeconds, T.starSeconds);
   assert.ok(1 - T.mushroom3xChance - T.mushroom8xChance > T.mushroom3xChance);
   assert.ok(1 - T.mushroom3xChance - T.mushroom8xChance > T.mushroom8xChance);
   const s = game();
@@ -4909,6 +4911,8 @@ test("natural 8x expiry blinks, plays shrink, and stays damageable", () => {
   mario.marioActive = true;
   parkNpcs(mario, []);
   stillMario(mario);
+  mario.marioPause = T.hugeSeconds + 1;
+  mario.marioLook = T.hugeSeconds + 1;
   give(mario, mario.mario, "mushroom8x");
   mario.events.length = 0;
   tick(mario, T.hugeSeconds);
@@ -6568,7 +6572,7 @@ test("first damaging stomp still shrinks 2x and 3x", () => {
   }
 });
 
-test("8x contact is one hit, stays hunted, survives a pit, then 3x is vulnerable", () => {
+test("8x contact is one hit, stays hunted, dies in a pit, then 3x is vulnerable", () => {
   const hit = game();
   give(hit, hit.player, "mushroom8x");
   parkNpcs(hit, []);
@@ -6599,9 +6603,9 @@ test("8x contact is one hit, stays hunted, survives a pit, then 3x is vulnerable
   parkNpcs(pit, []);
   Body.setPosition(pit.player.body, { x: 200, y: 700 });
   tick(pit, dt);
-  assert.equal(pit.player.alive, true);
-  assert.equal(pit.mode, "playing");
-  assert.equal(pit.player.scale, T.hugeScale);
+  assert.equal(pit.player.alive, false);
+  assert.equal(pit.mode, "dead");
+  assert.equal(pit.lives, T.startingLives - 1);
 
   const later = game();
   give(later, later.player, "mushroom8x");
@@ -6820,14 +6824,19 @@ test("8x contact pairs drop one stage, both 8x miss, and star still wins", () =>
   assert.ok(starred.player.alive);
 });
 
-test("8x player, NPC, and Mario survive a pit; TIME 0 still kills 8x", () => {
+test("8x player, NPC, and Mario die in a pit; TIME 0 still kills 8x", () => {
   const player = game();
   give(player, player.player, "mushroom8x");
   parkNpcs(player, []);
   Body.setPosition(player.player.body, { x: 200, y: 700 });
   tick(player, dt);
-  assert.equal(player.player.alive, true);
-  assert.equal(player.mode, "playing");
+  assert.equal(player.player.alive, false);
+  assert.equal(player.mode, "dead");
+  assert.equal(player.lives, T.startingLives - 1);
+  assert.ok(player.playerDeath);
+  const pitY = player.playerDeath.y;
+  tick(player, 0.3);
+  assert.ok(player.playerDeath && player.playerDeath.y >= pitY);
 
   const npc = game();
   const n = npc.npcs[0];
@@ -6835,8 +6844,15 @@ test("8x player, NPC, and Mario survive a pit; TIME 0 still kills 8x", () => {
   parkNpcs(npc, [n]);
   Body.setPosition(n.body, { x: 200, y: 700 });
   tick(npc, dt);
-  assert.equal(n.alive, true);
-  assert.equal(n.scale, T.hugeScale);
+  assert.equal(n.alive, false);
+  assert.equal(npc.died(), 1);
+
+  const normalMario = game();
+  normalMario.marioActive = true;
+  parkNpcs(normalMario, []);
+  stillMario(normalMario);
+  Body.setPosition(normalMario.mario.body, { x: 200, y: 700 });
+  tick(normalMario, dt);
 
   const mario = game();
   mario.marioActive = true;
@@ -6845,9 +6861,10 @@ test("8x player, NPC, and Mario survive a pit; TIME 0 still kills 8x", () => {
   stillMario(mario);
   Body.setPosition(mario.mario.body, { x: 200, y: 700 });
   tick(mario, dt);
-  assert.equal(mario.mario.alive, true);
-  assert.equal(mario.marioActive, true);
-  assert.equal(mario.mario.scale, T.hugeScale);
+  assert.equal(mario.marioActive, false);
+  assert.equal(mario.marioActive, normalMario.marioActive);
+  assert.equal(mario.marioReturn, normalMario.marioReturn);
+  assert.ok(mario.mario.body.position.y > 620);
 
   const time = game();
   give(time, time.player, "mushroom8x");

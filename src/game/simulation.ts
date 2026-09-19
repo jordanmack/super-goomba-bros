@@ -3239,7 +3239,7 @@ export class Simulation {
         !(a === this.player && this.pipeIntro)
       ) {
         if (a === this.player && this.returnFromBonus(a)) continue;
-        if (!this.isHuge(a)) this.kill(a, false);
+        this.kill(a, false);
       }
     this.updateFireballs(dt);
     this.updateCannons();
@@ -3726,7 +3726,7 @@ export class Simulation {
     const m = this.mario.body.position;
     const water = this.roomFor(this.mario).data.type === "water";
     if (
-      (m.y > 620 && !this.isHuge(this.mario)) ||
+      m.y > 620 ||
       m.x > this.roomFor(this.mario).goalX + 100 ||
       m.x > this.cameraX + this.viewWidth + 240 ||
       m.x < this.cameraX - 650
