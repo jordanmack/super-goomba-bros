@@ -10,6 +10,7 @@ import { isSolidTile, themeFor } from "../levels";
 import type { Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
 import {
+  actorSpriteBox,
   itemDrawY,
   itemHoldHidden,
   itemSpriteSize,
@@ -435,15 +436,13 @@ export class Play extends Phaser.Scene {
         .setTexture(
           base + (mario && !actor.grounded ? "Jump" : skid ? "Skid" : ""),
         );
-    const height = this.actorSpriteHeight(actor, sim);
+    const box = actorSpriteBox(actor, shown);
     sprite.setPosition(
       Math.round(actor.body.position.x) +
         (shake && Math.floor(sim.elapsed * 16) % 2 ? shown : 0),
       Math.round(actor.body.bounds.max.y),
     );
-    sprite
-      .setDisplaySize(smallMario ? 32 : 32 * shown, height)
-      .setFlipX(actor.facing < 0);
+    sprite.setDisplaySize(box.w, box.h).setFlipX(actor.facing < 0);
     sprite.setAlpha(
       mario && sim.marioStun > 0 && Math.floor(sim.elapsed * 18) % 2 ? 0.25 : 1,
     );
@@ -471,12 +470,7 @@ export class Play extends Phaser.Scene {
   }
 
   private actorSpriteHeight(actor: Actor, sim: Simulation) {
-    const shown = sim.displayScale(actor);
-    const shelled = actor.kind === "koopa" && actor.shell !== "none";
-    return (
-      (shelled ? 32 : actor.kind === "koopa" ? 48 : actor.kind === "mario" ? 64 : 32) *
-      shown
-    );
+    return actorSpriteBox(actor, sim.displayScale(actor)).h;
   }
 
   private bindItemClip(

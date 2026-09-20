@@ -25,6 +25,7 @@ const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
 import {
+  actorSpriteBox,
   itemDrawY,
   itemHoldHidden,
   itemSpriteSize,
@@ -4927,6 +4928,96 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
     32 * T.hugeScale,
   );
   huge.s.physics.clear();
+});
+
+test("an 8x shrink-blink at a side pipe keeps the pixels above the playfield top", () => {
+  const { s, sub, goalPipe } = goalPipeSim();
+  const goalData = sub.data.pipes.find(
+    (p) => p.column === sub.data.goal!.column,
+  )!;
+  const mouthX = sub.offset + goalData.column * 32;
+  const mouthY = MAP_TOP + goalData.row * 32;
+  // A Koopa uses the 48px frame, so its 8x blink overhangs above MAP_TOP.
+  const n = s.npcs.find((a) => a.kind === "koopa")!;
+  n.areaId = "40";
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.saved = false;
+  Body.setFrozen(n.body, false);
+  give(s, n, "mushroom8x");
+  standOnPipe(n, goalPipe);
+  n.grounded = true;
+  const lipFeet = n.body.bounds.max.y;
+  assert.equal(lipFeet, mouthY, "the 8x Koopa starts standing on the lip");
+  let frames = 0;
+  while (!n.pipeTravel && frames++ < 60) s.step(dt, emptyInput());
+  const travel = n.pipeTravel;
+  assert.ok(travel, "8x entry starts side-pipe travel");
+  assert.equal(travel.dir, "right");
+  // Entering a goal pipe at 8x shrinks to the 3x mushroom fallback and blinks
+  // back through hugeScale while travelling.
+  assert.equal(n.scale, T.giantScale);
+  assert.equal(n.transformFrom, T.hugeScale);
+  assert.ok(n.transformLeft > 0);
+  const clip = travel.clip!;
+  assert.equal(
+    clip.x + clip.w,
+    mouthX,
+    "side clip hides exactly the part past the lip",
+  );
+  let blinked = false;
+  frames = 0;
+  while (n.transformLeft > 0 && n.pipeTravel && frames++ < 240) {
+    const shown = s.displayScale(n);
+    assert.equal(n.scale, T.giantScale, "scale stays at the fallback");
+    assert.ok(
+      shown === T.giantScale || shown === T.hugeScale,
+      `blink shows only the two sizes: ${shown}`,
+    );
+    if (shown !== T.hugeScale) {
+      s.step(dt, emptyInput());
+      continue;
+    }
+    blinked = true;
+    const box = actorSpriteBox(n, shown);
+    assert.equal(box.w, 32 * shown, "sprite keeps its full width");
+    assert.equal(box.h, 48 * T.hugeScale, "blink frame keeps the 8x height");
+    assert.equal(
+      n.body.bounds.max.y,
+      lipFeet,
+      "the traveller stays on the lip instead of being lifted off screen",
+    );
+    // Play draws the sprite bottom-anchored on the feet.
+    const spriteTop = n.body.bounds.max.y - box.h;
+    // The 8x frame overhangs the playfield top and must stay drawn there.
+    assert.ok(spriteTop < MAP_TOP, `8x sprite overhangs the top: ${spriteTop}`);
+    assert.ok(
+      spriteTop + box.h > MAP_TOP,
+      "the overhanging frame still reaches the playfield",
+    );
+    assert.ok(
+      inClip(clip, mouthX - 1, MAP_TOP - 1),
+      "pixels above the playfield top stay visible",
+    );
+    assert.ok(
+      inClip(clip, mouthX - 1, mouthY - 1),
+      "pixels down to the lip stay visible",
+    );
+    assert.equal(
+      inClip(clip, mouthX + 1, MAP_TOP - 1),
+      false,
+      "pixels past the lip stay hidden above the playfield top",
+    );
+    assert.equal(
+      inClip(clip, mouthX + 1, mouthY - 1),
+      false,
+      "pixels past the lip stay hidden at the mouth",
+    );
+    s.step(dt, emptyInput());
+  }
+  assert.ok(blinked, "the shrink-blink showed the 8x frame during travel");
+  s.physics.clear();
 });
 
 test("Mario cannot stomp a traveler in a pipe", () => {

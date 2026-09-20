@@ -273,6 +273,21 @@ export const mushroomScale = (kind: MushroomKind) =>
 export const fireballScaleFor = (scale: number) => scale;
 export const itemSpriteSize = (kind: ItemKind) =>
   kind === "mushroom8x" ? 48 : 32;
+/** Drawn sprite size for an actor at its currently shown scale. */
+export function actorSpriteBox(actor: Actor, shown: number) {
+  const shelled = actor.kind === "koopa" && actor.shell !== "none";
+  const h =
+    (shelled
+      ? 32
+      : actor.kind === "koopa"
+        ? 48
+        : actor.kind === "mario"
+          ? 64
+          : 32) * shown;
+  // Small Mario keeps the 32px frame width.
+  const w = actor.kind === "mario" && shown < 1 ? 32 : 32 * shown;
+  return { w, h };
+}
 /** Draw Y so a larger sprite shares the 32px item's visible bottom. */
 export function itemDrawY(item: { kind: ItemKind; body: Body }) {
   return item.body.position.y - (itemSpriteSize(item.kind) - 32) / 2;
@@ -501,6 +516,7 @@ export class Simulation {
     const { pipe, destination, destLevel } = entry;
     const room = this.roomFor(actor);
     const wasHuge = this.isHuge(actor);
+    const hugeFeet = actor.body.bounds.max.y;
     if (wasHuge) this.expireHuge(actor);
     const dir = pipe.direction === "down" ? "down" : "right";
     const vis = this.pipeVisual(actor);
@@ -518,6 +534,12 @@ export class Simulation {
       Body.setPosition(actor.body, {
         x: left + pipe.width * 16,
         y: MAP_TOP + pipe.row * 32 - actor.body.height / 2,
+      });
+    // expireHuge runs fitActor, which lifts the shrunk body off the side lip.
+    else if (wasHuge)
+      Body.setPosition(actor.body, {
+        x: actor.body.position.x,
+        y: hugeFeet - actor.body.height / 2,
       });
     Body.setVelocity(actor.body, { x: 0, y: 0 });
     Body.setFrozen(actor.body, true);
