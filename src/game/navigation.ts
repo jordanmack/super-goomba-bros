@@ -30,9 +30,11 @@ export function planJump(
   direction: number,
   speed: number,
   impulse: number,
-  accept: (landing: { x: number; y: number }) => boolean = () => true,
+  accept: (landing: { x: number; y: number; frames: number }) => boolean = () =>
+    true,
   preferLow = false,
   gravity?: { hold: number; fall: number },
+  clear?: (point: { x: number; y: number; frames: number }) => boolean,
 ) {
   const half = body.width / 2,
     tall = body.height / 2;
@@ -109,7 +111,11 @@ export function planJump(
             if (
               progress > 16 &&
               b.max.x - b.min.x >= half &&
-              accept({ x, y: b.min.y - tall }) &&
+              // The touchdown cell is part of the arc, so it gets the same
+              // hazard probe as every airborne frame before it.
+              (!clear ||
+                clear({ x, y: b.min.y - tall, frames: frame + 1 })) &&
+              accept({ x, y: b.min.y - tall, frames: frame + 1 }) &&
               !enclosedWell(nearby, b)
             ) {
               const margin = Math.min(x + half - b.min.x, b.max.x - x + half);
@@ -138,6 +144,9 @@ export function planJump(
           }
         }
         if (landed || blocked || y > 630) break;
+        // Probe after the ceiling bump above, so the hazard test uses the y the
+        // body actually occupies rather than one it is pushed out of.
+        if (clear && !clear({ x, y, frames: frame + 1 })) break;
       }
     }
   return options.sort(

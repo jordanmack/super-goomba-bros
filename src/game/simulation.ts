@@ -16,6 +16,7 @@ import {
   BOWSER_PHRASES,
   MAP_TOP,
   PHRASES,
+  STANDING_JUMP_IMPULSE,
   TUNING as T,
   VIEW_HEIGHT,
   blockDrawY,
@@ -161,6 +162,8 @@ export type Actor = {
   navRetry?: number;
   navBackoff?: { x: number; vx: number; delay: number };
   navDetourBelow?: number;
+  navFirebarGo?: { bar: number; moves: Uint8Array; step: number; frame: number };
+  navFirebarWaitFrame?: number;
   navDrop?: { x: number; vx: number; delay: number };
   jumpHeld?: boolean;
   jumpHoldG?: number;
@@ -477,14 +480,17 @@ export class Simulation {
     const goal = this.goalPipeData(room);
     return !!goal && goal.column === pipe.column && goal.row === pipe.row;
   }
+  // Depth an NPC must get below to clear a ceiling over a pipe goal, or
+  // undefined when it is not on one. The target sits under the actor's own
+  // support, so a non-row-2 slab cannot satisfy the clear while standing on it.
   private aboveExitCeiling(a: Actor) {
     const room = this.roomFor(a);
     const goal = room.data.goal;
-    if (goal?.kind !== "pipe") return false;
-    if (Math.abs(a.body.position.x - room.goalX) >= 512) return false;
+    if (goal?.kind !== "pipe") return;
+    if (Math.abs(a.body.position.x - room.goalX) >= 512) return;
     const opening = MAP_TOP + goal.row * 32;
     const feet = a.body.bounds.max.y;
-    if (feet >= opening - 40) return false;
+    if (feet >= opening - 40) return;
     const support = this.solids.find(
       (s) =>
         !s.headOnly &&
@@ -492,16 +498,15 @@ export class Simulation {
         a.body.bounds.min.x < s.bounds.max.x &&
         Math.abs(s.bounds.min.y - feet) < 3,
     );
-    if (!support) return false;
+    if (!support) return;
     const ceilingTop = MAP_TOP + 2 * 32;
-    return (
-      Math.abs(support.bounds.min.y - ceilingTop) < 8 ||
-      support.bounds.max.y < opening
-    );
+    if (Math.abs(support.bounds.min.y - ceilingTop) < 8) return ceilingTop + 24;
+    if (support.bounds.max.y < opening) return support.bounds.max.y + 24;
   }
   private npcCanDrop(a: Actor) {
     return (
-      this.roomFor(a).data.type === "castle" || this.aboveExitCeiling(a)
+      this.roomFor(a).data.type === "castle" ||
+      this.aboveExitCeiling(a) !== undefined
     );
   }
   private tryNpcPipeEscape(n: Actor) {
@@ -579,6 +584,7 @@ export class Simulation {
     actor.navDelay = undefined;
     actor.navHoldX = undefined;
     actor.navBackoff = undefined;
+    actor.navFirebarGo = undefined;
     actor.swimPath = undefined;
     if (actor === this.player && !wasHuge) this.events.push("pipe");
     return true;
@@ -1382,16 +1388,85 @@ export class Simulation {
             s.bounds.max.y >= feet - 5)),
     );
     const wall = this.wallAhead(a, direction, solids);
-    if (a !== this.mario && this.firebarSoon(a, direction)) {
-      this.move(a, 0);
-      return;
+    // Arcs are checked against each bar's phase at the frame the body is there.
+    // step() advances elapsed before updateNpcs, so arc frame 1 is elapsed.
+    const room = this.roomFor(a);
+    const firebarFree =
+      a === this.mario || !room.firebars.length
+        ? undefined
+        : (point: { x: number; y: number; frames: number }) =>
+            !this.firebarBlocks(
+              room,
+              point.x,
+              point.y,
+              half,
+              a.body.height / 2,
+              this.elapsed + (point.frames - 1) / 60,
+            );
+    // A bar mounted at walking height can only be jumped, so a halt falls
+    // through to the jump planner instead of standing until a ball arrives.
+    let firebarHalt = false;
+    if (a !== this.mario && room.firebars.length) {
+      const pace = this.runSpeedFor(a);
+      const zone = this.firebarZone(a, direction);
+      // A walking plan holds height fixed, so it needs the whole crossing on
+      // one ledge. Otherwise the jump planner below models the arc instead.
+      const onLedge =
+        !!zone &&
+        !!support &&
+        Math.min(zone.exit, p.x) >= support.bounds.min.x &&
+        Math.max(zone.exit, p.x) <= support.bounds.max.x;
+      const ledgeEndsFirst =
+        !!zone &&
+        !!support &&
+        (support.bounds[direction > 0 ? "max" : "min"].x - zone.hold) *
+          direction <
+          0;
+      if (!zone || ledgeEndsFirst) a.navFirebarGo = undefined;
+      else if ((p.x - zone.hold) * direction >= -pace) {
+        const now = Math.round(this.elapsed * 60);
+        // Plan once per bar and replay it; deciding per frame makes the NPC
+        // dither on the rim. Only valid on consecutive grounded frames, since a
+        // resumed plan would meet a phase it was never solved for.
+        if (
+          a.navFirebarGo?.bar !== zone.bar ||
+          a.navFirebarGo.frame !== now - 1 ||
+          a.navFirebarGo.step >= a.navFirebarGo.moves.length
+        ) {
+          const moves =
+            onLedge && a.grounded
+              ? this.firebarCrossPlan(a, direction * pace, zone.exit)
+              : undefined;
+          a.navFirebarGo = moves && {
+            bar: zone.bar,
+            moves,
+            step: 0,
+            frame: now,
+          };
+        }
+        const plan = a.navFirebarGo;
+        if (plan) {
+          plan.frame = now;
+          a.navFirebarWaitFrame = now;
+          const move = plan.moves[plan.step] ?? 1;
+          if (plan.step < plan.moves.length) plan.step++;
+          this.move(a, move ? direction * pace : 0);
+          return;
+        }
+        // No walking route past this bar. Stop advancing and let the jump
+        // planner below look for an arc over it.
+        firebarHalt = true;
+        a.navFirebarWaitFrame = now;
+        this.move(a, 0);
+      } else a.navFirebarGo = undefined;
     }
-    if (supported && !wall && (a === this.mario || !inWell)) return;
+    if (!firebarHalt && supported && !wall && (a === this.mario || !inWell))
+      return;
     if (a === this.mario) {
       if (wall) {
         // Collision zeros vx against a flush wall, so a standing hop cannot clear it.
         const pace = this.runSpeedFor(a);
-        const impulse = this.roomFor(a).onSpring(a)
+        const impulse = room.onSpring(a)
           ? T.springImpulse
           : T.runJumpSpeed;
         const arc = jumpArc(pace);
@@ -1433,7 +1508,9 @@ export class Simulation {
         !enclosedWell(solids, s.bounds),
     );
     const dropDown = this.npcCanDrop(a);
-    if (!supported && !wall && dropDown) {
+    // A halted NPC is standing safely; a drop or walk-off is only worth taking
+    // if it clears the bar, and the jump planner below already proves that.
+    if (!firebarHalt && !supported && !wall && dropDown) {
       if (support) {
         const x =
           direction > 0
@@ -1448,21 +1525,73 @@ export class Simulation {
           0,
           (landing) => landing.y > p.y + 16,
           true,
+          undefined,
+          firebarFree,
         );
-        if (drop && Math.abs(x - p.x) < a.body.width + 40) {
+        // updateNpcs replays a navDrop without the launch delay, so a delayed
+        // option is not the arc that was planned. Take only delay-0 arcs, and
+        // in a firebar room only when the fall starts from here this frame.
+        const flyable =
+          drop?.delay === 0 && (!firebarFree || Math.abs(x - p.x) <= a.speed);
+        if (drop && flyable && Math.abs(x - p.x) < a.body.width + 40) {
           a.navDrop = { x, vx: drop.vx, delay: drop.delay };
           return;
         }
       }
     }
-    if ((dropDown || a.navDetourBelow) && !wall && safeDrop && !supported)
-      return;
+    // A landing must stay clear long enough to touch down and step away. The
+    // dwell follows the actor's motion, since it keeps walking after landing.
+    const firebarLandingFree =
+      firebarFree &&
+      ((landing: { x: number; y: number; frames: number }) => {
+        const step = Math.sign(landing.x - p.x) * this.runSpeedFor(a);
+        for (let dwell = 0; dwell <= 10; dwell++)
+          if (
+            !firebarFree({
+              x: landing.x + step * dwell,
+              y: landing.y,
+              frames: landing.frames + dwell,
+            })
+          )
+            return false;
+        return true;
+      });
+    if (
+      !firebarHalt &&
+      (dropDown || a.navDetourBelow) &&
+      !wall &&
+      safeDrop &&
+      !supported
+    ) {
+      if (!firebarFree) return;
+      // A walk-off is a ballistic arc, so it needs the same bar clearance.
+      const fall = planJump(
+        a.body,
+        solids,
+        direction,
+        this.runSpeedFor(a),
+        0,
+        firebarLandingFree,
+        true,
+        undefined,
+        firebarFree,
+      );
+      // The replay forces navDelay 0, so a delayed arc is not the one cleared.
+      if (fall?.delay === 0) {
+        this.move(a, fall.vx);
+        a.navVx = fall.vx;
+        a.navDelay = 0;
+        return;
+      }
+      // No clear fall: hold, but fall through so a jump can still be planned.
+      this.move(a, 0);
+    }
     if ((a.navRetry ?? 0) > 0 && !inWell) {
       if (!supported) this.move(a, 0);
       return;
     }
     const pace = this.runSpeedFor(a);
-    const impulse = this.roomFor(a).onSpring(a)
+    const impulse = room.onSpring(a)
       ? T.springImpulse
       : jumpArc(pace).impulse;
     const launch = planJump(
@@ -1471,16 +1600,10 @@ export class Simulation {
       direction,
       pace,
       impulse,
-      (landing) =>
-        a === this.mario ||
-        !this.firebarBlocks(
-          this.roomFor(a),
-          landing.x,
-          landing.y,
-          half,
-          a.body.height / 2,
-        ),
+      (landing) => !firebarLandingFree || firebarLandingFree(landing),
       dropDown,
+      undefined,
+      firebarFree,
     );
     if (launch) {
       this.launchJump(a, launch.vx, impulse, launch.delay);
@@ -1491,7 +1614,12 @@ export class Simulation {
         -direction,
         pace,
         impulse,
-        (landing) => landing.y < p.y - 24,
+        (landing) =>
+          landing.y < p.y - 24 &&
+          (!firebarLandingFree || firebarLandingFree(landing)),
+        false,
+        undefined,
+        firebarFree,
       );
       if (reverse) {
         this.launchJump(a, reverse.vx, impulse, reverse.delay);
@@ -1507,8 +1635,12 @@ export class Simulation {
           direction,
           this.runSpeedFor(a),
           0,
+          firebarLandingFree,
+          false,
+          undefined,
+          firebarFree,
         );
-        if (drop) {
+        if (drop && (!firebarFree || drop.delay === 0)) {
           this.move(a, drop.vx);
           a.navVx = drop.vx;
           a.navDelay = 0;
@@ -1516,7 +1648,7 @@ export class Simulation {
         }
       }
       a.navRetry = 0.15;
-      if (support && !support.motion && !this.roomFor(a).onSpring(a)) {
+      if (support && !support.motion && !room.onSpring(a)) {
         const fromX =
           direction > 0
             ? Math.min(p.x, support.bounds.max.x - half - 1)
@@ -1541,11 +1673,25 @@ export class Simulation {
             )
           )
             continue;
-          const retry = planJump(probe, solids, direction, pace, impulse);
+          const retry = planJump(
+            probe,
+            solids,
+            direction,
+            pace,
+            impulse,
+            undefined,
+            false,
+            undefined,
+            firebarFree,
+          );
           if (
             retry &&
             ((retry.x - p.x) * direction > 24 || retry.y < p.y - 32)
           ) {
+            // updateNpcs launches a backoff from wherever the NPC stands a
+            // later frame, so a bar-cleared arc from the probe is not the arc
+            // flown. Skip the backoff entirely in firebar rooms.
+            if (firebarFree) break;
             a.navBackoff = { x, vx: retry.vx, delay: retry.delay };
             break;
           }
@@ -1558,7 +1704,12 @@ export class Simulation {
           -direction,
           pace,
           impulse,
-          (landing) => landing.y < p.y - 24,
+          (landing) =>
+            landing.y < p.y - 24 &&
+            (!firebarLandingFree || firebarLandingFree(landing)),
+          false,
+          undefined,
+          firebarFree,
         );
         if (reverse) {
           this.launchJump(a, reverse.vx, impulse, reverse.delay);
@@ -2689,6 +2840,7 @@ export class Simulation {
     n.jumpFallG = undefined;
     n.navBackoff = undefined;
     n.navDrop = undefined;
+    n.navFirebarGo = undefined;
     n.swimPath = undefined;
     Body.setVelocity(n.body, { x: 0, y: this.shellFallSpeed(n) });
   }
@@ -3670,6 +3822,7 @@ export class Simulation {
           n.navDrop = undefined;
           this.move(n, drop.vx);
           n.navVx = drop.vx;
+          // Only delay-0 arcs are stored, so there is no hold to reproduce.
           n.navDelay = 0;
         } else this.move(n, Math.sign(dx) * Math.min(n.speed, Math.abs(dx)));
         continue;
@@ -3699,10 +3852,17 @@ export class Simulation {
         continue;
       }
       if (n.scale > 1 && !n.body.ignoreWalls) {
-        n.blockedFor = Math.abs(p.x - n.lastX) < 8 ? n.blockedFor + dt : 0;
+        // Holding still at a firebar is deliberate, whether the NPC is walking
+        // a crossing plan or waiting for one. It must not read as stuck against
+        // scenery and hop into the swing.
+        const waiting =
+          n.navFirebarWaitFrame !== undefined &&
+          Math.round(this.elapsed * 60) - n.navFirebarWaitFrame <= 1;
+        n.blockedFor =
+          Math.abs(p.x - n.lastX) < 8 && !waiting ? n.blockedFor + dt : 0;
         n.lastX = p.x;
         if (n.blockedFor > 0.5 && n.grounded) {
-          this.jump(n, jumpArc(this.runSpeedFor(n)).impulse);
+          this.jump(n, STANDING_JUMP_IMPULSE);
           n.blockedFor = 0;
         }
       }
@@ -3712,8 +3872,10 @@ export class Simulation {
         n.state = "run";
         n.wait = -0.01;
       }
-      if (this.aboveExitCeiling(n) && n.grounded)
-        n.navDetourBelow ??= MAP_TOP + 2 * 32 + 24;
+      if (n.grounded) {
+        const detour = this.aboveExitCeiling(n);
+        if (detour !== undefined) n.navDetourBelow ??= detour;
+      }
       const direction =
         n.navDetourBelow ||
         (room.data.goal?.kind === "pipe" && p.x > room.goalX + 20)
@@ -4679,26 +4841,109 @@ export class Simulation {
     y: number,
     halfW: number,
     halfH: number,
+    time = this.elapsed,
   ) {
     for (const bar of room.firebars)
-      if (firebarHits(bar, this.elapsed, x, y, halfW, halfH)) return true;
+      if (firebarHits(bar, time, x, y, halfW, halfH)) return true;
     return false;
   }
 
-  private firebarSoon(a: Actor, direction: number) {
+  // A frame-by-frame plan that walks the actor from here to `exitX` without
+  // ever touching a bar: 1 means step at vx, 0 means hold still. undefined when
+  // no such plan exists. A breadth-first search over (cell, frame) finds it,
+  // because a crossing usually needs the NPC to advance, pause for a sweeping
+  // ball, then advance again.
+  private firebarCrossPlan(a: Actor, vx: number, exitX: number) {
     const room = this.roomFor(a);
-    if (!room.firebars.length) return false;
+    const start = a.body.position;
+    const direction = Math.sign(vx);
+    const pace = Math.abs(vx);
+    const cells = Math.ceil(Math.abs(exitX - start.x) / Math.max(0.01, pace));
+    if (cells <= 0) return new Uint8Array(0);
+    const half = a.body.width / 2 + 6,
+      tall = a.body.height / 2 + 8;
+    // Keep every bar whose arm can reach the walked span. A flat margin drops
+    // the very bar being crossed, since a length-12 hub sits 184 px away.
+    const lo = Math.min(start.x, exitX),
+      hi = Math.max(start.x, exitX);
+    const bars = room.firebars.filter((bar) => {
+      const span =
+        (bar.length - 1) * T.firebarSpacing + T.firebarBallRadius + half;
+      return bar.x > lo - span && bar.x < hi + span;
+    });
+    if (!bars.length) return new Uint8Array(0);
+    const y = start.y;
+    // Ask firebarHits on the collider's clock; a second pose formula drifts a
+    // step. step() advances elapsed first, so search frame N is elapsed+(N-1)/60.
+    const hit = (cell: number, frame: number) => {
+      const x = start.x + direction * cell * pace;
+      const time = this.elapsed + (frame - 1) / 60;
+      for (const bar of bars)
+        if (firebarHits(bar, time, x, y, half, tall)) return true;
+      return false;
+    };
+    // Two bars at different speeds realign only at their joint period, so allow
+    // the slower one a full revolution plus the walk itself.
+    const horizon =
+      Math.ceil((32 * 256) / Math.min(...bars.map((b) => b.nesSpeed))) + cells;
+    const width = horizon + 1;
+    const from = new Int32Array((cells + 1) * width).fill(-1);
+    const startIndex = 0;
+    from[startIndex] = -2;
+    const queue = [startIndex];
+    let goal = -1;
+    for (let head = 0; head < queue.length && goal < 0; head++) {
+      const node = queue[head]!;
+      const cell = Math.floor(node / width),
+        frame = node % width;
+      if (frame >= horizon) continue;
+      for (const move of [1, 0]) {
+        const next = cell + move;
+        if (next > cells) continue;
+        const index = next * width + frame + 1;
+        if (from[index] !== -1) continue;
+        if (hit(next, frame + 1)) continue;
+        from[index] = node;
+        if (next === cells) {
+          goal = index;
+          break;
+        }
+        queue.push(index);
+      }
+    }
+    if (goal < 0) return;
+    const moves: number[] = [];
+    for (let node = goal; from[node]! >= 0; node = from[node]!)
+      moves.push(Math.floor(node / width) > Math.floor(from[node]! / width) ? 1 : 0);
+    return Uint8Array.from(moves.reverse());
+  }
+
+  // Danger zone of the nearest bar ahead that reaches the actor's lane: `hold`
+  // is the last safe spot before the swing, `exit` the first safe spot past it.
+  // `bar` identifies it by index, since two bars can share a column.
+  private firebarZone(a: Actor, direction: number) {
+    const room = this.roomFor(a);
     const p = a.body.position;
     const half = a.body.width / 2 + 6,
       tall = a.body.height / 2 + 8;
-    const speed = this.runSpeedFor(a);
-    for (let step = 0; step <= 36; step += 3) {
-      const x = p.x + direction * speed * step;
-      const time = this.elapsed + step / 60;
-      for (const bar of room.firebars)
-        if (firebarHits(bar, time, x, p.y, half, tall)) return true;
+    let zone: { bar: number; hold: number; exit: number } | undefined,
+      nearest = Infinity;
+    for (const [index, bar] of room.firebars.entries()) {
+      const reach = (bar.length - 1) * T.firebarSpacing + T.firebarBallRadius;
+      if (Math.abs(bar.y - p.y) > reach + tall) continue;
+      const gap = (bar.x - p.x) * direction;
+      // The body has width, so a bar counts as still ahead until its whole
+      // swing plus that half-width is behind. A bare `reach` leaves a band the
+      // collider can still kill in.
+      if (gap + reach + half <= 0 || gap >= nearest) continue;
+      nearest = gap;
+      zone = {
+        bar: index,
+        hold: bar.x - direction * (reach + half + 4),
+        exit: bar.x + direction * (reach + half + 4),
+      };
     }
-    return false;
+    return zone;
   }
 
   firebarBalls(room: Room) {

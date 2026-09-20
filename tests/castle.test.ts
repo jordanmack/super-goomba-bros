@@ -7,9 +7,10 @@ import {
   Simulation as RulesSimulation,
   emptyInput,
 } from "../src/game/simulation.ts";
-import { MAP_TOP, TUNING as T } from "../src/game/config.ts";
+import { MAP_TOP, STANDING_JUMP_IMPULSE, TUNING as T, jumpArc } from "../src/game/config.ts";
 import { CAMPAIGN, areaData, isSolidTile } from "../src/game/levels.ts";
-import { isFirebarType } from "../src/game/castle.ts";
+import { firebarHits, isFirebarType } from "../src/game/castle.ts";
+import { planJump } from "../src/game/navigation.ts";
 import type { Input } from "../src/game/simulation.ts";
 import {
   axeMetatileRow,
@@ -375,5 +376,321 @@ test("Bowser ground fire breath can damage or delay Mario", () => {
       flames: s.bowserFlames.length,
     }),
   );
+  s.physics.clear();
+});
+
+// #129: escort pathing let the leftmost castle NPC walk into a firebar. The
+// assertion is "saved", never "saved or dead", because a death here is the bug.
+for (const id of ["1-4", "2-4", "3-4", "5-4", "6-4", "7-4"]) {
+  test(`the leftmost ${id} NPC reaches a rescue door instead of dying on a firebar`, () => {
+    const s = castleGame(id);
+    assert.ok(s.activeRoom.firebars.length > 0, `${id} has firebars`);
+    const runner = s.npcs[0]!;
+    for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+    s.npcs = [runner];
+    s.player.saved = true;
+    Body.setFrozen(s.player.body, true);
+    runner.warned = true;
+    runner.state = "run";
+    runner.wait = 0;
+    for (
+      let frame = 0;
+      frame < 60 * 120 && runner.alive && !runner.saved;
+      frame++
+    )
+      s.step(dt, emptyInput());
+    assert.equal(
+      runner.saved,
+      true,
+      `${id}: ${JSON.stringify({
+        alive: runner.alive,
+        position: runner.body.position,
+        elapsed: s.elapsed,
+      })}`,
+    );
+    s.physics.clear();
+  });
+}
+
+// #131: a jump was judged against the firebar phase at takeoff, so an NPC could
+// aim at a spot the bar had swept into by the time it landed. planJump now
+// reports each candidate landing's frame count so the caller can sample the
+// phase at that frame instead of at takeoff.
+test("planJump reports landing frames so the firebar phase is sampled on arrival", () => {
+  const s = castleGame("1-4");
+  const bar = s.activeRoom.firebars[0]!;
+  const runner = s.npcs[0]!;
+  const half = runner.body.width / 2,
+    tall = runner.body.height / 2;
+  const solids = s.solids.filter((solid) => !solid.headOnly);
+  // Stand the body on the ledge nearest the bar so planJump has real geometry.
+  const ledge = solids
+    .filter(
+      (solid) =>
+        solid.bounds.min.x < bar.x &&
+        solid.bounds.max.x > bar.x - 200 &&
+        solid.bounds.min.y > bar.y,
+    )
+    .sort((a, b) => a.bounds.min.y - b.bounds.min.y)[0];
+  assert.ok(ledge, "1-4 has a ledge under the first firebar");
+  const body = new Body(
+    ledge.bounds.min.x + half + 4,
+    ledge.bounds.min.y - tall,
+    runner.body.width,
+    runner.body.height,
+  );
+  const arc = jumpArc(T.runSpeed);
+  const landings: { x: number; y: number; frames: number }[] = [];
+  planJump(
+    body,
+    solids,
+    1,
+    T.runSpeed,
+    arc.impulse,
+    (landing) => {
+      landings.push({ ...landing });
+      return true;
+    },
+    false,
+  );
+  assert.ok(landings.length > 0, "planJump found candidate landings");
+  // Every landing carries the frame it happens on, and it is a real flight
+  // time: this is the number the caller needs to ask the bar for its phase on
+  // arrival instead of at takeoff.
+  for (const landing of landings) assert.ok(landing.frames > 0);
+  const flight = Math.min(...landings.map((l) => l.frames));
+  assert.ok(flight >= 10, `arcs last ${flight} frames, long enough to matter`);
+  // Over that flight the bar turns far enough that its phase then is not its
+  // phase now, so a takeoff-time decision is measurably the wrong question.
+  const reach = (bar.length - 1) * T.firebarSpacing + T.firebarBallRadius;
+  let differed = 0;
+  for (let takeoff = 0; takeoff < 210; takeoff++)
+    for (let offset = -reach; offset <= reach; offset += 8)
+      for (const y of [bar.y - 24, bar.y, bar.y + 24]) {
+        const x = bar.x + offset;
+        if (
+          firebarHits(bar, takeoff / 60, x, y, half, tall) !==
+          firebarHits(bar, (takeoff + flight) / 60, x, y, half, tall)
+        )
+          differed++;
+      }
+  assert.ok(
+    differed > 0,
+    `over ${flight} frames the bar sweeps into spots that are clear at takeoff`,
+  );
+  // Now pin the predicate itself. Mount a bar beside a real planned landing so
+  // its arm sweeps through that cell: it is CLEAR at takeoff and OCCUPIED when
+  // the arc lands. A planner that asks at takeoff accepts the arc; one that
+  // asks at the landing frame rejects it.
+  const target = landings.find((l) => l.frames === flight)!;
+  const trap = {
+    x: target.x,
+    y: target.y - 4 * T.firebarSpacing,
+    type: bar.type,
+    length: bar.length,
+    nesSpeed: bar.nesSpeed,
+    clockwise: bar.clockwise,
+  };
+  let trapped: number | undefined;
+  for (let takeoff = 0; takeoff < 400 && trapped === undefined; takeoff++)
+    if (
+      !firebarHits(trap, takeoff / 60, target.x, target.y, half, tall) &&
+      firebarHits(
+        trap,
+        (takeoff + target.frames) / 60,
+        target.x,
+        target.y,
+        half,
+        tall,
+      )
+    )
+      trapped = takeoff;
+  assert.notEqual(
+    trapped,
+    undefined,
+    "found a takeoff time whose landing cell the bar sweeps into",
+  );
+  // The predicate is consulted on every airborne cell of the arc, not only on
+  // the touchdown cell, and each probe carries its own frame.
+  const probed: { y: number; frames: number }[] = [];
+  planJump(
+    body,
+    solids,
+    1,
+    T.runSpeed,
+    arc.impulse,
+    undefined,
+    false,
+    undefined,
+    (point) => {
+      probed.push({ y: point.y, frames: point.frames });
+      return true;
+    },
+  );
+  assert.ok(probed.length > 0, "clear was consulted");
+  assert.ok(
+    probed.some((point) => point.y < body.position.y - 16),
+    "including cells high in the arc, far above the takeoff row",
+  );
+  assert.equal(
+    new Set(probed.map((point) => point.frames)).size > 1,
+    true,
+    "and each probe carries its own frame, not one shared takeoff frame",
+  );
+  // Collect every landing the landing-time predicate still allows: the trapped
+  // cell must not be among them.
+  const allowed: number[] = [];
+  planJump(
+    body,
+    solids,
+    1,
+    T.runSpeed,
+    arc.impulse,
+    (landing) => {
+      allowed.push(landing.x);
+      return true;
+    },
+    false,
+    undefined,
+    (point) =>
+      !firebarHits(
+        trap,
+        (trapped! + point.frames) / 60,
+        point.x,
+        point.y,
+        half,
+        tall,
+      ),
+  );
+  assert.ok(
+    allowed.length > 0,
+    "the predicate rejects the trapped arc, not every arc",
+  );
+  assert.ok(
+    !allowed.includes(target.x),
+    `landing ${target.x} is swept by touchdown and must not be offered`,
+  );
+  // The two predicates are not interchangeable: asked about the very cell the
+  // arc lands on, the takeoff-time question says clear and the landing-time
+  // question says blocked.
+  assert.equal(
+    firebarHits(trap, trapped! / 60, target.x, target.y, half, tall),
+    false,
+    "the landing cell is clear at takeoff",
+  );
+  assert.equal(
+    firebarHits(
+      trap,
+      (trapped! + target.frames) / 60,
+      target.x,
+      target.y,
+      half,
+      tall,
+    ),
+    true,
+    "and occupied on the frame the arc actually lands",
+  );
+  s.physics.clear();
+});
+
+// #132: the blockedFor escape hop is a standing jump, so it must use the same
+// impulse the player's standing jump uses.
+test("a blocked large NPC hops with the player standing-jump impulse, not the run arc", () => {
+  assert.equal(STANDING_JUMP_IMPULSE, jumpArc(0).impulse);
+  assert.equal(STANDING_JUMP_IMPULSE, T.jumpSpeed);
+  assert.notEqual(STANDING_JUMP_IMPULSE, jumpArc(T.runSpeed).impulse);
+  const s = castleGame("1-1");
+  const n = s.npcs[0]!;
+  for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+  s.npcs = [n];
+  s.player.saved = true;
+  Body.setFrozen(s.player.body, true);
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.scale = 2;
+  n.body.ignoreWalls = false;
+  // blockedFor arms after half a second without horizontal progress.
+  n.blockedFor = 0.6;
+  n.lastX = n.body.position.x;
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  let hop = 0;
+  for (let frame = 0; frame < 30 && !hop; frame++) {
+    const wasGrounded = n.grounded;
+    s.step(dt, emptyInput());
+    if (wasGrounded && !n.grounded) hop = Math.abs(n.body.velocity.y);
+  }
+  assert.ok(hop > 0, "the blocked NPC hopped");
+  assert.ok(
+    Math.abs(hop - STANDING_JUMP_IMPULSE) < 0.5,
+    `standing hop ${hop} should be ${STANDING_JUMP_IMPULSE}, not ${jumpArc(T.runSpeed).impulse}`,
+  );
+  s.physics.clear();
+});
+
+// #136: the non-row-2 support branch aimed the detour at the row-2 slab, a
+// depth an NPC standing on a lower slab already satisfies. updateNpcs clears
+// navDetourBelow once feet reach the target, so it re-armed and cleared on
+// consecutive frames forever. The target now sits below the actor's own
+// support, which cannot be satisfied while standing on it.
+test("a non-row-2 ceiling support cannot re-arm the below-detour every frame", () => {
+  const s = castleGame("4-2");
+  for (let frame = 0; frame < 60 * 20 && s.pipeIntro; frame++)
+    s.step(dt, emptyInput());
+  assert.equal(s.pipeIntro, false);
+  const n = s.npcs[0]!;
+  for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+  s.npcs = [n];
+  s.player.saved = true;
+  Body.setFrozen(s.player.body, true);
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.areaId = "41";
+  const room = s.roomFor(n);
+  const goal = room.data.goal;
+  assert.equal(goal?.kind, "pipe");
+  const ceilingTop = MAP_TOP + 2 * 32;
+  // Supports near the pipe goal that are NOT the row-2 ceiling slab.
+  const candidates = s.solids.filter(
+    (solid) =>
+      !solid.headOnly &&
+      Math.abs(solid.position.x - room.goalX) < 480 &&
+      solid.bounds.min.y < MAP_TOP + goal!.row * 32 - 40 &&
+      Math.abs(solid.bounds.min.y - ceilingTop) >= 8,
+  );
+  assert.ok(candidates.length > 0, "4-2 has non-row-2 supports above the exit");
+  let armed = 0;
+  for (const slab of candidates) {
+    assert.ok(
+      slab.bounds.min.y > ceilingTop,
+      "candidate sits below the row-2 ceiling",
+    );
+    Body.setPosition(n.body, {
+      x: (slab.bounds.min.x + slab.bounds.max.x) / 2,
+      y: slab.bounds.min.y - n.body.height / 2,
+    });
+    Body.setVelocity(n.body, { x: 0, y: 0 });
+    n.navDetourBelow = undefined;
+    n.navDrop = undefined;
+    n.navBackoff = undefined;
+    n.navRetry = 0;
+    n.grounded = true;
+    s.step(dt, emptyInput());
+    if (n.navDetourBelow === undefined) continue;
+    armed++;
+    // updateNpcs clears navDetourBelow as soon as grounded feet reach the
+    // target. A target the NPC already satisfies while standing here is what
+    // let the detour clear and re-arm on consecutive frames.
+    assert.ok(
+      n.body.bounds.max.y < n.navDetourBelow,
+      `detour ${n.navDetourBelow} is already satisfied by feet ${n.body.bounds.max.y} on slab top ${slab.bounds.min.y}`,
+    );
+    assert.ok(
+      n.navDetourBelow > slab.bounds.max.y,
+      `detour ${n.navDetourBelow} must lie below slab bottom ${slab.bounds.max.y}`,
+    );
+  }
+  assert.ok(armed > 0, "at least one non-row-2 slab armed a detour");
   s.physics.clear();
 });

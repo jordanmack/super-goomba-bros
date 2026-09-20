@@ -176,6 +176,9 @@ export function jumpArc(vx: number) {
   };
 }
 
+// A standing hop has no run speed, so it is the vx=0 arc the player gets.
+export const STANDING_JUMP_IMPULSE = jumpArc(0).impulse;
+
 export const PHRASES = [
   "Run! Mario is coming!",
   "Move! The plumber is coming!",
