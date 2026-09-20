@@ -176,6 +176,22 @@ export type Shout = {
   x: number;
   y: number;
 };
+/**
+ * Which rule picked Mario's current goal. `stomp`, `crowd`, `item`, and
+ * `question` are the priority rungs; `flee`, `chase`, `notice`, and `shout`
+ * are the states outside that order.
+ */
+export type MarioGoal =
+  | ""
+  | "flee"
+  | "stomp"
+  | "crowd"
+  | "item"
+  | "question"
+  | "chase"
+  | "notice"
+  // A heard warning retargets him at the player outside the priority order.
+  | "shout";
 export type TallyPhase =
   | ""
   | "time"
@@ -945,6 +961,7 @@ export class Simulation {
   marioIgnore = 0;
   marioTarget: number | null = null;
   marioHuntItem = false;
+  marioGoal: MarioGoal = "";
   marioAim = 0;
   marioReaction = 0;
   waterHitLock = 0;
@@ -1095,6 +1112,7 @@ export class Simulation {
     this.marioStage = 1;
     this.marioTarget = null;
     this.marioHuntItem = false;
+    this.marioGoal = "";
     this.marioAim =
       this.marioReaction =
       this.waterHitLock =
@@ -1598,8 +1616,10 @@ export class Simulation {
     }
     if (this.marioActive) {
       const d = Math.abs(p.x - this.mario.body.position.x);
-      if (d < T.hearingRange && this.random() < 1 - d / T.hearingRange)
+      if (d < T.hearingRange && this.random() < 1 - d / T.hearingRange) {
         this.investigate(this.player, 2);
+        this.marioGoal = "shout";
+      }
     }
   }
 
@@ -1935,6 +1955,7 @@ export class Simulation {
     if (this.marioTarget !== item.id) return;
     this.marioTarget = null;
     this.marioHuntItem = false;
+    this.marioGoal = "";
     this.marioChase = 0;
     this.marioLook = 0;
   }
@@ -2417,6 +2438,7 @@ export class Simulation {
     this.marioReturn = T.marioDefeatSeconds;
     this.marioTarget = null;
     this.marioHuntItem = false;
+    this.marioGoal = "";
     this.marioChase = this.marioStun = 0;
     Body.setFrozen(this.mario.body, true);
     this.fireballs = this.fireballs.filter((f) => f.owner === "player");
@@ -3973,6 +3995,7 @@ export class Simulation {
           ? currentActor
           : stomp!,
       );
+      this.marioGoal = "stomp";
       return;
     }
     const crowd = this.detectableCrowd(sees, hearsCrowd);
@@ -3982,6 +4005,7 @@ export class Simulation {
         (sees(currentActor) || hearsCrowd(currentActor)) &&
         this.runningCrowd().some((n) => n.id === currentActor.id);
       this.lockMarioActor(keepCrowd && currentActor ? currentActor : crowd);
+      this.marioGoal = "crowd";
       return;
     }
     if (this.marioIgnore === 0) {
@@ -3996,6 +4020,7 @@ export class Simulation {
           Math.abs(currentItem.body.position.x - m.x) < T.marioSight &&
           !rayBlocked(this.solids, m, currentItem.body.position);
         this.lockMarioItem(keepItem && currentItem ? currentItem : item);
+        this.marioGoal = "item";
         return;
       }
       const block = this.visibleQuestion(m);
@@ -4011,6 +4036,7 @@ export class Simulation {
           Math.abs(block.x - m.x) < 160
         ) {
           this.lockMarioQuestion(block);
+          this.marioGoal = "question";
           return;
         }
       }
@@ -4020,6 +4046,7 @@ export class Simulation {
       this.brickTarget = null;
       this.aimMarioAt(target.body.position.x, target.body.velocity.x);
       this.marioChase = T.marioChaseSeconds;
+      this.marioGoal = "chase";
       return;
     }
     if (this.marioChase === 0 && this.marioIgnore === 0) {
@@ -4032,8 +4059,10 @@ export class Simulation {
             Math.abs(b.body.position.x - m.x) *
               (runners.has(b.id) ? 1 - this.marioPressure * 0.5 : 1),
         )[0];
-      if (noticed)
+      if (noticed) {
         this.investigate(noticed, T.marioChaseSeconds + this.random());
+        this.marioGoal = "notice";
+      }
     }
   }
 
@@ -4075,6 +4104,7 @@ export class Simulation {
   private enterMarioDoor() {
     this.expireHuge(this.mario, false);
     this.marioActive = false;
+    this.marioGoal = "";
     this.marioEntered = true;
     this.mario.navVx = undefined;
     this.mario.navDelay = undefined;
@@ -4106,6 +4136,7 @@ export class Simulation {
       this.marioChase = 0;
       this.marioTarget = null;
       this.marioHuntItem = false;
+      this.marioGoal = "";
       this.marioLook = T.marioReaction;
       this.marioJumpWait = 0.8;
       this.marioPause = this.marioReaction = this.marioSeenAgo = 0;
@@ -4150,6 +4181,7 @@ export class Simulation {
       this.marioChase = 0;
       this.marioTarget = null;
       this.marioHuntItem = false;
+      this.marioGoal = "";
       this.brickTarget = null;
       this.marioIgnore = 0.3;
       this.mario.facing = 1;
@@ -4163,6 +4195,7 @@ export class Simulation {
       m.x < this.cameraX - 650
     ) {
       this.marioActive = false;
+      this.marioGoal = "";
       this.marioReturn = 2.5 + this.random() * 2.5;
       this.mario.navVx = undefined;
       this.mario.navDelay = undefined;
@@ -4183,6 +4216,7 @@ export class Simulation {
     );
     if (starThreat) {
       this.marioRunning = true;
+      this.marioGoal = "flee";
       this.marioTarget = null;
       this.marioHuntItem = false;
       this.brickTarget = null;
@@ -4198,6 +4232,8 @@ export class Simulation {
       }
       return;
     }
+    // The flee state ends with the threat, even if no new goal is picked yet.
+    if (this.marioGoal === "flee") this.marioGoal = "";
     const candidates = [this.player, ...this.npcs].filter(
       (a) => a.alive && !a.saved && !this.invincible(a) && !this.inPipe(a),
     );
@@ -4290,6 +4326,7 @@ export class Simulation {
     if (this.brickTarget !== null && !brick) {
       this.brickTarget = null;
       if (!this.marioHuntItem && this.marioTarget === null) {
+        this.marioGoal = "";
         this.marioChase = 0;
         this.marioLook = 0;
       }
@@ -4377,6 +4414,7 @@ export class Simulation {
           } else if (!this.hurt(a)) continue;
           this.marioTarget = null;
           this.marioHuntItem = false;
+          this.marioGoal = "";
           this.marioChase = 0;
           this.marioLook = 0;
           this.marioReaction = 0.15;

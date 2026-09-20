@@ -350,7 +350,10 @@ After he flees a visible star holder, he picks the next goal from high to low:
 5. The existing chase timer and patrol.
 
 He keeps his reaction delay, committed jump direction, Fire Mario fireballs
-while chasing, and the 6s chase timer.
+while chasing, and the 6s chase timer. `marioGoal` names the rule that picked
+his current goal, so the order is observable in state and not only in motion.
+A heard warning still retargets him at the player outside this order, and reads
+back as `shout`.
 
 Mario can walk and run. He uses running to pursue crowds and evade star holders.
 Fire Mario fires aggressively while still trying to stomp targets.
@@ -582,8 +585,13 @@ anchors, all stage data, player input replays, NPC routes and quotas, powers,
 warnings, Mario behavior, and browser controls. Test fixtures are never bundled.
 
 Player route replays use ordinary controls, with Mario disabled and no random
-power-up required. Separate tests cover rescues and active Mario. These checks
-do not prove that every random attempt wins, or replace physical phone testing.
+power-up required. Separate tests cover rescues and active Mario. The Mario
+hunt order is also playtested on World 1-1 and a crowded World 1-2: each run
+drives the real simulation and adds one higher-priority stimulus at a time,
+then reads back `marioGoal`. Because a non-small Mario only takes a question
+block within 160px, each stage splits that ladder across two arenas. These
+checks do not prove that every random attempt wins, or replace physical phone
+testing.
 
 Run the commands in [README](../README.md). Builds must remain one standalone
 HTML file, with no external runtime assets. Report failed or skipped checks and
