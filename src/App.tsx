@@ -670,7 +670,14 @@ export default function App() {
                   <button
                     type="button"
                     className="title-cheat"
-                    onClick={() => setTitleCheat(openWorldPick)}
+                    onClick={() => {
+                      // The pad polls before the effect syncs the ref, so a
+                      // Start in this frame would otherwise launch 1-1.
+                      titleCheatRef.current = openWorldPick(
+                        titleCheatRef.current,
+                      );
+                      setTitleCheat(openWorldPick);
+                    }}
                   >
                     Choose stage
                   </button>

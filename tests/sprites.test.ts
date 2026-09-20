@@ -322,3 +322,15 @@ test("Play draws the sweat drop unscaled, never a scaling exclaim bang", () => {
   assert.doesNotMatch(sprites, /pixelExclaim/);
   assert.match(sprites, /sweatDrop/);
 });
+
+test("the walk animation timescale comes from walkPace, not raw x-speed", () => {
+  const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
+  const draw = play.slice(
+    play.indexOf("const pace ="),
+    play.indexOf("const height = this.actorSpriteHeight"),
+  );
+  assert.match(draw, /const pace = walkPace\(actor\)/);
+  assert.match(draw, /anims\.timeScale = \(pace \* 60\) \/ 90/);
+  assert.doesNotMatch(draw, /Math\.abs\(actor\.body\.velocity\.x\)/);
+  assert.match(play, /import \{[^}]*\bwalkPace\b[^}]*\} from "\.\.\/simulation"/s);
+});

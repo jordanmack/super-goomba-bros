@@ -280,6 +280,12 @@ export function itemDrawY(item: { kind: ItemKind; body: Body }) {
 export function itemHoldHidden(item: { hold: number; age: number }) {
   return item.hold > 0 && Math.floor(item.age * T.transformBlinkHz) % 2 === 1;
 }
+/** Walk-cycle pace: fish swim on both axes, everyone else only along x. */
+export function walkPace(actor: { kind: Actor["kind"]; body: Body }) {
+  return actor.kind === "fish"
+    ? Math.hypot(actor.body.velocity.x, actor.body.velocity.y)
+    : Math.abs(actor.body.velocity.x);
+}
 export type Item = {
   id: number;
   kind: ItemKind;

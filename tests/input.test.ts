@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Body } from "../src/game/physics.ts";
 import { MAP_TOP, TUNING as T } from "../src/game/config.ts";
 import {
@@ -347,4 +348,24 @@ test("first empty spawn cell is under the ceiling or at the area top", () => {
     firstEmptySpawnCell([ceiling], 0, width, playerX, playerY, 0),
     spawnCellCenter(0, column, 6),
   );
+});
+
+test("the Choose stage click updates the title-cheat ref, not just React state", () => {
+  const app = readFileSync(
+    new URL("../src/App.tsx", import.meta.url),
+    "utf8",
+  );
+  const end = app.indexOf("Choose stage");
+  assert.ok(end > 0, "App.tsx has a Choose stage button");
+  const start = app.lastIndexOf("onClick=", end);
+  assert.ok(start > 0 && start < end, "that button has a click handler");
+  const handler = app.slice(start, end);
+  assert.match(handler, /titleCheatRef\.current = openWorldPick\(/);
+  assert.match(handler, /setTitleCheat\(openWorldPick\)/);
+  assert.ok(
+    handler.indexOf("titleCheatRef.current =") <
+      handler.indexOf("setTitleCheat(openWorldPick)"),
+  );
+  // Start reads the ref, so the ref must be current before the next pad poll.
+  assert.match(app, /titleStartAllowed\(titleCheatRef\.current\)/);
 });

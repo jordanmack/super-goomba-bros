@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
+import campaign from "../../src/assets/levels/campaign.json" with { type: "json" };
 import { TUNING as T } from "../../src/game/config";
 import { test, expect, skipIntro } from "./skip-intro.ts";
 import { WORLD_TILES } from "../fixtures/world-tiles";
@@ -2002,6 +2003,53 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
       .every((c: any) => !g.renderer.play.obstacles.has(c.id));
   });
   expect(sceneryHasNoBrickOverlays).toBe(true);
+});
+
+test("a vertically swimming fish keeps its walk animation running", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  const waterStage = campaign.levels.findIndex((level) => level.id === "2-2");
+  expect(waterStage).toBeGreaterThanOrEqual(0);
+  const swim = await page.evaluate((waterStage) => {
+    const g = (window as any).__game,
+      s = g.sim;
+    g.paused = true;
+    s.levelIndex = waterStage;
+    s.reset();
+    const fish = s.npcs.find(
+      (n: { kind: string; flower: boolean }) => n.kind === "fish" && !n.flower,
+    );
+    if (!fish) return null;
+    fish.alive = true;
+    fish.saved = false;
+    fish.grounded = false;
+    s.player.body.position.x = fish.body.position.x;
+    const sample = (vx: number, vy: number) => {
+      fish.body.velocity.x = vx;
+      fish.body.velocity.y = vy;
+      g.renderer.render(s, 0);
+      const sprite = g.renderer.play.actors.get(fish.id);
+      return {
+        anim: sprite.anims?.currentAnim?.key ?? null,
+        playing: !!sprite.anims?.isPlaying,
+        timeScale: sprite.anims?.timeScale ?? 0,
+      };
+    };
+    return {
+      vertical: sample(0, -1.5),
+      horizontal: sample(1.5, 0),
+      diagonal: sample(0.9, -1.2),
+    };
+  }, waterStage);
+  expect(swim).not.toBeNull();
+  expect(swim!.vertical.anim).toBe("fish-walk");
+  expect(swim!.vertical.playing).toBe(true);
+  expect(swim!.vertical.timeScale).toBeCloseTo(swim!.horizontal.timeScale, 5);
+  expect(swim!.vertical.timeScale).toBeGreaterThan(0);
+  expect(swim!.diagonal.timeScale).toBeCloseTo((1.5 * 60) / 90, 5);
 });
 
 test("original 1-1 map art and collision anchors agree", async ({ page }) => {

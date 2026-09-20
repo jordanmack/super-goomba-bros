@@ -13,6 +13,7 @@ import {
   itemDrawY,
   itemHoldHidden,
   itemSpriteSize,
+  walkPace,
   type Actor,
   type Simulation,
 } from "../simulation";
@@ -406,10 +407,9 @@ export class Play extends Phaser.Scene {
             ? "fireKoopa"
             : "fireFish"
         : actor.kind;
+    const pace = walkPace(actor);
     const moving =
-      actor.kind === "fish"
-        ? Math.hypot(actor.body.velocity.x, actor.body.velocity.y) > 0.1
-        : actor.grounded && Math.abs(actor.body.velocity.x) > 0.1;
+      actor.kind === "fish" ? pace > 0.1 : actor.grounded && pace > 0.1;
     const skid =
       mario &&
       sim.marioChase > 0 &&
@@ -428,7 +428,7 @@ export class Play extends Phaser.Scene {
         );
     } else if (moving && !skid) {
       sprite.play(`${base}-walk`, true);
-      sprite.anims.timeScale = (Math.abs(actor.body.velocity.x) * 60) / 90;
+      sprite.anims.timeScale = (pace * 60) / 90;
     } else
       sprite
         .stop()

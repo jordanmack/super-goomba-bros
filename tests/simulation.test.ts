@@ -28,6 +28,7 @@ import {
   itemDrawY,
   itemHoldHidden,
   itemSpriteSize,
+  walkPace,
 } from "../src/game/simulation.ts";
 import { flagTextureKey } from "../src/game/smb-sprites.ts";
 
@@ -9908,3 +9909,21 @@ test("falling from a vine cloud destination returns to the overworld page", () =
   assert.ok(s.player.body.position.y < 640);
 });
 
+test("walkPace uses whole-velocity speed for fish and x-speed for the rest", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-2");
+  s.reset();
+  const fish = s.npcs.find((n) => n.kind === "fish")!;
+  assert.ok(fish, "2-2 has fish");
+  Body.setVelocity(fish.body, { x: 0, y: -1.5 });
+  assert.equal(walkPace(fish), 1.5);
+  Body.setVelocity(fish.body, { x: 0.9, y: -1.2 });
+  assert.equal(walkPace(fish), 1.5);
+  Body.setVelocity(fish.body, { x: -1.5, y: 0 });
+  assert.equal(walkPace(fish), 1.5);
+  const walker = s.npcs.find((n) => n.kind !== "fish")!;
+  Body.setVelocity(walker.body, { x: 0, y: -1.5 });
+  assert.equal(walkPace(walker), 0);
+  Body.setVelocity(walker.body, { x: -2, y: 4 });
+  assert.equal(walkPace(walker), 2);
+});

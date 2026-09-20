@@ -194,6 +194,41 @@ test("first gamepad Start on title starts the game and hides the pad", async ({
   await expect(page.getByRole("button", { name: "Pad hidden" })).toBeVisible();
 });
 
+test("Choose stage blocks a pad Start pressed in the same frame", async ({
+  page,
+}) => {
+  await waitReady(page);
+  const injected = await injectPad(page);
+  test.skip(!injected, "gamepad inject failed in this environment");
+  for (const button of [12, 12, 13, 13, 14, 15, 14, 15, 1, 0]) {
+    await setPad(page, [button]);
+    await setPad(page, []);
+  }
+  const chooseStage = page.getByRole("button", { name: "Choose stage" });
+  await expect(chooseStage).toBeVisible();
+  // Click, then press Start and poll the pad in the SAME task, the way one
+  // frame runs. React state lands a frame later, so only the ref update in
+  // the click handler can stop Start from launching 1-1.
+  const mode = await page.evaluate(() => {
+    const button = [
+      ...document.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((b) => b.textContent?.trim() === "Choose stage")!;
+    button.click();
+    const pad = (window as any).__pad;
+    pad.buttons[9].pressed = true;
+    pad.buttons[9].value = 1;
+    pad.timestamp = performance.now() + 1e6;
+    (window as any).__game.controls.poll();
+    return (window as any).__game.sim.mode;
+  });
+  expect(mode).toBe("title");
+  await expect(page.getByText("Select world")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "World intro" }),
+  ).toHaveCount(0);
+  await setPad(page, []);
+});
+
 test("gamepad mapping, Start on title, auto-hide, remap persist, and disconnect", async ({
   page,
 }) => {
