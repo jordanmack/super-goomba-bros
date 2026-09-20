@@ -14,7 +14,7 @@ import {
   Simulation as RulesSimulation,
   emptyInput,
 } from "../src/game/simulation.ts";
-import { MAP_TOP, PHRASES, TUNING as T, blockDrawY, jumpArc } from "../src/game/config.ts";
+import { MAP_TOP, PHRASES, TUNING as T, VIEW_HEIGHT, blockDrawY, jumpArc } from "../src/game/config.ts";
 import { firstEmptySpawnCell, spawnCellCenter } from "../src/game/spawn-cell.ts";
 import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
 import { ENEMY_BALANCE_LIFT, ENEMY_FISH } from "../src/game/room.ts";
@@ -9318,17 +9318,48 @@ test("tall castle-door fireworks burst above the roof against the sky", () => {
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-3");
   s.reset();
   s.marioReturn = 1e6;
-  rescue(s, T.fireworkModest);
+  rescue(s, T.fireworkGood);
   s.timeLeft = 0;
   s.finish();
-  s.tallyHold = 99;
-  tick(s, dt);
   const roof = MAP_TOP + 2 * 32;
-  const sky = s.particles.filter((p) => p.firework);
+  const origins: number[] = [];
   assert.equal(s.activeRoom.data.goal?.kind, "castle-door");
-  assert.ok(sky.length >= T.fireworkBurst);
-  assert.ok(sky.every((p) => p.y < roof), `burst at ${sky[0]?.y} vs roof ${roof}`);
-  assert.ok(sky.every((p) => p.y > 0));
+  for (let n = 0; n < 3; n++) {
+    s.particles = s.particles.filter((p) => !p.firework);
+    s.events.length = 0;
+    let fired = false;
+    for (let i = 0; i < 60; i++) {
+      s.tallyHold = 99;
+      s.step(dt, emptyInput());
+      if (s.events.includes("firework")) {
+        fired = true;
+        break;
+      }
+    }
+    assert.equal(fired, true, `burst ${n} fired`);
+    const sky = s.particles.filter((p) => p.firework);
+    assert.ok(sky.length >= T.fireworkBurst);
+    assert.ok(
+      sky.every((p) => p.y > 0 && p.y < VIEW_HEIGHT && p.y < roof),
+      `spawn y ${sky[0]?.y} roof ${roof}`,
+    );
+    const originYs = [...new Set(sky.map((p) => p.y))];
+    assert.equal(originYs.length, 1);
+    origins.push(originYs[0]!);
+    tick(s, dt);
+    let after = s.particles.filter((p) => p.firework);
+    assert.ok(
+      after.every((p) => p.y > 0 && p.y < VIEW_HEIGHT),
+      `step y ${after[0]?.y}`,
+    );
+    tick(s, 0.2);
+    after = s.particles.filter((p) => p.firework);
+    assert.ok(
+      after.every((p) => p.y > 0 && p.y < VIEW_HEIGHT),
+      `later y ${after[0]?.y}`,
+    );
+  }
+  assert.equal(new Set(origins).size, 3, `origins ${origins.join(",")}`);
 });
 
 test("flagpole fireworks start after leftover TIME and do not hold auto-advance", () => {

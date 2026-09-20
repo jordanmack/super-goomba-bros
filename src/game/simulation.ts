@@ -2881,6 +2881,7 @@ export class Simulation {
       p.vy += (p.firework ? 220 : 520) * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
+      if (p.firework) p.y = Math.min(VIEW_HEIGHT - 1, Math.max(1, p.y));
       if (!p.blood) continue;
       const floor = this.solids.find(
         (s) =>
@@ -2982,7 +2983,13 @@ export class Simulation {
       { dx: -8, dy: -32 },
     ] as const;
     const spot = spots[(this.fireworksTotal - this.fireworksLeft) % spots.length]!;
-    this.fireworkBurst(room.goalX + spot.dx, Math.max(24, roof + spot.dy));
+    // Tall-castle sky is shorter than the stock lifts; scale them into (24, roof)
+    // so bursts stay on-screen and keep three distinct origins.
+    const skyTop = 24;
+    const lift = Math.max(...spots.map((entry) => -entry.dy));
+    const span = roof - skyTop;
+    const scale = span >= lift ? 1 : Math.max(0, span) / lift;
+    this.fireworkBurst(room.goalX + spot.dx, roof + spot.dy * scale);
     this.score += T.fireworkScore;
     this.events.push("firework");
   }
