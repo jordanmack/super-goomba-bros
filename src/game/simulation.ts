@@ -4736,7 +4736,7 @@ export class Simulation {
         if (room.data.tiles[row][column] === 137) smashTile(column, row);
     if (room.axe) {
       const column = Math.floor((room.axe.x - room.offset) / 32);
-      smashTile(column, 8);
+      smashTile(column, Math.floor((room.axe.y - MAP_TOP) / 32));
       const rope = room.data.objects.find((o) => o.opcode === 37);
       if (rope) smashTile(rope.column, 9);
     }

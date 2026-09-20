@@ -171,6 +171,31 @@ function objectWidth(o, style) {
   return 1;
 }
 
+// Same solid IDs as src/game/levels.ts isSolidTile.
+export function isSolidMetatile(id) {
+  if (id === 36 || id === 37) return false;
+  return (
+    (id >= 16 && id <= 34) ||
+    (id >= 81 && id <= 94) ||
+    (id >= 97 && id <= 108) ||
+    id === 136 ||
+    id === 137 ||
+    id === 192 ||
+    id === 193 ||
+    id === 196
+  );
+}
+
+export function axeMetatileRow(tiles, column) {
+  for (let row = 3; row <= 13; row++) {
+    const tile = tiles[row]?.[column] ?? 0;
+    const above = tiles[row - 1]?.[column] ?? 0;
+    if (isSolidMetatile(tile) && !isSolidMetatile(above)) return row - 1;
+  }
+  // axeStandY falls back to groundY (top of row 13); the sprite sits one cell above.
+  return 12;
+}
+
 // Metatile IDs and area commands follow AreaParserCore / RunAObj in the source.
 // The first two screen rows are outside its thirteen-row playfield buffer.
 export function decodeArea(tables, pointer) {
@@ -426,7 +451,8 @@ export function decodeArea(tables, pointer) {
           put(12, 97);
           break;
         case 36:
-          under(8, 0, 197);
+          // Sprite sits in the empty cell on axeStandY, not a hardcoded row.
+          under(axeMetatileRow(tiles, x), 0, 197);
           break;
         case 37:
           under(9, 0, 12);

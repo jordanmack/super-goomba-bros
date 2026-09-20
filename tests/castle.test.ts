@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Body } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
 import {
@@ -7,9 +8,18 @@ import {
   emptyInput,
 } from "../src/game/simulation.ts";
 import { MAP_TOP, TUNING as T } from "../src/game/config.ts";
-import { CAMPAIGN, areaData } from "../src/game/levels.ts";
+import { CAMPAIGN, areaData, isSolidTile } from "../src/game/levels.ts";
 import { isFirebarType } from "../src/game/castle.ts";
 import type { Input } from "../src/game/simulation.ts";
+import {
+  axeMetatileRow,
+  decodeArea,
+  isSolidMetatile,
+} from "../scripts/extract-levels.mjs";
+
+const { tables } = JSON.parse(
+  readFileSync(new URL("../src/assets/levels/source-tables.json", import.meta.url), "utf8"),
+);
 
 class Simulation extends RulesSimulation {
   constructor(random = Math.random) {
@@ -108,6 +118,56 @@ test("every castle has Bowser and a Mario-only axe from level data", () => {
     );
     s.physics.clear();
   }
+});
+
+test("castle axe metatile and sprite occupy the same tile", () => {
+  for (const level of CAMPAIGN.filter((l) => l.id.endsWith("-4"))) {
+    const s = castleGame(level.id);
+    const axe = s.activeRoom.axe;
+    assert.ok(axe, `${level.id}: sprite from room placement`);
+    const cells: { column: number; row: number }[] = [];
+    s.activeRoom.data.tiles.forEach((row, y) =>
+      row.forEach((tile, x) => {
+        if (tile === 197) cells.push({ column: x, row: y });
+      }),
+    );
+    assert.equal(cells.length, 1, `${level.id}: one metatile 197`);
+    const cell = cells[0]!;
+    const spriteColumn = Math.floor((axe.x - s.activeRoom.offset) / 32);
+    const spriteRow = Math.floor((axe.y - MAP_TOP) / 32);
+    assert.equal(spriteColumn, cell.column, `${level.id}: same column`);
+    assert.equal(spriteRow, cell.row, `${level.id}: same row`);
+    assert.ok(
+      Math.abs(axe.y - (MAP_TOP + cell.row * 32 + 16)) < 32,
+      `${level.id}: same world y`,
+    );
+    s.physics.clear();
+  }
+});
+
+test("extract places castle axe 197 on the empty cell above the stand", () => {
+  for (let n = 0; n < 6; n++) {
+    const area = decodeArea(tables, 3 * 32 + n);
+    const axe = area.objects.find((o) => o.opcode === 36);
+    assert.ok(axe, `${area.id}: opcode 36`);
+    const row = area.tiles.findIndex((tiles) => tiles[axe.column] === 197);
+    assert.ok(row >= 0, `${area.id}: metatile 197`);
+    assert.equal(isSolidTile(area.tiles[row][axe.column]!), false, `${area.id}: 197 empty`);
+    assert.equal(isSolidTile(area.tiles[row + 1]![axe.column]!), true, `${area.id}: stand below`);
+  }
+});
+
+test("extract axe fallback matches the sprite groundY cell", () => {
+  const tiles = Array.from({ length: 15 }, () => [0]);
+  assert.equal(
+    axeMetatileRow(tiles, 0),
+    Math.floor((T.groundY - 16 - MAP_TOP) / 32),
+  );
+});
+
+test("extract axe solids match isSolidTile", () => {
+  for (let id = 0; id <= 255; id++)
+    assert.equal(isSolidMetatile(id), isSolidTile(id), id);
 });
 
 test("a firebar spawned from castle area data kills the player", () => {
@@ -218,7 +278,8 @@ test("Mario on the axe drops the bridge and kills Bowser", () => {
   assert.equal(s.activeRoom.bridgeDropped, true);
   assert.equal(bowser.alive, false);
   const axeCol = Math.floor((axe.x - s.activeRoom.offset) / 32);
-  assert.equal(s.activeRoom.smashedTiles.has(`${axeCol},8`), true);
+  const axeRow = Math.floor((axe.y - MAP_TOP) / 32);
+  assert.equal(s.activeRoom.smashedTiles.has(`${axeCol},${axeRow}`), true);
   const bridgeCol = s.activeRoom.data.tiles[10].findIndex((tile) => tile === 137);
   assert.ok(bridgeCol >= 0);
   const x = s.activeRoom.offset + bridgeCol * 32 + 16;
