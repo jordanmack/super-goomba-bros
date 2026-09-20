@@ -118,7 +118,7 @@ test("Mario flag stamps a scaled face into the cloth and leaves pole and orb", (
   const skin = [255, 164, 64] as const;
   for (let y = 0; y < 8; y++)
     for (let x = 0; x < W; x++)
-      setPx(face, x, y, ...(y < 3 ? hat : skin), 255, W);
+      setPx(face, x, y, ...(y < 3 ? hat : skin) as readonly [number, number, number], 255, W);
   setPx(flag, 2, 2, 230, 156, 33);
   setPx(flag, 2, 6, 181, 49, 33);
   for (let y = 5; y <= 13; y++)

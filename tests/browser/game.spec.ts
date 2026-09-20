@@ -315,6 +315,7 @@ test("8x side-pipe shrink-blink keeps sprite pixels above the playfield top", as
     const clip = n.pipeTravel.clip;
     return {
       ok: true,
+      reason: undefined as string | undefined,
       lit,
       checked,
       clip,
