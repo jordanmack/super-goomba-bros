@@ -1,5 +1,7 @@
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   test,
   expect,
@@ -8,9 +10,13 @@ import {
   waitForStart,
 } from "./skip-intro.ts";
 
-const EVIDENCE_DIR =
-  process.env.EVIDENCE_DIR ||
-  "/tmp/grok-goal-4fa5eedd6ee8/implementer/issue-115-evidence";
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR || join(root, "test-results");
+
+// Half a scaled game pixel at the largest viewport, so the live color has to
+// sit on the landmark itself rather than anywhere in the frame.
+const LANDMARK_SLACK = 3;
 
 const surfaces = [
   ["tagline", ".title-screen .level-label"],
@@ -345,18 +351,103 @@ async function readTitleLandmarks(page: Page) {
   });
 }
 
+// Buffer pixels upscale to CSS blocks, so aim at the block center; a corner
+// can land on the neighbouring tile when the landmark sits on a color edge.
 function pagePoint(
   canvas: { left: number; top: number; width: number; height: number; bufferW: number; bufferH: number },
   sx: number,
   sy: number,
 ) {
   return {
-    x: canvas.left + (sx / canvas.bufferW) * canvas.width,
-    y: canvas.top + (sy / canvas.bufferH) * canvas.height,
+    x: canvas.left + ((sx + 0.5) / canvas.bufferW) * canvas.width,
+    y: canvas.top + ((sy + 0.5) / canvas.bufferH) * canvas.height,
   };
 }
 
-async function assertTitleComposition(page: Page, shotName: string) {
+// ImageMagick 7 drops the `identify` and `convert` binaries in favour of
+// `magick <subcommand>`, so both spellings are tried before giving up.
+function runMagick(legacy: string, args: string[], maxBuffer: number) {
+  try {
+    return execFileSync(legacy, args, { maxBuffer });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw error;
+  }
+  try {
+    return execFileSync("magick", [legacy, ...args], { maxBuffer });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT")
+      throw new Error("ImageMagick required to inspect title stills");
+    throw error;
+  }
+}
+
+function readShot(file: string) {
+  const dimensions = runMagick(
+    "identify",
+    ["-format", "%w %h", file],
+    1e4,
+  ).toString("utf8");
+  const rgba = runMagick("convert", [file, "-depth", "8", "rgba:-"], 2e7);
+  const [width, height] = dimensions.trim().split(" ").map(Number);
+  expect(rgba.length, `${file} pixel payload`).toBe(width! * height! * 4);
+  return {
+    width: width!,
+    height: height!,
+    at(x: number, y: number) {
+      const i = (y * width! + x) * 4;
+      return { r: rgba[i]!, g: rgba[i + 1]!, b: rgba[i + 2]!, a: rgba[i + 3]! };
+    },
+  };
+}
+
+// Landmark colors are checked in the written PNG against the live canvas
+// sample from the same frame, so a stale or hand-built still cannot pass.
+function assertShotLandmarks(
+  file: string,
+  viewport: { width: number; height: number },
+  marks: {
+    name: string;
+    page: { x: number; y: number };
+    live: { r: number; g: number; b: number; a: number };
+  }[],
+) {
+  const shot = readShot(file);
+  expect(shot.width, `${file} width`).toBe(viewport.width);
+  expect(shot.height, `${file} height`).toBe(viewport.height);
+  for (const mark of marks) {
+    const label = `${file} ${mark.name}`;
+    const x = Math.floor(mark.page.x);
+    const y = Math.floor(mark.page.y);
+    expect(x, `${label} x in frame`).toBeGreaterThanOrEqual(0);
+    expect(x, `${label} x in frame`).toBeLessThan(shot.width);
+    expect(y, `${label} y in frame`).toBeGreaterThanOrEqual(0);
+    expect(y, `${label} y in frame`).toBeLessThan(shot.height);
+    const pixel = shot.at(x, y);
+    expect(isBlank(pixel), `${label} blank`).toBe(false);
+    expect(isSky(pixel), `${label} is sky`).toBe(false);
+    expect(pixel.a, `${label} opaque`).toBeGreaterThan(200);
+    // The canvas buffer scales to CSS pixels, so the landmark center can round
+    // onto a neighbouring color band.
+    let matched = false;
+    for (let dy = -LANDMARK_SLACK; dy <= LANDMARK_SLACK && !matched; dy++)
+      for (let dx = -LANDMARK_SLACK; dx <= LANDMARK_SLACK && !matched; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= shot.width || ny >= shot.height) continue;
+        const near = shot.at(nx, ny);
+        matched = (["r", "g", "b"] as const).every(
+          (channel) => Math.abs(near[channel] - mark.live[channel]) <= 24,
+        );
+      }
+    expect(matched, `${label} carries the live canvas color`).toBe(true);
+  }
+}
+
+async function assertTitleComposition(
+  page: Page,
+  shotName: string,
+  shotFile?: string,
+) {
   await waitForTitleFonts(page);
   await waitForStart(page);
   await page.evaluate(
@@ -386,6 +477,11 @@ async function assertTitleComposition(page: Page, shotName: string) {
     expect(hits(pipePage), `${shotName} ${name} covers pipe`).toBe(false);
     expect(hits(qPage), `${shotName} ${name} covers question`).toBe(false);
   }
+  // Shot before the camera probe below moves the player.
+  if (shotFile) {
+    mkdirSync(dirname(shotFile), { recursive: true });
+    await page.screenshot({ path: shotFile, fullPage: false });
+  }
   const before = { x: marks.cameraX, y: marks.cameraY, z: marks.zoom };
   await page.evaluate(() => {
     const g = (window as any).__game;
@@ -405,6 +501,10 @@ async function assertTitleComposition(page: Page, shotName: string) {
   expect(after.x).toBeCloseTo(before.x, 5);
   expect(after.y).toBeCloseTo(before.y, 5);
   expect(after.z).toBeCloseTo(before.z, 5);
+  return [
+    { name: "pipe", page: pipePage, live: marks.pipe },
+    { name: "question", page: qPage, live: marks.question },
+  ];
 }
 
 const compositionViewports = [
@@ -417,17 +517,18 @@ for (const viewport of compositionViewports) {
   test(`title still shows pipe and question blocks at ${viewport.width}x${viewport.height}`, async ({
     page,
   }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({
       width: viewport.width,
       height: viewport.height,
     });
     await page.goto("/");
-    await assertTitleComposition(page, viewport.file);
-    mkdirSync(EVIDENCE_DIR, { recursive: true });
-    await page.screenshot({
-      path: resolve(EVIDENCE_DIR, viewport.file),
-      fullPage: false,
-    });
+    const file = resolve(EVIDENCE_DIR, viewport.file);
+    rmSync(file, { force: true });
+    const marks = await assertTitleComposition(page, viewport.file, file);
+    assertShotLandmarks(file, viewport, marks);
+    expect(errors, `${viewport.file} page errors`).toEqual([]);
   });
 }
 

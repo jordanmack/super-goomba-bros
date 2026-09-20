@@ -10,7 +10,8 @@ door. Each pair is `[buttons, frames]`, with bit1 Left, bit2 Right, bit4 Jump,
 bit8 Pipe, and bit16 Run. These files are never included in the game build.
 
 The player replay tests disable Mario and remove emerging power-ups. This
-isolates movement and proves that no random power-up is required. The campaign
+isolates movement and proves that no random power-up is required. Bullet Bills
+stay live, so a cannon stage route has to dodge real bullets. The campaign
 tests check NPC navigation to rescue doors. Other simulation tests cover active
 Mario, warnings, powers, death, scoring, and a complete win.
 

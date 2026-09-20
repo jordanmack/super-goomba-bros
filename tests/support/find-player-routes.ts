@@ -2,6 +2,7 @@
 // simulation and ordinary Input actions. It never changes production controls.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { Simulation, emptyInput } from "../../src/game/simulation.ts";
+import type { BulletBill } from "../../src/game/simulation.ts";
 import { Body } from "../../src/game/physics.ts";
 import { CAMPAIGN, areaData } from "../../src/game/levels.ts";
 import { TUNING as T } from "../../src/game/config.ts";
@@ -22,6 +23,9 @@ type State = {
   hidden: number[];
   pace: number;
   liftY: number[];
+  bills: BulletBill[];
+  billId: number;
+  cannonTimers: Record<string, number[]>;
 };
 type Node = {
   state: State;
@@ -82,6 +86,7 @@ function capture(sim: Simulation): State {
   const flags = sim as unknown as {
     jumped: boolean;
     playerPace: number;
+    nextId: number;
   };
   return {
     x: body.position.x,
@@ -100,10 +105,28 @@ function capture(sim: Simulation): State {
     hidden: sim.obstacles.filter((c) => c.hidden && c.used).map((c) => c.id),
     pace: flags.playerPace,
     liftY: sim.activeRoom.platforms.map((p) => p.body.position.y),
+    bills: sim.bulletBills.map((b) => ({ ...b })),
+    billId: flags.nextId,
+    cannonTimers: Object.fromEntries(
+      [...sim.rooms].map(([id, room]) => [
+        id,
+        room.cannons.map((c) => c.timer),
+      ]),
+    ),
   };
 }
 function restore(sim: Simulation, state: State) {
   sim.physics.remove(sim.player.body);
+  sim.bulletBills = state.bills.map((b) => ({ ...b }));
+  (sim as unknown as { nextId: number }).nextId = state.billId;
+  for (const [id, room] of sim.rooms) {
+    const timers = state.cannonTimers[id];
+    if (!timers) continue;
+    for (let i = 0; i < room.cannons.length; i++) {
+      const timer = timers[i];
+      if (timer !== undefined) room.cannons[i]!.timer = timer;
+    }
+  }
   for (const room of sim.rooms.values()) {
     room.updatePlatforms(state.time, []);
     for (let i = 0; i < room.platforms.length; i++) {
@@ -354,7 +377,18 @@ function search(index: number) {
       )
         ? Math.floor((((state.time * 60 * 0x28) / 256) % 32) / 4)
         : 0;
-      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${state.hidden.join(",")}`;
+      // Bills are lethal and move, so two otherwise equal states differ when
+      // live bullets sit at different offsets. Rows matter too: cannons on
+      // 7-1 and 8-2 sit across several rows and only one row is in the way.
+      const billPhase = state.bills
+        .filter((b) => b.areaId === state.area && Math.abs(b.x - state.x) < 360)
+        .map(
+          (b) =>
+            `${Math.round((b.x - state.x) / 12)},${Math.round((b.y - state.y) / 12)}v${Math.sign(b.vx)}`,
+        )
+        .sort()
+        .join("|");
+      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${billPhase}:${state.hidden.join(",")}`;
       if ((visited.get(key) ?? Infinity) <= cost) continue;
       visited.set(key, cost);
       const dx =
