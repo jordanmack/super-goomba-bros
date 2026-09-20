@@ -699,7 +699,7 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
   expect(drawn.overhangs.oneUp).toBe(drawn.overhangs.mushroom);
 });
 
-test("player flagpole flag is mushroom art and Mario keeps the original flag", async ({
+test("player flagpole flag stamps a mushroom and Mario stamps a face in the cloth", async ({
   page,
 }) => {
   await page.goto("/");
@@ -719,84 +719,50 @@ test("player flagpole flag is mushroom art and Mario keeps the original flag", a
     const mushroom = pixelsOf("mushroom");
     const marioFlag = pixelsOf("marioFlag");
     const mushroomFlag = pixelsOf("mushroomFlag");
-    const palette = (data: Uint8ClampedArray) => {
-      let white = 0,
-        red = 0,
-        brown = 0,
+    const clothStats = (data: ImageData) => {
+      let pole = 0,
+        orb = 0,
+        clothWhite = 0,
+        mushroomRed = 0,
+        mushroomCap = 0,
+        hat = 0,
         skin = 0,
-        dark = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        if (!data[i + 3]) continue;
-        const r = data[i],
-          gc = data[i + 1],
-          b = data[i + 2];
-        if (r > 200 && gc > 200 && b > 200) white++;
-        if (r > 180 && gc < 100 && b < 100) red++;
-        if (r > 200 && gc < 120 && b < 40) brown++;
-        if (r > 220 && gc > 180 && gc < 230 && b > 150 && b < 200) skin++;
-        if (r < 50 && gc < 50 && b < 50) dark++;
-      }
-      return { white, red, brown, skin, dark };
-    };
-    const recolor = new Uint8ClampedArray(marioFlag.data);
-    for (let i = 0; i < recolor.length; i += 4) {
-      if (!recolor[i + 3]) continue;
-      const x = (i / 4) % marioFlag.width;
-      const r = recolor[i],
-        gc = recolor[i + 1],
-        b = recolor[i + 2];
-      if (r > 200 && gc > 200 && b > 200) {
-        recolor[i] = 228;
-        recolor[i + 1] = 92;
-        recolor[i + 2] = 16;
-      } else if (x > 3 && r > 180 && gc < 100 && b < 100) {
-        recolor[i] = 252;
-        recolor[i + 1] = 216;
-        recolor[i + 2] = 168;
-      }
-    }
-    let stamped = 0,
-      recolorSame = 0;
-    const mushroomColors = new Set<string>();
-    for (let i = 0; i < mushroom.data.length; i += 4) {
-      if (!mushroom.data[i + 3]) continue;
-      mushroomColors.add(
-        `${mushroom.data[i]},${mushroom.data[i + 1]},${mushroom.data[i + 2]}`,
-      );
-    }
-    let fromMushroom = 0;
-    for (let i = 0; i < mushroomFlag.data.length; i += 4) {
-      if (!mushroomFlag.data[i + 3]) continue;
-      const r = mushroomFlag.data[i],
-        gc = mushroomFlag.data[i + 1],
-        b = mushroomFlag.data[i + 2];
-      if (mushroomColors.has(`${r},${gc},${b}`)) fromMushroom++;
-      if (
-        r === recolor[i] &&
-        gc === recolor[i + 1] &&
-        b === recolor[i + 2]
-      )
-        recolorSame++;
-      const x = (i / 4) % mushroomFlag.width;
-      const y = Math.floor(i / 4 / mushroomFlag.width);
-      const mx = x - 1;
-      const my = y - 1;
-      if (
-        mx >= 0 &&
-        my >= 0 &&
-        mx < mushroom.width &&
-        my < mushroom.height
-      ) {
-        const mi = (my * mushroom.width + mx) * 4;
+        oneToOne = 0;
+      const w = data.width;
+      for (let i = 0; i < data.data.length; i += 4) {
+        if (!data.data[i + 3]) continue;
+        const x = (i / 4) % w;
+        const y = Math.floor(i / 4 / w);
+        const r = data.data[i],
+          gc = data.data[i + 1],
+          b = data.data[i + 2];
+        if (x <= 2 && r > 160 && gc < 80 && b < 80) pole++;
+        if (y <= 4 && r > 200 && gc > 140 && b < 80) orb++;
+        if (x > 2 && r > 200 && gc > 200 && b > 200) clothWhite++;
+        if (x > 2 && y >= 5 && r > 160 && gc < 100 && b < 80) mushroomRed++;
+        if (x > 2 && y >= 5 && r > 200 && gc > 140 && b < 80) mushroomCap++;
+        if (x > 2 && r > 220 && gc < 80 && b < 40) hat++;
+        if (x > 2 && r > 220 && gc > 140 && gc < 200 && b > 40 && b < 100) skin++;
+        const mx = x - 1;
+        const my = y - 1;
         if (
-          mushroom.data[mi + 3] &&
-          r === mushroom.data[mi] &&
-          gc === mushroom.data[mi + 1] &&
-          b === mushroom.data[mi + 2]
-        )
-          stamped++;
+          mx >= 0 &&
+          my >= 0 &&
+          mx < mushroom.width &&
+          my < mushroom.height
+        ) {
+          const mi = (my * mushroom.width + mx) * 4;
+          if (
+            mushroom.data[mi + 3] &&
+            r === mushroom.data[mi] &&
+            gc === mushroom.data[mi + 1] &&
+            b === mushroom.data[mi + 2]
+          )
+            oneToOne++;
+        }
       }
-    }
+      return { pole, orb, clothWhite, mushroomRed, mushroomCap, hat, skin, oneToOne };
+    };
     const idle = {
       left: false,
       right: false,
@@ -864,12 +830,8 @@ test("player flagpole flag is mushroom art and Mario keeps the original flag", a
     ctx.drawImage(textures.marioFlag.getSourceImage(), 88, 8, 64, 64);
     document.body.append(sheet);
     return {
-      mushroom: palette(mushroom.data),
-      marioFlag: palette(marioFlag.data),
-      mushroomFlag: palette(mushroomFlag.data),
-      stamped,
-      fromMushroom,
-      recolorSame,
+      mushroomFlag: clothStats(mushroomFlag),
+      marioFlag: clothStats(marioFlag),
       playerClaim,
       playerFlags,
       marioClaim,
@@ -882,16 +844,15 @@ test("player flagpole flag is mushroom art and Mario keeps the original flag", a
   });
   expect(drawn.sameCanvas).toBe(false);
   expect(drawn.hasGoombaFlag).toBe(false);
-  expect(drawn.marioFlag.white).toBeGreaterThan(50);
-  expect(drawn.marioFlag.red).toBeGreaterThan(20);
-  expect(drawn.marioFlag.dark).toBe(0);
-  expect(drawn.mushroomFlag.red).toBeGreaterThan(20);
-  expect(drawn.mushroomFlag.white).toBeGreaterThan(8);
-  expect(drawn.stamped).toBeGreaterThan(50);
-  expect(drawn.fromMushroom).toBeGreaterThan(50);
-  expect(drawn.stamped).toBeGreaterThan(drawn.recolorSame);
-  expect(drawn.mushroom.red).toBeGreaterThan(0);
-  expect(drawn.mushroom.white).toBeGreaterThan(0);
+  expect(drawn.mushroomFlag.pole).toBeGreaterThan(0);
+  expect(drawn.mushroomFlag.orb).toBeGreaterThan(0);
+  expect(drawn.mushroomFlag.mushroomRed + drawn.mushroomFlag.mushroomCap).toBeGreaterThan(8);
+  expect(drawn.mushroomFlag.clothWhite).toBeGreaterThan(4);
+  expect(drawn.mushroomFlag.oneToOne).toBeLessThan(50);
+  expect(drawn.marioFlag.pole).toBeGreaterThan(0);
+  expect(drawn.marioFlag.orb).toBeGreaterThan(0);
+  expect(drawn.marioFlag.hat).toBeGreaterThan(4);
+  expect(drawn.marioFlag.skin).toBeGreaterThan(4);
   expect(drawn.playerClaim).toBe("goomba");
   expect(drawn.playerFlags.map((f: { key: string }) => f.key)).toEqual([
     "mushroomFlag",
@@ -907,6 +868,157 @@ test("player flagpole flag is mushroom art and Mario keeps the original flag", a
   await page
     .locator("#debug-flag-sheet")
     .screenshot({ path: "test-results/mushroom-mario-flags.png" });
+});
+
+test("Bowser snout, castle axe, and rescue door pixels match the shipped art", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
+  const drawn = await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.paused = true;
+    const textures = g.renderer.game.textures.list;
+    const pixelsOf = (name: string) => {
+      const image = textures[name].getSourceImage() as HTMLCanvasElement;
+      return image.getContext("2d")!.getImageData(0, 0, image.width, image.height);
+    };
+    const leftmostOpaque = (data: ImageData) => {
+      let minX = data.width;
+      for (let i = 0; i < data.data.length; i += 4) {
+        if (!data.data[i + 3]) continue;
+        const x = (i / 4) % data.width;
+        if (x < minX) minX = x;
+      }
+      return minX;
+    };
+    const snoutYellow = (data: ImageData) => {
+      let n = 0;
+      for (let i = 0; i < data.data.length; i += 4) {
+        if (!data.data[i + 3]) continue;
+        const x = (i / 4) % data.width;
+        if (x > 8) continue;
+        const r = data.data[i],
+          gc = data.data[i + 1],
+          b = data.data[i + 2];
+        if (r > 180 && gc > 140 && b < 80) n++;
+      }
+      return n;
+    };
+    const bowser = pixelsOf("bowser");
+    const bowserWalk = pixelsOf("bowserWalk");
+    const axe = pixelsOf("axe");
+    let axeBrown = 0,
+      axeGray = 0,
+      axePink = 0,
+      axeOpaque = 0,
+      axeHandle = 0;
+    for (let i = 0; i < axe.data.length; i += 4) {
+      if (!axe.data[i + 3]) continue;
+      axeOpaque++;
+      const x = (i / 4) % axe.width;
+      const y = Math.floor(i / 4 / axe.width);
+      const r = axe.data[i],
+        gc = axe.data[i + 1],
+        b = axe.data[i + 2];
+      if (r > 240 && b > 240 && gc < 100) axePink++;
+      if (r > 120 && gc > 50 && gc < 160 && b < 80) axeBrown++;
+      if (Math.abs(r - gc) < 25 && Math.abs(gc - b) < 25 && r > 70 && r < 180)
+        axeGray++;
+      if (y >= 11 && x >= 6 && x <= 9) axeHandle++;
+    }
+    const metatiles = textures.metatiles;
+    const frameOf = (id: number) => {
+      const frame = metatiles.get(id);
+      const src = metatiles.getSourceImage() as HTMLImageElement;
+      const canvas = document.createElement("canvas");
+      canvas.width = 16;
+      canvas.height = 16;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(src, frame.cutX, frame.cutY, 16, 16, 0, 0, 16, 16);
+      return ctx.getImageData(0, 0, 16, 16);
+    };
+    const castleIndex = 5;
+    const door = frameOf(castleIndex * 256 + 74);
+    const overworld = frameOf(74);
+    const doorColors = new Set<string>();
+    let doorGray = 0,
+      doorWhite = 0,
+      doorBlack = 0;
+    for (let i = 0; i < door.data.length; i += 4) {
+      const r = door.data[i],
+        gc = door.data[i + 1],
+        b = door.data[i + 2];
+      doorColors.add(`${r},${gc},${b}`);
+      if (r === 255 && gc === 255 && b === 255) doorWhite++;
+      else if (r === 0 && gc === 0 && b === 0) doorBlack++;
+      else if (Math.abs(r - gc) < 8 && Math.abs(gc - b) < 8 && r > 40 && r < 160)
+        doorGray++;
+    }
+    let overworldDark = 0;
+    for (let i = 0; i < overworld.data.length; i += 4) {
+      const r = overworld.data[i],
+        gc = overworld.data[i + 1],
+        b = overworld.data[i + 2];
+      if ((r + gc + b) / 3 < 40) overworldDark++;
+    }
+    const s = g.sim;
+    s.levelIndex = 3;
+    s.reset();
+    s.mode = "playing";
+    g.renderer.render(s, 0);
+    const play = g.renderer.play;
+    const axeSprite = play.effects.find(
+      (entry: { visible: boolean; texture: { key: string } }) =>
+        entry.visible && entry.texture.key === "axe",
+    );
+    return {
+      bowserLeft: leftmostOpaque(bowser),
+      walkLeft: leftmostOpaque(bowserWalk),
+      bowserSnout: snoutYellow(bowser),
+      walkSnout: snoutYellow(bowserWalk),
+      axe: {
+        brown: axeBrown,
+        gray: axeGray,
+        pink: axePink,
+        opaque: axeOpaque,
+        handle: axeHandle,
+        width: axe.width,
+        height: axe.height,
+      },
+      door: {
+        colors: [...doorColors],
+        gray: doorGray,
+        white: doorWhite,
+        black: doorBlack,
+      },
+      overworldDark,
+      axeDraw: axeSprite
+        ? { w: axeSprite.displayWidth, h: axeSprite.displayHeight }
+        : null,
+      goal: s.activeRoom.data.goal?.kind,
+    };
+  });
+  expect(drawn.bowserLeft).toBe(0);
+  expect(drawn.walkLeft).toBe(0);
+  expect(drawn.bowserSnout).toBeGreaterThan(8);
+  expect(drawn.walkSnout).toBeGreaterThan(8);
+  expect(drawn.axe.pink).toBe(0);
+  expect(drawn.axe.brown).toBeGreaterThan(8);
+  expect(drawn.axe.gray).toBeGreaterThan(8);
+  expect(drawn.axe.handle).toBeGreaterThan(3);
+  expect(drawn.axe.opaque).toBeLessThan(200);
+  expect(drawn.axe.width).toBe(16);
+  expect(drawn.axe.height).toBe(16);
+  expect(drawn.door.gray).toBe(0);
+  expect(drawn.door.white).toBeGreaterThan(200);
+  expect(drawn.door.black).toBeGreaterThan(10);
+  expect(drawn.door.colors.sort()).toEqual(["0,0,0", "255,255,255"]);
+  expect(drawn.overworldDark).toBeGreaterThan(200);
+  expect(drawn.goal).toBe("castle-room");
+  expect(drawn.axeDraw).toEqual({ w: 32, h: 32 });
 });
 
 for (const viewport of [

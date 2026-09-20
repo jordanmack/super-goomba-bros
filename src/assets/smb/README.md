@@ -46,9 +46,11 @@ Fire Goombas and Koopas use a white power-up palette while retaining their
 original faces and outlines.
 
 Items, coins, platforms, fireballs, and flagpole flags also use original sprite
-frames. The player flag stamps mushroom art onto the original flag cloth.
-Mario keeps the original flag.
+frames. The player flag stamps a red 2x mushroom into the original flag cloth.
+Mario's flag stamps small Mario's face the same way. Cloth, pole, and orb stay.
+The castle axe is the original SMB1 hatchet, not brick debris.
 Small fireballs use the native eight-pixel fireball image. Overworld castle
 doors use original metatiles. Castle-room rescue doors invert those same two
-tiles in the castle palette so they read as a white door on the black interior.
+tiles in the castle palette so they read as a white door on the black interior,
+with no gray outline.
 No log graphics or hiding places are included.

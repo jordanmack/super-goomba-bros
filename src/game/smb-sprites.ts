@@ -177,6 +177,65 @@ export function flagTextureKey(claim: "goomba" | "mario") {
   return claim === "mario" ? "marioFlag" : "mushroomFlag";
 }
 
+function isFlagCloth(
+  x: number,
+  r: number,
+  g: number,
+  b: number,
+  alpha: number,
+) {
+  if (!alpha || x <= 2) return false;
+  return (r > 200 && g > 200 && b > 200) || (r > 180 && g < 100 && b < 100);
+}
+
+/** Scale an emblem into the flag cloth. Pole (x<=2) and orb stay. */
+export function stampEmblemInCloth(
+  flag: Uint8ClampedArray,
+  emblem: Uint8ClampedArray,
+  width: number,
+  height: number,
+  emblemWidth: number,
+  emblemHeight: number,
+) {
+  let minX = width,
+    minY = height,
+    maxX = -1,
+    maxY = -1;
+  for (let i = 0; i < flag.length; i += 4) {
+    const x = (i / 4) % width;
+    const y = Math.floor(i / 4 / width);
+    if (!isFlagCloth(x, flag[i], flag[i + 1], flag[i + 2], flag[i + 3]))
+      continue;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (maxX < minX) return flag;
+  const boxW = maxX - minX + 1;
+  const boxH = maxY - minY + 1;
+  const scale = Math.min(boxW / emblemWidth, boxH / emblemHeight);
+  const destW = Math.max(1, Math.round(emblemWidth * scale));
+  const destH = Math.max(1, Math.round(emblemHeight * scale));
+  const destX = minX + Math.floor((boxW - destW) / 2);
+  const destY = minY + Math.floor((boxH - destH) / 2);
+  for (let i = 0; i < flag.length; i += 4) {
+    const x = (i / 4) % width;
+    const y = Math.floor(i / 4 / width);
+    if (!isFlagCloth(x, flag[i], flag[i + 1], flag[i + 2], flag[i + 3]))
+      continue;
+    const ex = Math.floor(((x - destX) * emblemWidth) / destW);
+    const ey = Math.floor(((y - destY) * emblemHeight) / destH);
+    if (ex < 0 || ey < 0 || ex >= emblemWidth || ey >= emblemHeight) continue;
+    const mi = (ey * emblemWidth + ex) * 4;
+    if (!emblem[mi + 3]) continue;
+    flag[i] = emblem[mi];
+    flag[i + 1] = emblem[mi + 1];
+    flag[i + 2] = emblem[mi + 2];
+  }
+  return flag;
+}
+
 export function stampMushroomFlag(
   flag: Uint8ClampedArray,
   mushroom: Uint8ClampedArray,
@@ -185,57 +244,17 @@ export function stampMushroomFlag(
   mushroomWidth = width,
   mushroomHeight = height,
 ) {
-  let fillR = 228,
-    fillG = 88,
-    fillB = 16;
-  for (let i = 0; i < mushroom.length; i += 4) {
-    if (
-      mushroom[i + 3] &&
-      mushroom[i] > 160 &&
-      mushroom[i + 1] < 120 &&
-      mushroom[i + 2] < 80
-    ) {
-      fillR = mushroom[i];
-      fillG = mushroom[i + 1];
-      fillB = mushroom[i + 2];
-      break;
-    }
-  }
-  for (let i = 0; i < flag.length; i += 4) {
-    const x = (i / 4) % width;
-    const y = Math.floor(i / 4 / width);
-    const r = flag[i],
-      g = flag[i + 1],
-      b = flag[i + 2],
-      alpha = flag[i + 3];
-    if (!alpha || x <= 2) continue;
-    const cloth =
-      (r > 200 && g > 200 && b > 200) || (r > 180 && g < 100 && b < 100);
-    if (!cloth) continue;
-    // 1:1 stamp so the mushroom sits in the cloth; pole and orb stay.
-    const mx = x - 1;
-    const my = y - 1;
-    const mi = (my * mushroomWidth + mx) * 4;
-    if (
-      mx >= 0 &&
-      my >= 0 &&
-      mx < mushroomWidth &&
-      my < mushroomHeight &&
-      mushroom[mi + 3]
-    ) {
-      flag[i] = mushroom[mi];
-      flag[i + 1] = mushroom[mi + 1];
-      flag[i + 2] = mushroom[mi + 2];
-    } else {
-      flag[i] = fillR;
-      flag[i + 1] = fillG;
-      flag[i + 2] = fillB;
-    }
-  }
-  return flag;
+  return stampEmblemInCloth(
+    flag,
+    mushroom,
+    width,
+    height,
+    mushroomWidth,
+    mushroomHeight,
+  );
 }
 
-function mushroomFlag(flag: HTMLCanvasElement, mushroom: HTMLCanvasElement) {
+function emblemFlag(flag: HTMLCanvasElement, emblem: HTMLCanvasElement) {
   const canvas = document.createElement("canvas");
   canvas.width = flag.width;
   canvas.height = flag.height;
@@ -243,16 +262,16 @@ function mushroomFlag(flag: HTMLCanvasElement, mushroom: HTMLCanvasElement) {
   context.imageSmoothingEnabled = false;
   context.drawImage(flag, 0, 0);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  const face = mushroom
+  const face = emblem
     .getContext("2d")!
-    .getImageData(0, 0, mushroom.width, mushroom.height);
-  stampMushroomFlag(
+    .getImageData(0, 0, emblem.width, emblem.height);
+  stampEmblemInCloth(
     pixels.data,
     face.data,
     canvas.width,
     canvas.height,
-    mushroom.width,
-    mushroom.height,
+    emblem.width,
+    emblem.height,
   );
   context.putImageData(pixels, 0, 0);
   return canvas;
@@ -267,6 +286,62 @@ function pixelRope() {
   context.fillRect(0, 0, 2, 8);
   context.fillStyle = "#d09040";
   context.fillRect(0, 0, 1, 8);
+  return canvas;
+}
+
+export const AXE_WIDTH = 16;
+export const AXE_HEIGHT = 16;
+
+const AXE_PIXELS = [
+  "..O..........O..",
+  ".OGOO..BG..OO.O.",
+  ".OGOOOOGGOOOO.O.",
+  "OGOOOOOBGOOOOO.O",
+  "OGOOOOOBGOOOOO.O",
+  "OGOOOOOBGOOOOO.O",
+  "OGOOOOOBGOOOOO.O",
+  "OGOOOOOBGOOOOO.O",
+  ".OGOOOOBGOOOO.O.",
+  "..GOO..BG...O.O.",
+  "..O....GG....O..",
+  ".......BG.......",
+  ".......GG.......",
+  ".......BG.......",
+  ".......GG.......",
+  ".......BG.......",
+] as const;
+
+const AXE_COLORS: Record<string, [number, number, number]> = {
+  O: [234, 158, 34],
+  B: [153, 78, 0],
+  G: [102, 102, 102],
+};
+
+export function stampAxe(data: Uint8ClampedArray, width = AXE_WIDTH) {
+  for (let y = 0; y < AXE_PIXELS.length; y++) {
+    const row = AXE_PIXELS[y];
+    for (let x = 0; x < row.length; x++) {
+      const color = AXE_COLORS[row[x]];
+      if (!color) continue;
+      const i = (y * width + x) * 4;
+      data[i] = color[0];
+      data[i + 1] = color[1];
+      data[i + 2] = color[2];
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+}
+
+function pixelAxe() {
+  const canvas = document.createElement("canvas");
+  canvas.width = AXE_WIDTH;
+  canvas.height = AXE_HEIGHT;
+  const context = canvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  const pixels = context.createImageData(AXE_WIDTH, AXE_HEIGHT);
+  stampAxe(pixels.data);
+  context.putImageData(pixels, 0, 0);
   return canvas;
 }
 
@@ -307,16 +382,17 @@ function pixelPulley() {
   return canvas;
 }
 
-export function scenerySprites({ enemies, items }: SpriteSources) {
-  const marioFlag = crop(items, 128, 0, 16, 16);
+export function scenerySprites({ mario, enemies, items }: SpriteSources) {
+  const flag = crop(items, 128, 0, 16, 16);
   const mushroom = crop(items, 0, 0, 16, 16);
+  const marioFace = crop(mario, 180, 0, 16, 8);
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
     bulletBill: crop(enemies, 304, 96, 16, 16),
-    bowser: crop(enemies, 0, 211, 32, 32),
-    bowserWalk: crop(enemies, 128, 211, 32, 32),
+    bowser: crop(enemies, 2, 211, 32, 32),
+    bowserWalk: crop(enemies, 42, 211, 32, 32),
     bowserFlame: crop(enemies, 101, 253, 24, 8),
-    axe: crop(items, 64, 192, 16, 16),
+    axe: pixelAxe(),
     platform: crop(items, 80, 24, 48, 8),
     rope: pixelRope(),
     pulley: pixelPulley(),
@@ -327,8 +403,8 @@ export function scenerySprites({ enemies, items }: SpriteSources) {
     mushroom8x: mushroomCap(mushroom, [252, 200, 32]),
     flower: crop(items, 0, 32, 16, 16),
     star: crop(items, 0, 48, 16, 16),
-    marioFlag,
-    mushroomFlag: mushroomFlag(marioFlag, mushroom),
+    marioFlag: emblemFlag(flag, marioFace),
+    mushroomFlag: emblemFlag(flag, mushroom),
     vineHead: crop(items, 64, 48, 16, 16),
     vine: crop(items, 64, 64, 16, 16),
     [SWEAT_DROP_KEY]: pixelSweatDrop(),

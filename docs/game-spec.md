@@ -57,9 +57,11 @@ settings unless a rule below explicitly fixes their relationship.
   named destination and does not skip worlds. See [Vines](#vines).
 - No logs or hiding spots are added. Bushes are scenery.
 - The goal is the castle doorway. Castle interiors use a visible inverted-white
-  rescue doorway after the original bridge. On stages with a flagpole, the first of the player or
-  Mario to pass it raises a matching flag. The player flag stamps mushroom art
-  onto the original flag silhouette. Mario keeps the original flag. NPCs do
+  rescue doorway after the original bridge, white on black with no gray fringe.
+  On stages with a flagpole, the first of the player or
+  Mario to pass it raises a matching flag. The player flag stamps a red 2x
+  mushroom into the cloth. Mario's flag stamps small Mario's face the same way.
+  Cloth, pole, and orb stay. NPCs do
   not claim it. The pole and flag never add collision or change velocity. The
   castle door remains the real goal.
 

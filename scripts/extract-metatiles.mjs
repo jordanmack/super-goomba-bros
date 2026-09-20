@@ -275,7 +275,8 @@ for (const [themeIndex, theme] of themes.entries()) {
       }
     if (!image) continue;
     // Castle interiors are black. Invert the original door so the custom
-    // rescue doorway is a white door, not a black-on-black hole.
+    // rescue doorway is a white door, not a black-on-black hole. Snap the
+    // inverted gray arch outline to black so the door has no dirty fringe.
     if (theme === "castle" && (id === 74 || id === 75)) {
       image = Buffer.from(image);
       for (let p = 0; p < image.length; p += 4) {
@@ -283,6 +284,12 @@ for (const [themeIndex, theme] of themes.entries()) {
         image[p] = 255 - image[p];
         image[p + 1] = 255 - image[p + 1];
         image[p + 2] = 255 - image[p + 2];
+        const lum = (image[p] + image[p + 1] + image[p + 2]) / 3;
+        if (lum >= 200) {
+          image[p] = image[p + 1] = image[p + 2] = 255;
+        } else {
+          image[p] = image[p + 1] = image[p + 2] = 0;
+        }
       }
     }
     coverage[theme].push(id);
