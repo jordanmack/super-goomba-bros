@@ -38,8 +38,8 @@ class Simulation extends RulesSimulation {
 }
 
 const dt = 1 / 60;
-function game() {
-  const s = new Simulation(() => 0.5);
+function game(random: () => number = () => 0.5) {
+  const s = new Simulation(random);
   s.reset();
   s.marioReturn = 1e6;
   return s;
@@ -370,12 +370,11 @@ function standOnBonusPipe(s: Simulation, n: Actor) {
 }
 
 test("a warned NPC that enters a non-goal pipe is counted saved after the animation", () => {
-  const s = game();
+  const s = game(() => 0);
   const n = soloNpc(s);
   n.warned = true;
   n.state = "run";
   n.wait = 0;
-  s.pipeEscapeRandom = () => 0;
   standOnBonusPipe(s, n);
   const startSaved = s.saved;
   const startArea = n.areaId;
@@ -396,19 +395,25 @@ test("a warned NPC that enters a non-goal pipe is counted saved after the animat
 });
 
 test("a failed NPC pipe-escape roll does not become a guaranteed entry", () => {
-  const s = game();
+  let atPipe = false;
+  let rolls = 0;
+  const s = game(() => {
+    if (!atPipe) return 0.5;
+    rolls += 1;
+    return rolls === 1 ? 0.99 : 0;
+  });
   const n = soloNpc(s);
   n.warned = true;
   n.state = "run";
   n.wait = 0;
-  let rolls = 0;
-  s.pipeEscapeRandom = () => {
-    rolls += 1;
-    return rolls === 1 ? 0.99 : 0;
-  };
   standOnBonusPipe(s, n);
+  atPipe = true;
+  tick(s, dt);
+  assert.equal(rolls, 1, "rolled once at the pipe");
+  assert.ok(n.pipeEscapeTried);
+  assert.equal(n.saved, false);
+  assert.equal(n.pipeTravel, undefined);
   tick(s, 0.5);
-  assert.ok(rolls >= 1, "rolled once at the pipe");
   assert.equal(n.saved, false);
   assert.equal(n.pipeTravel, undefined);
   assert.ok(
@@ -417,13 +422,90 @@ test("a failed NPC pipe-escape roll does not become a guaranteed entry", () => {
   );
 });
 
+test("an airborne lid-band NPC does not set the escape-tried flag / does not roll", () => {
+  let atPipe = false;
+  let rolls = 0;
+  const s = game(() => {
+    if (!atPipe) return 0.5;
+    rolls += 1;
+    return 0;
+  });
+  const n = soloNpc(s);
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  const { x, top } = bonusPipe(s);
+  Body.setPosition(n.body, { x, y: top - n.body.height / 2 - 4 });
+  Body.setVelocity(n.body, { x: 0, y: 5 });
+  n.grounded = false;
+  atPipe = true;
+  tick(s, dt);
+  assert.equal(n.grounded, false);
+  assert.equal(n.pipeEscapeTried, undefined);
+  assert.equal(n.pipeTravel, undefined);
+  assert.equal(n.saved, false);
+  assert.equal(rolls, 0, "rolled while airborne in the lid band");
+});
+
+test("goal identity and destination/warp are not duplicated in a way that can disagree", () => {
+  const goal = goalPipeSim();
+  const n = goal.s.npcs[0];
+  n.areaId = "40";
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  parkNpcs(goal.s, [n]);
+  give(goal.s, goal.s.player, "mushroom8x");
+  at(goal.s, goal.goalPipe.x, T.groundY - 14 * goal.s.player.scale);
+  tick(goal.s, dt);
+  assert.equal(goal.goalPipe.broken, false);
+  standOnPipe(n, goal.goalPipe);
+  n.grounded = true;
+  tick(goal.s, dt);
+  assert.ok(n.pipeTravel, "NPC enters the goal pipe");
+  assert.equal(n.pipeTravel?.escape, undefined);
+  assert.equal(n.pipeTravel?.destArea, "25");
+  assert.equal(n.saved, false);
+  goal.s.physics.clear();
+
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  tick(s, T.pipeCooldown + dt);
+  const pipe = s.activeRoom.data.pipes.find((p) => p.column === 178)!;
+  const mouthX = s.activeRoom.offset + (pipe.column + pipe.width / 2) * 32;
+  const mouthY = MAP_TOP + pipe.row * 32;
+  const fleeing = s.npcs[0];
+  fleeing.areaId = s.player.areaId;
+  fleeing.warned = true;
+  fleeing.state = "run";
+  fleeing.wait = 0;
+  Body.setPosition(fleeing.body, {
+    x: mouthX,
+    y: mouthY - fleeing.body.height / 2,
+  });
+  Body.setVelocity(fleeing.body, { x: 0, y: 0 });
+  fleeing.grounded = true;
+  tick(s, 0.2);
+  assert.equal(fleeing.pipeTravel, undefined);
+  assert.equal(s.level.id, "1-2");
+  at(s, mouthX, mouthY - 14);
+  s.step(dt, { ...emptyInput(), down: true });
+  assert.ok(s.player.pipeTravel);
+  assert.equal(s.player.pipeTravel?.arrival, "warp");
+  assert.ok(s.player.pipeTravel?.destLevel !== undefined);
+  assert.equal(s.player.pipeTravel?.destArea, pipe.destinations[0]?.area);
+  s.physics.clear();
+});
+
 test("an unwarned NPC ignores an enterable pipe", () => {
-  const s = game();
+  const s = game(() => 0);
   const n = soloNpc(s);
   n.warned = false;
   n.state = "idle";
   n.wait = 0;
-  s.pipeEscapeRandom = () => 0;
   standOnBonusPipe(s, n);
   tick(s, 0.5);
   assert.equal(n.saved, false);
@@ -631,12 +713,12 @@ test("small fireballs, question blocks, used blocks, and unbreakable tiles survi
 test("mixed NPC speeds cross every staircase and gap across different runs", () => {
   for (const start of [1, 3, 4, 9, 15]) {
     let seed = start;
-    const s = new Simulation(
-      () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646,
-    );
+    const s = new Simulation(() => {
+      const u = ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+      return T.npcPipeEscapeChance + u * (1 - T.npcPipeEscapeChance);
+    });
     s.reset();
     s.marioReturn = 1e6;
-    s.pipeEscapeRandom = () => 1;
     for (const n of s.npcs) n.warned = true;
     tick(s, 100);
     assert.equal(s.saved, T.population, `All NPCs escape in seed ${start}`);
@@ -1096,7 +1178,6 @@ function takeoffsWhileFleeing(
 test("giant NPC takeoff uses the player jump model, never a size boost", () => {
   for (const kind of ["mushroom", "mushroom3x", "mushroom8x"] as const) {
     const s = game();
-    s.pipeEscapeRandom = () => 1;
     const n = soloNpc(s);
     give(s, n, kind);
     n.warned = true;
@@ -1179,7 +1260,6 @@ test("a warned NPC on the World 1-2 ceiling above the exit leaves the slab", () 
   n.state = "run";
   n.wait = 0;
   n.areaId = "40";
-  s.pipeEscapeRandom = () => 1;
   const ceilingY = MAP_TOP + 2 * 32;
   Body.setPosition(n.body, { x: 5348, y: ceilingY - n.body.height / 2 });
   Body.setVelocity(n.body, { x: 0, y: 0 });
@@ -1224,7 +1304,6 @@ test("a warned NPC on the World 4-2 ceiling above the exit leaves the slab", () 
   n.state = "run";
   n.wait = 0;
   n.areaId = "41";
-  s.pipeEscapeRandom = () => 1;
   const ceilingY = MAP_TOP + 2 * 32;
   const goalX = s.roomFor(n).goalX;
   Body.setPosition(n.body, { x: goalX, y: ceilingY - n.body.height / 2 });
