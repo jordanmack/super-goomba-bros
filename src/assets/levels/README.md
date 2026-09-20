@@ -35,8 +35,8 @@ Each `area-XX.json` has a normalized hexadecimal area pointer as its ID:
   `null` direction marks an arrival mouth, not a decoration. The shared intro
   uses the campaign route for its destination. Warp-zone pipes override the
   shared area-pointer latch with `WarpZoneNumbers` (1-2: worlds 4/3/2, 4-2
-  underground: world 5, 4-2 vine bonus: worlds 8/7/6). Vine commands remain in
-  `objects`.
+  underground and vine bonus 2f: world 5). Extra mouths with no world stay
+  inert. Vine commands remain in `objects`.
 - `goal`: castle door, final castle room, or an exit pipe to another area.
   Bonus cloud/warp areas can have no direct goal.
 

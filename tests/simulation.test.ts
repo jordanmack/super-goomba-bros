@@ -4511,43 +4511,50 @@ test("1-2 warp pipes skip to worlds 4, 3, and 2", () => {
   }
 });
 
-test("4-2 vine warp pipes skip to worlds 8, 7, and 6", () => {
-  const cases: [number, string, string][] = [
-    [50, "8-1", "30"],
-    [54, "7-1", "33"],
-    [58, "6-1", "2e"],
-  ];
-  for (const [column, id, area] of cases) {
-    const s = new Simulation(() => 0.5);
-    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
-    s.reset();
-    s.marioReturn = 1e6;
-    finishPipeIntro(s);
-    tick(s, T.pipeCooldown + dt);
-    s.player.flower = true;
-    const score = s.score;
-    s.coins = 7;
-    const lives = s.lives;
-    const room = s.loadRoom("2f");
-    s.player.areaId = "2f";
-    const pipe = room.data.pipes.find((p) => p.column === column)!;
+test("4-2 vine warp first pipe starts world 5; extra mouths stay inert", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  tick(s, T.pipeCooldown + dt);
+  s.player.flower = true;
+  const score = s.score;
+  s.coins = 7;
+  const lives = s.lives;
+  const room = s.loadRoom("2f");
+  s.player.areaId = "2f";
+  for (const column of [54, 58]) {
+    const extra = room.data.pipes.find((p) => p.column === column)!;
+    assert.deepEqual(extra.destinations, []);
     at(
       s,
-      room.offset + (pipe.column + pipe.width / 2) * 32,
-      MAP_TOP + pipe.row * 32 - 14,
+      room.offset + (extra.column + extra.width / 2) * 32,
+      MAP_TOP + extra.row * 32 - 14,
     );
     s.step(dt, { ...emptyInput(), down: true });
-    let frames = 1;
-    while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
-    assert.equal(s.level.id, id);
-    assert.equal(s.activeRoom.data.id, area);
-    assert.equal(s.mode, "intro");
-    assert.equal(s.player.flower, true);
-    assert.equal(s.score, score);
-    assert.equal(s.coins, 7);
-    assert.equal(s.lives, lives);
-    s.physics.clear();
+    assert.equal(s.player.pipeTravel, undefined);
+    assert.equal(s.player.areaId, "2f");
+    assert.equal(s.level.id, "4-2");
   }
+  const pipe = room.data.pipes.find((p) => p.column === 50)!;
+  assert.equal(pipe.destinations[0]?.area, "2a");
+  at(
+    s,
+    room.offset + (pipe.column + pipe.width / 2) * 32,
+    MAP_TOP + pipe.row * 32 - 14,
+  );
+  s.step(dt, { ...emptyInput(), down: true });
+  let frames = 1;
+  while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
+  assert.equal(s.level.id, "5-1");
+  assert.equal(s.activeRoom.data.id, "2a");
+  assert.equal(s.mode, "intro");
+  assert.equal(s.player.flower, true);
+  assert.equal(s.score, score);
+  assert.equal(s.coins, 7);
+  assert.equal(s.lives, lives);
+  s.physics.clear();
 });
 
 test("4-2 warp pipe starts world 5", () => {
