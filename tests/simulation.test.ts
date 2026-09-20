@@ -8390,23 +8390,500 @@ test("a moving shell kills another moving shell and keeps going", () => {
   assert.ok(s.events.includes("splat"));
 });
 
-test("a stopped water shell does not keep leftover swim speed", () => {
+function waterGame() {
   const s = game();
-  s.levelIndex = 5;
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-2");
   s.reset();
   s.marioReturn = 1e6;
   finishPipeIntro(s);
+  assert.equal(s.activeRoom.data.type, "water");
+  s.mario.areaId = s.player.areaId;
+  return s;
+}
+
+function waterStillMario(s: Simulation) {
+  stillMario(s);
+  s.marioReaction = 0;
+  s.marioPause = 10;
+  s.marioChase = 0;
+  s.marioLook = 10;
+  s.mario.areaId = s.player.areaId;
+}
+
+function floorTopBelow(s: Simulation, x: number, fromY: number, half = 12) {
+  let best: number | undefined;
+  for (const solid of s.activeRoom.solids) {
+    if (solid.headOnly) continue;
+    if (x + half <= solid.bounds.min.x || x - half >= solid.bounds.max.x)
+      continue;
+    const top = solid.bounds.min.y;
+    if (top < fromY) continue;
+    if (best === undefined || top < best) best = top;
+  }
+  return best;
+}
+
+function openWaterX(s: Simulation, y = 200) {
+  const room = s.activeRoom;
+  const dummy = s.player.body;
+  const half = dummy.width / 2;
+  for (let x = room.offset + 96; x < room.goalX - 96; x += 16) {
+    const hits = room.solids.some(
+      (solid) =>
+        !solid.headOnly &&
+        x + half > solid.bounds.min.x &&
+        x - half < solid.bounds.max.x &&
+        y + dummy.height / 2 > solid.bounds.min.y &&
+        y - dummy.height / 2 < solid.bounds.max.y,
+    );
+    if (!hits) return x;
+  }
+  throw new Error("no open water column");
+}
+
+function waterDrop(s: Simulation) {
+  const room = s.activeRoom;
+  const fromY = 120;
+  for (let x = room.offset + 80; x < room.goalX - 80; x += 8) {
+    const here = floorTopBelow(s, x, fromY);
+    const ahead = floorTopBelow(s, x + 40, fromY);
+    if (here !== undefined && ahead !== undefined && ahead - here >= 24)
+      return { x, facing: 1 as const, from: here, to: ahead };
+    if (here !== undefined && ahead !== undefined && here - ahead >= 24)
+      return { x: x + 40, facing: -1 as const, from: ahead, to: here };
+  }
+  throw new Error("no stepped water floor");
+}
+
+function waterRise(s: Simulation) {
+  const room = s.activeRoom;
+  const fromY = 120;
+  for (let x = room.offset + 80; x < room.goalX - 80; x += 8) {
+    const here = floorTopBelow(s, x, fromY);
+    const ahead = floorTopBelow(s, x + 40, fromY);
+    if (
+      here !== undefined &&
+      ahead !== undefined &&
+      here - ahead >= 24 &&
+      here - ahead <= T.brickSize
+    )
+      return { x, facing: 1 as const, from: here, to: ahead };
+    if (
+      here !== undefined &&
+      ahead !== undefined &&
+      ahead - here >= 24 &&
+      ahead - here <= T.brickSize
+    )
+      return { x: x + 40, facing: -1 as const, from: ahead, to: here };
+  }
+  throw new Error("no climbable water step");
+}
+
+test("a stopped water shell does not keep leftover swim speed", () => {
+  const s = waterGame();
   const n = troopa(s);
-  assert.equal(s.roomFor(n).data.type, "water");
   parkNpcs(s, [n]);
-  const y = n.body.position.y;
+  const x = openWaterX(s);
+  const startY = 200;
+  Body.setPosition(n.body, { x, y: startY });
+  n.grounded = false;
   n.shell = "stopped";
   n.wakeLeft = T.shellWake;
   Body.setVelocity(n.body, { x: 0, y: 3 });
   tick(s, 0.2);
   assert.equal(n.shell, "stopped");
-  assert.equal(n.body.velocity.y, 0);
-  assert.ok(Math.abs(n.body.position.y - y) < 2);
+  assert.ok(
+    n.body.position.y > startY + 8,
+    `stopped water shell must sink, y ${n.body.position.y} start ${startY}`,
+  );
+});
+
+function waterGrant(s: Simulation, actor: Actor, kind: ItemKind) {
+  s.loadRoom("25");
+  give(s, actor, kind);
+}
+
+test("a mid-water moving shell sinks then follows a stepped floor", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const x = openWaterX(s);
+  const startY = 180;
+  const sinkFloor = floorTopBelow(s, x, startY);
+  assert.ok(sinkFloor !== undefined);
+  Body.setPosition(n.body, { x, y: startY });
+  n.grounded = false;
+  n.shell = "moving";
+  n.facing = 1;
+  n.wakeLeft = 0;
+  n.kickIgnore = 0;
+  Body.setVelocity(n.body, { x: T.shellSpeed, y: T.swimFallSpeed });
+  let hitFloor = false;
+  for (let i = 0; i < 180; i++) {
+    const y = n.body.position.y;
+    tick(s, dt);
+    if (!hitFloor) {
+      assert.ok(n.body.position.y >= y - 0.5);
+      const floorNow = floorTopBelow(s, n.body.position.x, startY);
+      if (floorNow !== undefined && n.body.bounds.max.y >= floorNow - 4)
+        hitFloor = true;
+    }
+    if (hitFloor) break;
+  }
+  assert.ok(hitFloor, "moving water shell never reached the floor");
+
+  const drop = waterDrop(s);
+  const standY = drop.from - n.body.height / 2;
+  Body.setPosition(n.body, { x: drop.x, y: standY });
+  n.grounded = true;
+  n.facing = drop.facing;
+  Body.setVelocity(n.body, {
+    x: drop.facing * T.shellSpeed,
+    y: 0,
+  });
+  const yOnFloor = n.body.position.y;
+  for (let i = 0; i < 40; i++) tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.ok(
+    (n.body.position.x - drop.x) * drop.facing > 8,
+    "moving water shell must keep traveling on the floor",
+  );
+  const laterFloor = floorTopBelow(
+    s,
+    n.body.position.x,
+    n.body.position.y - 32,
+  );
+  assert.ok(laterFloor !== undefined, "shell left the floor");
+  assert.ok(
+    Math.abs(n.body.bounds.max.y - laterFloor) < 16,
+    `shell feet ${n.body.bounds.max.y} floor ${laterFloor}`,
+  );
+  assert.ok(
+    n.body.position.y > yOnFloor + 8,
+    `shell must drop with the floor, y ${n.body.position.y} start ${yOnFloor}`,
+  );
+});
+
+test("a moving water shell climbs a stepped floor", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const rise = waterRise(s);
+  const standY = rise.from - n.body.height / 2;
+  Body.setPosition(n.body, { x: rise.x, y: standY });
+  n.grounded = true;
+  n.shell = "moving";
+  n.facing = rise.facing;
+  n.wakeLeft = 0;
+  n.kickIgnore = 0;
+  Body.setVelocity(n.body, { x: rise.facing * T.shellSpeed, y: 0 });
+  const yStart = n.body.position.y;
+  let climbed = false;
+  for (let i = 0; i < 120; i++) {
+    tick(s, dt);
+    if (
+      n.body.position.y < yStart - 8 &&
+      (n.body.position.x - rise.x) * rise.facing > 24 &&
+      Math.abs(n.body.bounds.max.y - rise.to) < 16
+    ) {
+      climbed = true;
+      break;
+    }
+  }
+  assert.equal(n.shell, "moving");
+  assert.ok(
+    climbed,
+    `shell did not climb, y ${n.body.position.y} start ${yStart} x ${n.body.position.x} from ${rise.x} to ${rise.to}`,
+  );
+});
+
+test("a water kick above the floor does not snap y in one step", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const x = openWaterX(s);
+  const startY = 200;
+  const floor = floorTopBelow(s, x, startY);
+  assert.ok(floor !== undefined && floor - startY > 40);
+  Body.setPosition(n.body, { x, y: startY });
+  n.grounded = false;
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  at(s, 4000);
+  waterStillMario(s);
+  Body.setPosition(s.mario.body, { x: x - 20, y: startY });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(n.shell, "moving");
+  assert.ok(n.alive);
+  assert.ok(n.body.position.y >= startY);
+  assert.ok(
+    n.body.position.y < startY + 20,
+    `kick snapped y ${n.body.position.y} from ${startY} toward floor ${floor}`,
+  );
+  assert.ok(n.body.bounds.max.y < floor! - 16);
+});
+
+test("a stopped water shell settles on the floor instead of hovering", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const x = openWaterX(s);
+  const startY = 200;
+  const floor = floorTopBelow(s, x, startY);
+  assert.ok(floor !== undefined);
+  Body.setPosition(n.body, { x, y: startY });
+  n.grounded = false;
+  n.shell = "stopped";
+  n.wakeLeft = T.shellWake;
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  for (let i = 0; i < 240; i++) tick(s, dt);
+  assert.equal(n.shell, "stopped");
+  assert.ok(
+    Math.abs(n.body.bounds.max.y - floor!) < 8,
+    `settled feet ${n.body.bounds.max.y} floor ${floor}`,
+  );
+  const restY = n.body.position.y;
+  tick(s, 0.2);
+  assert.ok(Math.abs(n.body.position.y - restY) < 2);
+  assert.equal(n.wakeLeft > 0, true);
+});
+
+test("water overlap from above, below, and the side hurts the player", () => {
+  for (const offset of [
+    { name: "above", x: 0, y: -18 },
+    { name: "below", x: 0, y: 18 },
+    { name: "side", x: 18, y: 0 },
+  ] as const) {
+    const s = waterGame();
+    parkNpcs(s, []);
+    const x = openWaterX(s);
+    at(s, x, 240);
+    waterStillMario(s);
+    Body.setPosition(s.mario.body, {
+      x: x + offset.x,
+      y: 240 + offset.y,
+    });
+    Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+    Body.setVelocity(s.player.body, { x: 0, y: 0 });
+    assert.equal(s.player.alive, true, offset.name);
+    tick(s, dt);
+    assert.equal(s.player.alive, false, offset.name);
+    assert.equal(s.mario.alive, true, offset.name);
+    assert.equal(s.marioStage, 1, offset.name);
+  }
+});
+
+test("a player on the seabed is hurt by Mario contact in water", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  const x = openWaterX(s, 400);
+  const floor = floorTopBelow(s, x, 120);
+  assert.ok(floor !== undefined);
+  at(s, x, floor! - s.player.body.height / 2);
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  tick(s, 0.1);
+  assert.equal(s.player.grounded, true);
+  waterStillMario(s);
+  Body.setPosition(s.mario.body, {
+    x,
+    y: s.player.body.position.y - 10,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.player.alive, false);
+});
+
+test("Mario swimming through water NPCs hurts at most one per 0.15s lock", () => {
+  const s = waterGame();
+  const pack = s.npcs.filter((n) => n.kind !== "fish").slice(0, 3);
+  parkNpcs(s, pack);
+  const x = openWaterX(s);
+  const y = 240;
+  for (const n of pack) {
+    Body.setPosition(n.body, { x, y });
+    Body.setVelocity(n.body, { x: 0, y: 0 });
+    n.idleWalking = false;
+    n.wait = 99;
+    n.swimPath = [{ x, y }];
+  }
+  at(s, 4000);
+  waterStillMario(s);
+  Body.setPosition(s.mario.body, { x, y });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  const hold = () => {
+    for (const n of pack.filter((npc) => npc.alive)) {
+      Body.setPosition(n.body, { x, y });
+      Body.setVelocity(n.body, { x: 0, y: 0 });
+    }
+    Body.setPosition(s.mario.body, { x, y });
+    Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  };
+  hold();
+  tick(s, dt);
+  assert.equal(pack.filter((n) => !n.alive).length, 1);
+  for (let i = 0; i < 8; i++) {
+    hold();
+    s.step(dt, emptyInput());
+  }
+  assert.equal(pack.filter((n) => !n.alive).length, 1);
+  for (let i = 0; i < 12; i++) {
+    hold();
+    s.step(dt, emptyInput());
+    if (pack.filter((n) => !n.alive).length >= 2) break;
+  }
+  assert.equal(pack.filter((n) => !n.alive).length, 2);
+});
+
+test("water contact does not hurt the player while marioStun is active", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  const x = openWaterX(s);
+  at(s, x, 240);
+  waterStillMario(s);
+  s.marioStun = T.marioStunSeconds;
+  Body.setPosition(s.mario.body, { x, y: 240 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.mario.alive, true);
+});
+
+test("water contact still hurts during Mario's observe delay", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  const x = openWaterX(s);
+  at(s, x, 240);
+  waterStillMario(s);
+  s.marioReaction = T.marioReaction;
+  Body.setPosition(s.mario.body, { x, y: 240 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(s.player.alive, false);
+});
+
+test("a falling Mario on a walking water Koopa does not create a shell", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const x = openWaterX(s);
+  Body.setPosition(n.body, { x, y: 260 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.shell = "none";
+  n.idleWalking = false;
+  n.wait = 99;
+  at(s, 4000);
+  waterStillMario(s);
+  Body.setPosition(s.mario.body, { x, y: 230 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 4 });
+  tick(s, dt);
+  assert.equal(n.shell, "none");
+  assert.equal(n.alive, false);
+});
+
+test("a water body hit does not create a shell", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const x = openWaterX(s);
+  Body.setPosition(n.body, { x, y: 240 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.shell = "none";
+  n.idleWalking = false;
+  n.wait = 99;
+  at(s, 4000);
+  waterStillMario(s);
+  Body.setPosition(s.mario.body, { x, y: 240 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(n.shell, "none");
+  assert.equal(n.alive, false);
+});
+
+test("star and 8x still defeat on water contact", () => {
+  const star = waterGame();
+  parkNpcs(star, []);
+  waterGrant(star, star.player, "star");
+  const x = openWaterX(star);
+  at(star, x, 240);
+  waterStillMario(star);
+  Body.setPosition(star.mario.body, { x, y: 240 });
+  tick(star, dt);
+  assert.equal(star.mario.alive, false);
+  assert.ok(star.player.alive);
+  assert.ok(star.marioKills >= 1);
+
+  const huge = waterGame();
+  parkNpcs(huge, []);
+  waterGrant(huge, huge.player, "mushroom8x");
+  const hx = openWaterX(huge);
+  at(huge, hx, 240);
+  waterStillMario(huge);
+  huge.setMarioStage(1);
+  Body.setPosition(huge.mario.body, { x: hx, y: 240 });
+  tick(huge, dt);
+  assert.ok(huge.player.alive);
+  assert.ok(huge.mario.alive);
+  assert.equal(huge.marioStun > 0, true);
+});
+
+test("a swimming player pulls away from a pursuing water Mario", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  assert.ok(T.marioSwimSpeed < T.walkSpeed);
+  const x = openWaterX(s);
+  at(s, x + 40, 240);
+  waterStillMario(s);
+  s.marioPause = 0;
+  s.marioChase = 6;
+  s.marioTarget = s.player.id;
+  s.marioRunning = true;
+  s.mario.areaId = s.player.areaId;
+  Body.setPosition(s.mario.body, { x, y: 240 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  const start = Math.abs(s.player.body.position.x - s.mario.body.position.x);
+  tick(s, 0.8, { right: true });
+  const later = Math.abs(s.player.body.position.x - s.mario.body.position.x);
+  assert.ok(
+    later > start + 8,
+    `player did not pull away: start ${start} later ${later}`,
+  );
+  assert.ok(s.player.alive);
+});
+
+test("a giant player cannot hurt Mario by water contact", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  waterGrant(s, s.player, "mushroom");
+  const x = openWaterX(s);
+  at(s, x, 222);
+  waterStillMario(s);
+  Body.setPosition(s.mario.body, { x, y: 248 });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  assert.ok(s.player.body.bounds.max.y < s.mario.body.bounds.max.y - 0.5);
+  tick(s, dt);
+  assert.equal(s.marioStage, 1);
+  assert.ok(s.mario.alive);
+  assert.equal(s.player.scale, 1);
+});
+
+test("a moving water shell still kills on overlap", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  const x = openWaterX(s);
+  Body.setPosition(n.body, { x: x + 10, y: 240 });
+  n.shell = "moving";
+  n.facing = -1;
+  n.kickIgnore = 0;
+  Body.setVelocity(n.body, { x: -T.shellSpeed, y: 0 });
+  at(s, x, 240);
+  tick(s, dt);
+  assert.equal(s.player.alive, false);
+  assert.ok(n.alive);
+  assert.equal(n.shell, "moving");
 });
 
 test("TIME counts down from the stage timer and kills at 0", () => {

@@ -77,6 +77,9 @@ export const TUNING = {
   swimImpulse: 4.5,
   swimGravity: 0.25,
   swimFallSpeed: 3,
+  // Water rooms only. Below walkSpeed so a swimming player can pull away.
+  marioSwimSpeed: 2,
+  npcSwimSpeed: 2,
   deathSequenceSeconds: 2.8,
   deathHopSpeed: 420,
   deathHopDelay: 0.15,

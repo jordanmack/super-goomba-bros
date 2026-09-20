@@ -914,6 +914,7 @@ export class Simulation {
   marioHuntItem = false;
   marioAim = 0;
   marioReaction = 0;
+  waterHitLock = 0;
   marioLook = 0;
   marioSeenAgo = 0;
   marioJumpWait = 0;
@@ -1064,6 +1065,7 @@ export class Simulation {
     this.marioHuntItem = false;
     this.marioAim =
       this.marioReaction =
+      this.waterHitLock =
       this.marioLook =
       this.marioSeenAgo =
       this.marioJumpWait =
@@ -2519,6 +2521,15 @@ export class Simulation {
     });
   }
 
+  private hurtFromWaterContact(a: Actor) {
+    if (a === this.player && this.marioStun !== 0) return;
+    if (this.waterHitLock > 0) return;
+    if (this.hurt(a)) {
+      this.waterHitLock = 0.15;
+      this.marioReaction = 0.15;
+    }
+  }
+
   private resolveMarioContact(playerBottom: number, playerFalling: boolean) {
     if (!this.marioActive) return;
     for (const a of [this.player, ...this.npcs]) {
@@ -2549,6 +2560,11 @@ export class Simulation {
         this.hurt(a);
         continue;
       }
+      if (this.inWater(a)) {
+        if (a.kind === "koopa" && a.shell !== "none") continue;
+        this.hurtFromWaterContact(a);
+        continue;
+      }
       if (a !== this.player) continue;
       if (!a.grounded && !this.mario.grounded) {
         const dy = a.body.bounds.max.y - this.mario.body.bounds.max.y;
@@ -2569,8 +2585,44 @@ export class Simulation {
     }
   }
 
+  private inWater(a: Actor) {
+    return this.roomFor(a).data.type === "water";
+  }
+
   private shellFallSpeed(n: Actor) {
-    return this.roomFor(n).data.type === "water" ? 0 : n.body.velocity.y;
+    return this.inWater(n) ? T.swimFallSpeed : n.body.velocity.y;
+  }
+
+  private applyWaterShellMotion(n: Actor, vx: number) {
+    const climb =
+      n.shell === "moving" ? this.waterShellClimb(n, Math.sign(vx) || n.facing) : 0;
+    if (climb > 0) {
+      Body.setPosition(n.body, {
+        x: n.body.position.x,
+        y: n.body.position.y - climb,
+      });
+      Body.setVelocity(n.body, { x: vx, y: 0 });
+      return;
+    }
+    Body.setVelocity(n.body, {
+      x: vx,
+      y: n.grounded ? 0 : T.swimFallSpeed,
+    });
+  }
+
+  private waterShellClimb(n: Actor, direction: number) {
+    const ahead = n.body.position.x + direction * (n.body.width / 2 + 3);
+    let climb = 0;
+    for (const s of this.solids) {
+      if (s.headOnly) continue;
+      if (ahead <= s.bounds.min.x || ahead >= s.bounds.max.x) continue;
+      if (n.body.bounds.min.y >= s.bounds.max.y) continue;
+      if (n.body.bounds.max.y <= s.bounds.min.y + 4) continue;
+      const rise = n.body.bounds.max.y - s.bounds.min.y;
+      if (rise > T.brickSize) return 0;
+      if (rise > climb) climb = rise;
+    }
+    return climb;
   }
 
   private enterShell(n: Actor, stomper?: Actor) {
@@ -2653,18 +2705,21 @@ export class Simulation {
   }
 
   private updateShelledKoopa(n: Actor, dt: number) {
-    const water = this.roomFor(n).data.type === "water";
+    const water = this.inWater(n);
     if (n.shell === "stopped") {
       n.wakeLeft = Math.max(0, n.wakeLeft - dt);
       this.move(n, 0);
-      if (water) Body.setVelocity(n.body, { x: 0, y: 0 });
+      if (water) this.applyWaterShellMotion(n, 0);
       if (n.wakeLeft === 0) this.wakeShell(n);
       return;
     }
-    if (this.shellBlocked(n, n.facing)) n.facing *= -1;
+    if (
+      this.shellBlocked(n, n.facing) &&
+      !(water && this.waterShellClimb(n, n.facing) > 0)
+    )
+      n.facing *= -1;
     this.move(n, n.facing * T.shellSpeed);
-    if (water)
-      Body.setVelocity(n.body, { x: n.facing * T.shellSpeed, y: 0 });
+    if (water) this.applyWaterShellMotion(n, n.facing * T.shellSpeed);
   }
 
   private shellHits(victim: Actor, shell?: Actor) {
@@ -2716,6 +2771,7 @@ export class Simulation {
       ) {
         const prevTop = prevNpcTops.get(n);
         const fallingOn =
+          !this.inWater(n) &&
           marioFalling &&
           prevTop !== undefined &&
           marioBottom <= prevTop &&
@@ -3104,6 +3160,7 @@ export class Simulation {
     }
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.audible = Math.max(0, this.audible - dt);
+    this.waterHitLock = Math.max(0, this.waterHitLock - dt);
     for (const shout of this.shouts) shout.left = Math.max(0, shout.left - dt);
     this.shouts = this.shouts.filter((shout) => shout.left > 0);
     for (const a of [this.player, ...this.npcs, this.mario]) {
@@ -3638,7 +3695,7 @@ export class Simulation {
       return;
     }
     const speed =
-      actor === this.mario ? (this.marioRunning ? 4.5 : 2.8) : actor.speed;
+      actor === this.mario ? T.marioSwimSpeed : T.npcSwimSpeed;
     const dx = next.x - p.x,
       dy = next.y - p.y;
     const length = Math.hypot(dx, dy),
@@ -4260,34 +4317,35 @@ export class Simulation {
       );
       if (desired) this.autoJump(this.mario, direction);
     }
-    for (const a of candidates) {
-      const p = a.body.position;
-      if (
-        a.kind === "koopa" &&
-        a.shell !== "none"
-      )
-        continue;
-      if (
-        this.mario.body.velocity.y > 0.2 &&
-        m.y < p.y - 8 &&
-        this.overlapActors(this.mario, a)
-      ) {
-        if (a === this.player && !a.grounded && !this.mario.grounded) continue;
-        if (this.isHuge(a) || this.isHuge(this.mario)) continue;
-        if (a.kind === "koopa") {
-          this.koopaStomp(a, this.mario);
-          Body.setVelocity(this.mario.body, {
-            x: this.mario.body.velocity.x,
-            y: -T.stompBounce,
-          });
-        } else if (!this.hurt(a)) continue;
-        this.marioTarget = null;
-        this.marioHuntItem = false;
-        this.marioChase = 0;
-        this.marioLook = 0;
-        this.marioReaction = 0.15;
+    if (!water)
+      for (const a of candidates) {
+        const p = a.body.position;
+        if (
+          a.kind === "koopa" &&
+          a.shell !== "none"
+        )
+          continue;
+        if (
+          this.mario.body.velocity.y > 0.2 &&
+          m.y < p.y - 8 &&
+          this.overlapActors(this.mario, a)
+        ) {
+          if (a === this.player && !a.grounded && !this.mario.grounded) continue;
+          if (this.isHuge(a) || this.isHuge(this.mario)) continue;
+          if (a.kind === "koopa") {
+            this.koopaStomp(a, this.mario);
+            Body.setVelocity(this.mario.body, {
+              x: this.mario.body.velocity.x,
+              y: -T.stompBounce,
+            });
+          } else if (!this.hurt(a)) continue;
+          this.marioTarget = null;
+          this.marioHuntItem = false;
+          this.marioChase = 0;
+          this.marioLook = 0;
+          this.marioReaction = 0.15;
+        }
       }
-    }
   }
 
   private canThrowFireball(owner: "player" | "mario") {

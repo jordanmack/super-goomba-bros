@@ -208,15 +208,18 @@ springs, back up for higher routes, and find lower paths through castle passages
 and down from a ceiling above an exit. A fleeing NPC that meets a non-goal
 enterable pipe may duck in and count as saved after the entry animation.
 Swimmers, including warned fish, route around coral and pipes toward the rescue
-door. NPCs keep moving and can collect items
+door. They do not route around actors. Mario swimming through a pack hurts at
+most one NPC per 0.15s reaction lock; that lock is the bound, not a water dash.
+NPCs keep moving and can collect items
 outside the camera view, including while the player is in another area.
 
 NPCs collect items by contact without seeking them or intentionally attacking
-Mario. A giant NPC still flees. Only the giant player can stomp Mario.
-When the player and Mario overlap in the air, compare feet
+Mario. A giant NPC still flees. On land, only the giant player can stomp Mario.
+When the player and Mario overlap in the air on land, compare feet
 (`body.bounds.max.y`). Smaller Y is higher. The higher feet deal the hit. Equal
 feet (within a tiny epsilon) are a side and not a stomp. A small player with
-higher feet does not hurt Mario and does not take that hit.
+higher feet does not hurt Mario and does not take that hit. Water rooms skip
+that stomp and feet comparison; see [Mario](#mario).
 A falling player that lands on an NPC does not bounce upward. That landing does
 not kill or warn the NPC. Side contact is not a bounce. After the landing
 contact ends, the NPC can be warned without leaving the warning radius.
@@ -350,8 +353,22 @@ He keeps his reaction delay, committed jump direction, Fire Mario fireballs
 while chasing, and the 6s chase timer.
 
 Mario can walk and run. He uses running to pursue crowds and evade star holders.
-Fire Mario fires aggressively while still trying to stomp targets. In water,
-he can swim and attack.
+Fire Mario fires aggressively while still trying to stomp targets.
+
+In water rooms (areas 00, 01, and 02) there is no stomp and no feet comparison.
+Mario overlap hurts the player and an NPC from any direction. That hurt reuses
+the existing 0.15s one-hit lock, so a swim-through hits at most one character
+per beat. Skip the player hurt while the player has a star, is 8x, is
+mid-shrink, or `marioStun` is active. The player cannot hurt Mario by contact
+at any size; 2x and 3x are a damage buffer, not a weapon. A water body hit
+never creates a new shell. A moving shell still kills on overlap. Fireballs,
+star, and 8x stay direction-free as on land. Mario's water speed is
+`marioSwimSpeed` in tuning, with no `marioRunning` boost, and is below the
+player's swim speed so a swimming player can pull away. NPCs use
+`npcSwimSpeed` so they are not faster than Mario. Shells in water sink until
+they meet the floor, then travel along it. A stopped shell rests on the floor.
+A kick above the floor does not teleport down. `shellWake` and `shellShake`
+are unchanged.
 
 His power stages are small, big, and fire. A player fireball or a giant-player
 stomp reduces one stage: fire to big, big to small, then small to defeated.
