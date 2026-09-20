@@ -7,6 +7,7 @@ import {
   decodeObjects,
   decodeEnemies,
   parseTables,
+  type ExtractedArea,
 } from "../scripts/extract-levels.mjs";
 import { WORLD_1_1 } from "./fixtures/world-1-1.ts";
 import {
@@ -22,11 +23,21 @@ const read = (name: string) =>
   JSON.parse(readFileSync(new URL(name, root), "utf8"));
 const { tables } = read("source-tables.json");
 const { areas, levels } = decodeAll(tables);
+function areaOf(id: string) {
+  const area = areas.find((a) => a.id === id);
+  assert.ok(area, id);
+  return area;
+}
+function levelOf(id: string) {
+  const level = levels.find((l) => l.id === id);
+  assert.ok(level, id);
+  return level;
+}
 
 test("World 1-1 decoded collision anchors match the existing reference map", () => {
   const area = decodeArea(tables, 0x25);
   assert.equal(area.width, WORLD_1_1.columns);
-  assert.equal(area.goal.column, WORLD_1_1.castleDoorX);
+  assert.equal(area.goal!.column, WORLD_1_1.castleDoorX);
   assert.deepEqual(
     area.pipes.map(({ column, height }) => ({ column, height })),
     WORLD_1_1.pipes,
@@ -112,12 +123,12 @@ test("spring tiles stay solid and 8x-unsmashable", () => {
   assert.equal(isSmashExemptTile(103), true);
   assert.equal(isSmashExemptTile(104), true);
   for (const id of ["24", "28", "2d", "31", "32", "33"]) {
-    const area = areas.find((a) => a.id === id);
+    const area = areaOf(id);
     const springs = area.objects.filter((o) => o.opcode === 33);
     assert.ok(springs.length >= 1, `${id}: has a spring`);
     for (const spring of springs) {
       assert.equal(area.tiles[spring.row][spring.column], 103);
-      assert.equal(area.tiles[spring.row + 1][spring.column], 104);
+      assert.equal(area.tiles[spring.row + 1]![spring.column], 104);
     }
   }
 });
@@ -153,7 +164,7 @@ test("all 32 campaign levels and 34 shared areas reproduce the bundled data", ()
       const target = areas.find((a) => a.id === destination.area);
       assert.ok(target, `${area.id} -> ${destination.area}`);
       assert.ok(
-        destination.page * 16 < target.width,
+        destination.page * 16 < target!.width,
         `${area.id}: destination page in bounds`,
       );
     }
@@ -167,9 +178,9 @@ test("all 32 campaign levels and 34 shared areas reproduce the bundled data", ()
   );
   for (const level of levels)
     for (const id of level.route) assert.ok(areas.some((a) => a.id === id));
-  assert.deepEqual(levels.find((l) => l.id === "1-2").route, ["29", "40"]);
-  assert.deepEqual(levels.find((l) => l.id === "2-2").route, ["29", "01"]);
-  assert.deepEqual(levels.find((l) => l.id === "4-2").route, ["29", "41"]);
+  assert.deepEqual(levelOf("1-2").route, ["29", "40"]);
+  assert.deepEqual(levelOf("2-2").route, ["29", "01"]);
+  assert.deepEqual(levelOf("4-2").route, ["29", "41"]);
 });
 
 test("extracted hidden blocks keep 19 coins, 8 one-ups, and two 1-up bricks", () => {
@@ -188,10 +199,10 @@ test("extracted hidden blocks keep 19 coins, 8 one-ups, and two 1-up bricks", ()
 });
 
 test("1-2 and 4-2 warp-zone pipes go to distinct first stages", () => {
-  const area40 = areas.find((a) => a.id === "40");
-  const dest = (column) =>
+  const area40 = areaOf("40");
+  const dest = (column: number) =>
     area40.pipes
-      .find((p) => p.column === column)
+      .find((p) => p.column === column)!
       .destinations.find((d) => d.world === 1);
   assert.deepEqual(dest(178), {
     world: 1,
@@ -211,45 +222,65 @@ test("1-2 and 4-2 warp-zone pipes go to distinct first stages", () => {
     page: 0,
     entrance: 0,
   });
-  const area41 = areas.find((a) => a.id === "41");
+  const area41 = areaOf("41");
   assert.deepEqual(
     area41.pipes
-      .find((p) => p.column === 214)
+      .find((p) => p.column === 214)!
       .destinations.find((d) => d.world === 4),
     { world: 4, area: "2a", page: 0, entrance: 0 },
   );
-  assert.equal(levels.find((l) => l.id === "4-1").main, "22");
-  assert.equal(levels.find((l) => l.id === "3-1").main, "24");
-  assert.equal(levels.find((l) => l.id === "2-1").main, "28");
-  assert.equal(levels.find((l) => l.id === "5-1").main, "2a");
+  assert.equal(levelOf("4-1").main, "22");
+  assert.equal(levelOf("3-1").main, "24");
+  assert.equal(levelOf("2-1").main, "28");
+  assert.equal(levelOf("5-1").main, "2a");
+  const area2f = areaOf("2f");
+  const vineDest = (column: number) =>
+    area2f.pipes
+      .find((p) => p.column === column)!
+      .destinations.find((d) => d.world === 4);
+  assert.deepEqual(vineDest(50), {
+    world: 4,
+    area: "30",
+    page: 0,
+    entrance: 0,
+  });
+  assert.deepEqual(vineDest(54), {
+    world: 4,
+    area: "33",
+    page: 0,
+    entrance: 0,
+  });
+  assert.deepEqual(vineDest(58), {
+    world: 4,
+    area: "2e",
+    page: 0,
+    entrance: 0,
+  });
+  assert.equal(levelOf("8-1").main, "30");
+  assert.equal(levelOf("7-1").main, "33");
+  assert.equal(levelOf("6-1").main, "2e");
 });
 
 test("pipe routes preserve world-specific underground return pages and 8-4 connections", () => {
-  const entry = areas
-    .find((a) => a.id === "25")
-    .pipes.find((p) => p.direction === "down");
+  const entry = areaOf("25").pipes.find((p) => p.direction === "down")!;
   assert.equal(entry.column, 57);
   assert.deepEqual(
     entry.destinations.find((d) => d.world === 1),
     { world: 1, area: "42", page: 0, entrance: 1 },
   );
-  const returnPipe = areas
-    .find((a) => a.id === "42")
-    .pipes.find((p) => p.column === 13);
-  assert.equal(returnPipe.destinations.find((d) => d.world === 1).area, "25");
-  assert.equal(returnPipe.destinations.find((d) => d.world === 1).page, 10);
-  const finalCastle = areas.find((a) => a.id === "65");
+  const returnPipe = areaOf("42").pipes.find((p) => p.column === 13)!;
+  assert.equal(returnPipe.destinations.find((d) => d.world === 1)!.area, "25");
+  assert.equal(returnPipe.destinations.find((d) => d.world === 1)!.page, 10);
+  const finalCastle = areaOf("65");
   assert.ok(
     finalCastle.pipes.some((p) =>
       p.destinations.some((d) => d.area === "02" && d.world === 8),
     ),
   );
   assert.ok(
-    areas
-      .find((a) => a.id === "02")
-      .pipes.some((p) =>
-        p.destinations.some((d) => d.area === "65" && d.world === 8),
-      ),
+    areaOf("02").pipes.some((p) =>
+      p.destinations.some((d) => d.area === "65" && d.world === 8),
+    ),
   );
 });
 
@@ -291,11 +322,9 @@ test("palette controls stay latched and every area has matching tile art", () =>
     ["01", "water"],
     ["60", "castle"],
   ])
-    assert.equal(areas.find((area) => area.id === id).palette, palette);
+    assert.equal(areaOf(id!).palette, palette);
   assert.ok(
-    areas
-      .find((area) => area.id === "2e")
-      .attributes.every((attribute) => attribute.color === 4),
+    areaOf("2e").attributes.every((attribute) => attribute.color === 4),
   );
   for (const area of areas) {
     assert.ok(atlas.themes.includes(area.palette));
@@ -315,7 +344,9 @@ test("palette controls stay latched and every area has matching tile art", () =>
   assert.doesNotMatch(extract, /colors\.size < 2/);
   for (const level of ["1-2", "2-1", "2-2", "3-1", "5-2", "6-2"])
     assert.equal(
-      atlas.regions.find((region) => region.level === level).offsetY,
+      atlas.regions.find(
+        (region: { level: string; offsetY: number }) => region.level === level,
+      ).offsetY,
       240,
       `${level}: main map strip`,
     );
@@ -346,29 +377,29 @@ test("end-of-stage castles stay 5-wide and do not fill terrain to the right edge
     }
     assert.equal(area.tiles[13][after], 84, `${area.id}: ground past castle`);
   }
-  const area26 = areas.find((area) => area.id === "26");
-  const area25 = areas.find((area) => area.id === "25");
+  const area26 = areaOf("26");
+  const area25 = areaOf("25");
   const castle26 = area26.objects
     .filter((o) => o.opcode === 18 && o.column > 16)
-    .at(-1);
+    .at(-1)!;
   const castle25 = area25.objects
     .filter((o) => o.opcode === 18 && o.column > 16)
-    .at(-1);
-  const slice = (area, castle, y) =>
-    area.tiles[y].slice(castle.column, castle.column + 5);
+    .at(-1)!;
+  const slice = (area: ExtractedArea, castle: { column: number }, y: number) =>
+    area.tiles[y]!.slice(castle.column, castle.column + 5);
   // 1-3 keeps a 5-wide body with both side walls, like 1-1's short castle.
   assert.deepEqual(slice(area26, castle26, 4), [69, 73, 73, 73, 69]);
   assert.deepEqual(slice(area26, castle26, 5), [71, 71, 74, 71, 71]);
   assert.deepEqual(slice(area25, castle25, 10), [69, 73, 73, 73, 69]);
   assert.deepEqual(slice(area25, castle25, 11), [71, 71, 74, 71, 71]);
   // Foreground-2 wall still draws in the two columns before 1-3's castle.
-  assert.equal(area26.tiles[7][castle26.column - 2], 69);
-  assert.equal(area26.tiles[8][castle26.column - 2], 71);
-  assert.equal(area26.tiles[7][castle26.column], 73);
+  assert.equal(area26.tiles[7]![castle26.column - 2], 69);
+  assert.equal(area26.tiles[8]![castle26.column - 2], 71);
+  assert.equal(area26.tiles[7]![castle26.column], 73);
   // Start-of-stage fg=2 (2-1) is not clipped by the end-castle bound.
-  const area28 = areas.find((area) => area.id === "28");
-  assert.equal(area28.tiles[7][5], 69);
-  assert.equal(area28.tiles[8][5], 71);
+  const area28 = areaOf("28");
+  assert.equal(area28.tiles[7]![5], 69);
+  assert.equal(area28.tiles[8]![5], 71);
 });
 
 test("castle-room goals overlay the inverted door rather than punching a hole", () => {
@@ -382,6 +413,6 @@ test("castle-room goals overlay the inverted door rather than punching a hole", 
       false,
       `${area.id}: rescue door is not a tilemap hole of 74/75`,
     );
-    assert.equal(area.goal.row, 12, `${area.id}: door sits on the same two-tile row`);
+    assert.equal(area.goal!.row, 12, `${area.id}: door sits on the same two-tile row`);
   }
 });

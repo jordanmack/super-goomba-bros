@@ -63,6 +63,9 @@ const TYPES = ["water", "overworld", "underground", "castle"];
 // WarpZoneObject ($34). ScrollLockObject_Warp sets WarpZoneControl; this enemy
 // marks the pipes that HandlePipeEntry maps through WarpZoneNumbers.
 const WARP_ZONE_OBJECT = 52;
+// ScrollLockObject_Warp. Sets WarpZoneControl; 4-2's vine bonus has this
+// without a type-52 enemy, so those down pipes still need WarpZoneNumbers.
+const SCROLL_LOCK_WARP = 39;
 const WARP_ZONE_WORLDS = { 4: [4, 3, 2], 5: [5], 6: [8, 7, 6] };
 
 function firstStageArea(tables, world) {
@@ -78,6 +81,20 @@ function worldsUsingArea(tables, id) {
     if (pointers.some((pointer) => areaId(pointer) === id)) worlds.push(world);
   }
   return worlds;
+}
+
+function worldsReachingArea(tables, id) {
+  const worlds = worldsUsingArea(tables, id);
+  if (worlds.length) return worlds;
+  const found = [];
+  for (const [label, bytes] of Object.entries(tables)) {
+    if (!/^E_(Ground|Water|Underground|Castle)Area\d+$/.test(label)) continue;
+    const { destinations } = decodeEnemies(bytes);
+    for (const d of destinations) {
+      if (d.area === id && !found.includes(d.world)) found.push(d.world);
+    }
+  }
+  return found.length ? found : [1];
 }
 
 export function decodeObjects(bytes) {
@@ -545,15 +562,18 @@ export function decodeArea(tables, pointer) {
     }));
   // Warp pipes share the last area-pointer latch unless we override them.
   // HandlePipeEntry uses WarpZoneNumbers, not that latch, so each warp mouth
-  // gets its own world-1 start (1-2: 4/3/2, 4-2: 5). Vine warps are #106.
+  // gets its own world-1 start (1-2: 4/3/2, 4-2 underground: 5, 4-2 vine: 8/7/6).
   const warpColumn = enemies
     .filter((enemy) => enemy.type === WARP_ZONE_OBJECT)
     .reduce((min, enemy) => Math.min(min, enemy.column), Infinity);
-  if (Number.isFinite(warpColumn)) {
+  const warpLock = objects.some((o) => o.opcode === SCROLL_LOCK_WARP);
+  if (Number.isFinite(warpColumn) || warpLock) {
     const warpPipes = pipes.filter(
-      (pipe) => pipe.direction === "down" && pipe.column >= warpColumn,
+      (pipe) =>
+        pipe.direction === "down" &&
+        (!Number.isFinite(warpColumn) || pipe.column >= warpColumn),
     );
-    const sourceWorlds = worldsUsingArea(tables, id);
+    const sourceWorlds = worldsReachingArea(tables, id);
     for (const sourceWorld of sourceWorlds.length ? sourceWorlds : [1]) {
       const control = sourceWorld === 1 ? 4 : type === 1 ? 6 : 5;
       const warpWorlds = WARP_ZONE_WORLDS[control] ?? [];

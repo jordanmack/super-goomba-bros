@@ -4,6 +4,7 @@
 import { Simulation, emptyInput } from "../../src/game/simulation.ts";
 import { Body } from "../../src/game/physics.ts";
 import { TUNING as T } from "../../src/game/config.ts";
+import { CAMPAIGN } from "../../src/game/levels.ts";
 import { physics } from "./arcade.ts";
 import type { Actor, MarioGoal } from "../../src/game/simulation.ts";
 
@@ -91,6 +92,29 @@ export const HUNT_STAGES: StageSetup[] = [
       },
     ],
   },
+  {
+    id: "1-3",
+    scenes: [
+      // 1-3 has one question block on a short island. Super Mario only takes
+      // a block within 160px, so this arena sits on that island. Item+question
+      // pairing needs a spare block, so this scene checks the question rung
+      // alone. Hunt rungs use the long floor at the end of the stage.
+      {
+        name: "blocks",
+        arena: 1920,
+        playerOffset: 240,
+        questionX: 59 * 32 + 16,
+        rungs: [{ live: ["question"], expect: "question" }],
+      },
+      {
+        name: "hunt",
+        arena: 220,
+        playerOffset: 280,
+        crowdSize: 3,
+        rungs: HUNT_RUNGS,
+      },
+    ],
+  },
 ];
 
 export type RungResult = {
@@ -98,6 +122,10 @@ export type RungResult = {
   rung: Rung;
   goal: MarioGoal;
   targetX: number | null;
+  /** `marioTarget` after the hunt pick; null when the lock is a block or flee. */
+  targetId: number | null;
+  huntItem: boolean;
+  brickId: number | null;
   marioX: number;
   crowd: number;
   /** Mario's horizontal velocity once the reaction delay has cleared. */
@@ -105,6 +133,9 @@ export type RungResult = {
   /** Sign of the direction the pursuit actually moved him. */
   pursuitToward: number;
   placed: Record<string, number>;
+  /** Stimulus name to the locked actor, item, or block id. */
+  placedIds: Record<string, number>;
+  crowdIds: number[];
 };
 
 export type StageResult = { id: string; seed: number; rungs: RungResult[] };
@@ -136,11 +167,16 @@ function openStage(id: string, seed: number) {
   const s = new Simulation(seeded(seed), physics());
   s.reset();
   s.marioReturn = 1e6;
-  if (id !== "1-1") {
+  while (s.level.id !== id) {
+    const prev = s.level.id;
     s.nextLevel();
     s.reset("playing");
+    s.marioReturn = 1e6;
+    if (s.level.id === prev)
+      throw new Error(`expected ${id}, stopped at ${s.level.id}`);
   }
-  if (s.level.id !== id) throw new Error(`expected ${id}, got ${s.level.id}`);
+  if (!CAMPAIGN.some((level) => level.id === id))
+    throw new Error(`unknown stage ${id}`);
   return s;
 }
 
@@ -194,6 +230,8 @@ function stageArena(
   const s = openStage(stage.id, seed);
   const room = s.activeRoom;
   const placed: Record<string, number> = {};
+  const placedIds: Record<string, number> = {};
+  const crowdIds: number[] = [];
 
   // Park every NPC out of the arena so only staged stimuli are in play.
   for (const n of s.npcs) {
@@ -223,6 +261,7 @@ function stageArena(
     if (!block)
       throw new Error(`${stage.id}: no unused question block at ${scene.questionX}`);
     placed.question = block.x;
+    placedIds.question = block.id;
   }
 
   if (live.has("item")) {
@@ -246,6 +285,7 @@ function stageArena(
     Body.setPosition(item.body, { x: scene.arena - 170, y: T.groundY - 16 });
     Body.setVelocity(item.body, { x: 0, y: 0 });
     placed.item = item.body.position.x;
+    placedIds.item = item.id;
   }
 
   // Retire every other visible block, so a rung that does not list "question"
@@ -278,6 +318,7 @@ function stageArena(
       // `runningCrowd` requires |vx| > 1, so give the flight a velocity here
       // instead of relying on NPC movement running before updateMario.
       Body.setVelocity(n.body, { x: n.speed, y: 0 });
+      crowdIds.push(n.id);
     });
     placed.crowd = scene.arena + 200;
   }
@@ -286,6 +327,7 @@ function stageArena(
     const n = take("stomp");
     stand(s, n, scene.arena + 70, "stomp");
     placed.stomp = n.body.position.x;
+    placedIds.stomp = n.id;
   }
 
   let starHolder: Actor | undefined;
@@ -294,9 +336,10 @@ function stageArena(
     stand(s, starHolder, scene.arena + 150, "star");
     starHolder.starLeft = T.starSeconds;
     placed.star = starHolder.body.position.x;
+    placedIds.star = starHolder.id;
   }
 
-  return { s, placed, starHolder };
+  return { s, placed, placedIds, crowdIds, starHolder };
 }
 
 /** One rung: stage the stimuli, let the shipped hunt pick, then read it back. */
@@ -306,7 +349,12 @@ export function runRung(
   rung: Rung,
   seed: number,
 ): RungResult {
-  const { s, placed } = stageArena(stage, scene, new Set(rung.live), seed);
+  const { s, placed, placedIds, crowdIds } = stageArena(
+    stage,
+    scene,
+    new Set(rung.live),
+    seed,
+  );
 
   // Force one observation now, then read back the goal the shipped code chose.
   s.marioLook = 0;
@@ -317,6 +365,9 @@ export function runRung(
   const marioX = s.mario.body.position.x;
   const crowd = s.marioCrowd;
   const targetX = targetPositionOf(s);
+  const targetId = s.marioTarget;
+  const huntItem = s.marioHuntItem;
+  const brickId = s.brickTarget;
 
   // Clear the reaction delay so the pursuit itself becomes observable.
   s.marioReaction = 0;
@@ -333,11 +384,16 @@ export function runRung(
     rung,
     goal,
     targetX,
+    targetId,
+    huntItem,
+    brickId,
     marioX,
     crowd,
     pursuitVx,
     pursuitToward: Math.sign(s.mario.body.position.x - before),
     placed,
+    placedIds,
+    crowdIds,
   };
 }
 
@@ -442,7 +498,7 @@ export function formatStage(result: StageResult) {
 }
 
 // Usage: mario-hunt-playtest.ts [stage id ...] [seed ...], for example
-// `... mario-hunt-playtest.ts 1-2 1 2 3`. Defaults to both stages, seeds 1-3.
+// `... mario-hunt-playtest.ts 1-2 1 2 3`. Defaults to 1-1, 1-2, and 1-3.
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const wanted = args.filter((a) => !Number.isFinite(Number(a)));

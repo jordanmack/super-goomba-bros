@@ -168,7 +168,7 @@ test("extract axe fallback matches the sprite groundY cell", () => {
 
 test("extract axe solids match isSolidTile", () => {
   for (let id = 0; id <= 255; id++)
-    assert.equal(isSolidMetatile(id), isSolidTile(id), id);
+    assert.equal(isSolidMetatile(id), isSolidTile(id), String(id));
 });
 
 test("a firebar spawned from castle area data kills the player", () => {

@@ -15,9 +15,9 @@ stay live, so a cannon stage route has to dodge real bullets. The campaign
 tests check NPC navigation to rescue doors. Other simulation tests cover active
 Mario, warnings, powers, death, scoring, and a complete win.
 
-`mario-hunt.test.ts` playtests the hunt order on World 1-1 and a crowded World
-1-2 through `tests/support/mario-hunt-playtest.ts`. Run that harness directly
-for a readable capture, optionally naming stages and seeds:
+`mario-hunt.test.ts` playtests the hunt order on World 1-1, a crowded World
+1-2, and World 1-3 through `tests/support/mario-hunt-playtest.ts`. Run that
+harness directly for a readable capture, optionally naming stages and seeds:
 `ionice -c3 nice -n19 node --experimental-strip-types tests/support/mario-hunt-playtest.ts 1-2 1 2 3`.
 
 To find replacement routes after a deliberate physics or layout change, run

@@ -1146,7 +1146,11 @@ test("NPCs pick up falling items by contact without being warned or seeking them
     if (kind === "flower") assert.equal(n.flower, true);
     if (kind === "mushroom") {
       assert.equal(n.scale, T.mushroomScale);
-      assert.equal(n.body.native!.allowRotation, false);
+      assert.equal(
+        (n.body.native as { allowRotation?: boolean } | undefined)
+          ?.allowRotation,
+        false,
+      );
       assert.ok(Math.abs(n.body.bounds.max.x - n.body.bounds.min.x) >= 48);
     }
   }
@@ -4501,6 +4505,45 @@ test("1-2 warp pipes skip to worlds 4, 3, and 2", () => {
   }
 });
 
+test("4-2 vine warp pipes skip to worlds 8, 7, and 6", () => {
+  const cases: [number, string, string][] = [
+    [50, "8-1", "30"],
+    [54, "7-1", "33"],
+    [58, "6-1", "2e"],
+  ];
+  for (const [column, id, area] of cases) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
+    s.reset();
+    s.marioReturn = 1e6;
+    finishPipeIntro(s);
+    tick(s, T.pipeCooldown + dt);
+    s.player.flower = true;
+    const score = s.score;
+    s.coins = 7;
+    const lives = s.lives;
+    const room = s.loadRoom("2f");
+    s.player.areaId = "2f";
+    const pipe = room.data.pipes.find((p) => p.column === column)!;
+    at(
+      s,
+      room.offset + (pipe.column + pipe.width / 2) * 32,
+      MAP_TOP + pipe.row * 32 - 14,
+    );
+    s.step(dt, { ...emptyInput(), down: true });
+    let frames = 1;
+    while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
+    assert.equal(s.level.id, id);
+    assert.equal(s.activeRoom.data.id, area);
+    assert.equal(s.mode, "intro");
+    assert.equal(s.player.flower, true);
+    assert.equal(s.score, score);
+    assert.equal(s.coins, 7);
+    assert.equal(s.lives, lives);
+    s.physics.clear();
+  }
+});
+
 test("4-2 warp pipe starts world 5", () => {
   const s = new Simulation(() => 0.5);
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
@@ -4602,7 +4645,7 @@ test("1-2 after nextLevel from 1-1 goes through 29 without applying input", () =
       jump: true,
       down: true,
     });
-    if (s.player.areaId === "40") {
+    if (s.player.areaId !== "29") {
       reachedMain = true;
       assert.equal(s.elapsed, 0);
       assert.equal(s.marioActive, false);
@@ -4824,7 +4867,8 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
     spriteW,
     spriteH,
   );
-  while (down.player.pipeTravel) down.step(dt, emptyInput());
+  for (let frames = 0; down.player.pipeTravel && frames < 360; frames++)
+    down.step(dt, emptyInput());
   tick(down, T.pipeCooldown + dt);
   const dest = down.activeRoom.data.pipes[0];
   at(
@@ -4833,10 +4877,11 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
     MAP_TOP + dest.row * 32 + 32,
   );
   down.step(dt, { ...emptyInput(), right: true });
-  assert.equal(down.player.pipeTravel?.phase, "enter");
-  assert.equal(down.player.pipeTravel?.dir, "right");
+  const side = down.player.pipeTravel;
+  assert.equal(side?.phase, "enter");
+  assert.equal(side?.dir, "right");
   assertLipClip(
-    down.player.pipeTravel!.clip!,
+    side!.clip!,
     down.activeRoom,
     dest,
     "right",
@@ -4845,9 +4890,10 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
   );
   waitPipePhase(down, down.player, "exit");
   const emerge = down.activeRoom.data.pipes.find((p) => p.column === 163)!;
-  assert.equal(down.player.pipeTravel?.dir, "up");
+  const rise = down.player.pipeTravel;
+  assert.equal(rise?.dir, "up");
   assertLipClip(
-    down.player.pipeTravel!.clip!,
+    rise!.clip!,
     down.activeRoom,
     emerge,
     "up",
@@ -6209,7 +6255,7 @@ test("8x volume-hold keeps a body on standable floors above groundY", () => {
     { id: "1-2", area: "40" },
   ] as const;
   for (const c of cases) {
-    const s = new Simulation(() => 0.5, physics());
+    const s = new Simulation(() => 0.5);
     s.levelIndex = CAMPAIGN.findIndex((level) => level.id === c.id);
     s.reset();
     s.marioReturn = 1e6;
@@ -6257,7 +6303,7 @@ test("8x volume-hold keeps a body on standable floors above groundY", () => {
 });
 
 test("8x does not snag on a distant floor height inside a tall column", () => {
-  const s = new Simulation(() => 0.5, physics());
+  const s = new Simulation(() => 0.5);
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
   s.reset();
   s.marioReturn = 1e6;
@@ -6297,7 +6343,7 @@ test("8x does not snag on a distant floor height inside a tall column", () => {
 });
 
 test("8x does not snag on a nearby ledge it does not overlap", () => {
-  const s = new Simulation(() => 0.5, physics());
+  const s = new Simulation(() => 0.5);
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
   s.reset();
   s.marioReturn = 1e6;
@@ -7123,7 +7169,7 @@ function campaignMergedPair(s: Simulation) {
 }
 
 test("8x campaign floor stays after smash rebuilds terrainRects", () => {
-  const s = new Simulation(() => 0.5, physics());
+  const s = new Simulation(() => 0.5);
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
   s.reset();
   s.marioReturn = 1e6;
@@ -7165,7 +7211,7 @@ test("8x campaign floor stays after smash rebuilds terrainRects", () => {
 });
 
 test("8x stays on campaign merged wall+floor after floor-AABB overlap ends", () => {
-  const s = new Simulation(() => 0.5, physics());
+  const s = new Simulation(() => 0.5);
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
   s.reset();
   s.marioReturn = 1e6;
@@ -9153,11 +9199,13 @@ test("leftover TIME tally drains a 400-unit stage in a few seconds at +50 each",
     s.events.filter((event) => event === "tally").length,
     400,
   );
+  const finishElapsed = (s as unknown as { finishElapsed: number })
+    .finishElapsed;
   assert.ok(
-    s.finishElapsed < 8,
-    `400-unit drain took ${s.finishElapsed}s, expected a few seconds not ~27`,
+    finishElapsed < 8,
+    `400-unit drain took ${finishElapsed}s, expected a few seconds not ~27`,
   );
-  assert.ok(s.finishElapsed > 400 / 60 - dt);
+  assert.ok(finishElapsed > 400 / 60 - dt);
 });
 
 test("leftover TIME and castle lines add to SCORE then auto-continue", () => {

@@ -2065,7 +2065,7 @@ test("original 1-1 map art and collision anchors agree", async ({ page }) => {
       noBackdrop: !textures.world,
       tiles: tiles.length,
       native: tiles.every(
-        (k) =>
+        (k: string) =>
           atlas.frames[k].cutWidth === 16 && atlas.frames[k].cutHeight === 16,
       ),
       instances: game.renderer.play.tiles.layer.data

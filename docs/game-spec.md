@@ -50,10 +50,11 @@ settings unless a rule below explicitly fixes their relationship.
   main. The script is not a death. Death with lives left, Pause Restart, and
   other retries of that stage skip the strip and spawn at the start of main.
 - Warp-zone pipes skip to that world's first stage, as in SMB1: 1-2 columns
-  178/182/186 go to worlds 4/3/2; 4-2 column 214 starts world 5. Power-ups,
-  score, coins, and lives persist across a warp. Preserve source warp/vine
-  commands in the data. Climbing a vine goes to that vine's named destination
-  and does not skip worlds. See [Vines](#vines).
+  178/182/186 go to worlds 4/3/2; 4-2 column 214 starts world 5; the 4-2 vine
+  bonus `2f` columns 50/54/58 go to worlds 8/7/6. Extra mouths with no world
+  stay inert. Power-ups, score, coins, and lives persist across a warp. Preserve
+  source warp/vine commands in the data. Climbing a vine goes to that vine's
+  named destination and does not skip worlds. See [Vines](#vines).
 - No logs or hiding spots are added. Bushes are scenery.
 - The goal is the castle doorway. Castle interiors use a visible inverted-white
   rescue doorway after the original bridge. On stages with a flagpole, the first of the player or
@@ -346,7 +347,7 @@ After he flees a visible star holder, he picks the next goal from high to low:
    star, only when 1 and 2 are not live. He detours about two seconds, then
    reassesses. He does not chase coins or 1-up mushrooms.
 4. A visible unused question block. Stronger when he is small
-   (`marioStage === 0`). Never above 1-3.
+   (`marioStage === 0`).
 5. The existing chase timer and patrol.
 
 He keeps his reaction delay, committed jump direction, Fire Mario fireballs
@@ -586,12 +587,13 @@ warnings, Mario behavior, and browser controls. Test fixtures are never bundled.
 
 Player route replays use ordinary controls, with Mario disabled and no random
 power-up required. Separate tests cover rescues and active Mario. The Mario
-hunt order is also playtested on World 1-1 and a crowded World 1-2: each run
-drives the real simulation and adds one higher-priority stimulus at a time,
-then reads back `marioGoal`. Because a non-small Mario only takes a question
-block within 160px, each stage splits that ladder across two arenas. These
-checks do not prove that every random attempt wins, or replace physical phone
-testing.
+hunt order is also playtested on World 1-1, a crowded World 1-2, and World 1-3:
+each run drives the real simulation and adds one higher-priority stimulus at a
+time, then reads back `marioGoal` and the locked actor, item, or block identity.
+Because a non-small Mario only takes a question block within 160px, each stage
+splits that ladder across two arenas. 1-3 has one question block, so its block
+arena checks that rung alone. These checks do not prove that every random
+attempt wins, or replace physical phone testing.
 
 Run the commands in [README](../README.md). Builds must remain one standalone
 HTML file, with no external runtime assets. Report failed or skipped checks and

@@ -6,7 +6,39 @@ import {
   runStage,
   stageFleeRelease,
   stageShoutRetarget,
+  type RungResult,
 } from "./support/mario-hunt-playtest.ts";
+
+function assertLockedIdentity(r: RungResult, label: string) {
+  switch (r.rung.expect) {
+    case "question":
+      assert.equal(r.brickId, r.placedIds.question, `${label}: wrong block`);
+      assert.equal(r.targetId, null, `${label}: locked an actor`);
+      assert.equal(r.huntItem, false, `${label}: hunting an item`);
+      break;
+    case "item":
+      assert.equal(r.targetId, r.placedIds.item, `${label}: wrong item`);
+      assert.equal(r.huntItem, true, `${label}: not hunting the item`);
+      break;
+    case "stomp":
+      assert.equal(r.targetId, r.placedIds.stomp, `${label}: wrong actor`);
+      assert.equal(r.huntItem, false, `${label}: hunting an item`);
+      break;
+    case "crowd":
+      assert.ok(
+        r.targetId !== null && r.crowdIds.includes(r.targetId),
+        `${label}: target ${r.targetId} is not a staged crowd actor`,
+      );
+      assert.equal(r.huntItem, false, `${label}: hunting an item`);
+      break;
+    case "flee":
+      assert.equal(r.targetId, null, `${label}: kept a hunt target`);
+      assert.equal(r.brickId, null, `${label}: kept a block lock`);
+      break;
+    default:
+      assert.fail(`${label}: unexpected goal ${r.rung.expect}`);
+  }
+}
 
 // Issue #138: the #120 hunt order is verified as a playtest on real stages,
 // not only as isolated unit setups. Each rung adds one higher-priority
@@ -18,7 +50,8 @@ for (const stage of HUNT_STAGES)
   test(`Mario hunt order holds on ${stage.id} across repeated runs`, () => {
     for (const seed of SEEDS) {
       const result = runStage(stage, seed);
-      assert.ok(result.rungs.length >= 6, `${stage.id}: too few rungs`);
+      const expected = stage.scenes.reduce((n, sc) => n + sc.rungs.length, 0);
+      assert.equal(result.rungs.length, expected, `${stage.id}: missing rungs`);
       for (const r of result.rungs) {
         assert.equal(
           r.goal,
@@ -31,9 +64,26 @@ for (const stage of HUNT_STAGES)
           r.pursuitToward !== 0,
           `${stage.id} seed ${seed} ${r.rung.expect}: Mario never moved`,
         );
+        assertLockedIdentity(
+          r,
+          `${stage.id} seed ${seed} scene ${r.scene} ${r.rung.expect}`,
+        );
       }
     }
   });
+
+test("Mario hunt coverage includes 1-3 and its question block", () => {
+  assert.ok(
+    HUNT_STAGES.some((s) => s.id === "1-3"),
+    "1-3 is not in the hunt harness",
+  );
+  const stage = HUNT_STAGES.find((s) => s.id === "1-3")!;
+  const blocks = stage.scenes.find((sc) => sc.name === "blocks")!;
+  assert.ok(blocks.questionX, "1-3 has no question-block arena");
+  const r = runRung(stage, blocks, blocks.rungs[0]!, 1);
+  assert.equal(r.goal, "question");
+  assertLockedIdentity(r, "1-3 question");
+});
 
 test("the 1-2 playtest really is the crowded stage", () => {
   const crowdOf = (id: string) => {
@@ -70,6 +120,7 @@ test("the hunt ladder pursues each chosen goal, and flees the star holder", () =
           Math.sign(r.targetX! - r.marioX),
           `${label}: moved away from its target at ${r.targetX}`,
         );
+        assertLockedIdentity(r, label);
       }
 });
 
