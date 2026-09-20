@@ -4396,6 +4396,16 @@ export class Simulation {
         }
       }
       if (f.age >= 5) continue;
+      if (
+        this.bulletBills.some(
+          (b) =>
+            Math.abs(f.x - b.x) < radius + T.bulletSize / 2 &&
+            Math.abs(f.y - b.y) < radius + T.bulletSize / 2,
+        )
+      ) {
+        f.age = 6;
+        continue;
+      }
       if (f.owner === "player") {
         if (
           this.marioActive &&
@@ -4558,6 +4568,7 @@ export class Simulation {
           x: this.player.body.velocity.x,
           y: -T.stompBounce,
         });
+        this.events.push("splat");
         hit = true;
       } else if (this.overlapBill(this.player, b)) {
         this.strikeBill(this.player, false);
@@ -4570,6 +4581,7 @@ export class Simulation {
           x: this.mario.body.velocity.x,
           y: -T.stompBounce,
         });
+        this.events.push("splat");
         hit = true;
       } else if (this.marioActive && this.overlapBill(this.mario, b)) {
         this.strikeBill(this.mario, false);

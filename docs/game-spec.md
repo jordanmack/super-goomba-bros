@@ -533,7 +533,8 @@ not hard-code per stage. Timing follows SMB1. A cannon does not fire when the
 player is too close or in the same column. Bullet Bills travel horizontally at
 the original speed, ignore gravity, and are removed when they leave the area.
 Contact uses the same lethal terms as other hits for the player, NPCs, and
-Mario. A bill can be stomped. A star makes the player immune. An NPC killed by
+Mario. A bill can be stomped. Fireballs bounce or vanish on contact and do not
+harm a bill. A star makes the player immune. An NPC killed by
 a bill counts in DIED. Escorted NPCs jump rather than walk a cannon firing
 lane as a matter of course. They may still be hit.
 

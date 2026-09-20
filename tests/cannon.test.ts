@@ -97,6 +97,44 @@ test("a grounded side hit from a Bullet Bill kills; a falling stomp does not", (
   assert.equal(stomp.bulletBills.length, 0);
 });
 
+test("a falling stomp on a Bullet Bill pushes a stomp or kick event", () => {
+  const s = game();
+  Body.setPosition(s.player.body, { x: 200, y: 270 });
+  Body.setVelocity(s.player.body, { x: 0, y: 8 });
+  s.player.grounded = false;
+  s.spawnBulletBill(200, 300, 0);
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.bulletBills.length, 0);
+  assert.ok(
+    s.events.includes("splat") || s.events.includes("kick"),
+    "stomp or kick audio",
+  );
+});
+
+test("a fireball overlap leaves the Bullet Bill alive and does not treat the fireball as a miss", () => {
+  const s = game();
+  at(s, 100, 415);
+  s.spawnBulletBill(200, 300, 0);
+  const bill = s.bulletBills[0]!;
+  s.fireballs.push({
+    id: 1,
+    x: bill.x,
+    y: bill.y,
+    vx: 4,
+    age: 0,
+    owner: "player",
+  });
+  tick(s, dt);
+  assert.equal(s.bulletBills.length, 1);
+  assert.equal(s.bulletBills[0]!.id, bill.id);
+  const fireball = s.fireballs[0];
+  assert.ok(
+    !fireball || (fireball.vy ?? 0) < 0 || fireball.age >= 5,
+    "fireball bounced or was consumed, not a miss",
+  );
+});
+
 test("a cannon withholds fire when the player is too close or in line", () => {
   const s = stage("2a");
   const room = s.activeRoom;
