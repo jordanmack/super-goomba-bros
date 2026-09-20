@@ -40,6 +40,14 @@ function setPx(
   data[i + 3] = a;
 }
 
+function between(source: string, start: string, end: string) {
+  const from = source.indexOf(start);
+  const to = source.indexOf(end);
+  if (from < 0) throw new Error(`missing slice anchor: ${start}`);
+  if (to < 0) throw new Error(`missing slice anchor: ${end}`);
+  return source.slice(from, to);
+}
+
 function recolorMarioFlag(flag: Uint8ClampedArray, width = W) {
   const out = new Uint8ClampedArray(flag);
   for (let i = 0; i < out.length; i += 4) {
@@ -100,10 +108,7 @@ test("Fire Mario draw path uses original fireMario frames, not the white palette
   const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
   const boot = readFileSync(join(root, "src/game/scenes/Boot.ts"), "utf8");
   const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
-  const pose = play.slice(
-    play.indexOf("const base = mario"),
-    play.indexOf("const moving ="),
-  );
+  const pose = between(play, "const base = mario", "const moving =");
   assert.match(pose, /marioStage === 2\s*\n\s*\? "fireMario"/);
   assert.doesNotMatch(play, /whiteMario/);
   assert.match(boot, /"fireMario"/);
@@ -296,9 +301,10 @@ test("castle-room rescue door is an inverted white door, not a black hole", () =
     /theme === "castle" && \(id === 74 \|\| id === 75\)/,
   );
   assert.match(extract, /255 - image\[p\]/);
-  const draw = play.slice(
-    play.indexOf('goal?.kind === "castle-room"'),
-    play.indexOf("const pole = room.flagpole"),
+  const draw = between(
+    play,
+    'goal?.kind === "castle-room"',
+    "const pole = room.flagpole",
   );
   assert.match(draw, /palette \+ 74/);
   assert.match(draw, /palette \+ 75/);
@@ -309,10 +315,7 @@ test("castle-room rescue door is an inverted white door, not a black hole", () =
 test("Play draws the sweat drop unscaled, never a scaling exclaim bang", () => {
   const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
   const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
-  const draw = play.slice(
-    play.indexOf("n.exclaimLeft"),
-    play.indexOf("this.effects[index]"),
-  );
+  const draw = between(play, "n.exclaimLeft", "this.effects[index]");
   assert.equal(SWEAT_DROP_KEY, "sweatDrop");
   assert.match(draw, /SWEAT_DROP_WIDTH \* 2/);
   assert.match(draw, /SWEAT_DROP_HEIGHT \* 2/);
@@ -325,10 +328,7 @@ test("Play draws the sweat drop unscaled, never a scaling exclaim bang", () => {
 
 test("the walk animation timescale comes from walkPace, not raw x-speed", () => {
   const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
-  const draw = play.slice(
-    play.indexOf("const pace ="),
-    play.indexOf("const height = this.actorSpriteHeight"),
-  );
+  const draw = between(play, "const pace =", "const box = actorSpriteBox");
   assert.match(draw, /const pace = walkPace\(actor\)/);
   assert.match(draw, /anims\.timeScale = \(pace \* 60\) \/ 90/);
   assert.doesNotMatch(draw, /Math\.abs\(actor\.body\.velocity\.x\)/);
