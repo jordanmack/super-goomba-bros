@@ -26,8 +26,10 @@ import { firebarBalls, firebarHits } from "./castle.ts";
 import {
   areaData,
   CAMPAIGN,
+  isCannonTile,
   isSmashExemptTile,
   isSolidTile,
+  isSpringTile,
   stageTimer,
   terrainRects,
   vineDestination,
@@ -61,16 +63,27 @@ export function pipeClip(
   roomWidthPx: number,
   pipe: { column: number; row: number; width: number; height: number },
   dir: "down" | "up" | "right" | "left",
+  cameraY = 0,
+  zoom = 1,
+  viewHeight = VIEW_HEIGHT,
 ): PipeClip {
   const mouthX = roomOffset + pipe.column * 32;
   const mouthY = MAP_TOP + pipe.row * 32;
+  const z = zoom || 1;
+  const viewTop = cameraY + (viewHeight / 2) * (1 - 1 / z);
+  const viewH = viewHeight / z;
   if (dir === "down" || dir === "up")
-    return { x: roomOffset, y: 0, w: roomWidthPx, h: Math.max(1, mouthY) };
+    return {
+      x: roomOffset,
+      y: viewTop,
+      w: roomWidthPx,
+      h: Math.max(1, mouthY - viewTop),
+    };
   return {
     x: roomOffset,
-    y: 0,
+    y: viewTop,
     w: Math.max(1, mouthX - roomOffset),
-    h: VIEW_HEIGHT,
+    h: viewH,
   };
 }
 export type Mode =
@@ -226,7 +239,8 @@ export type GameEvent =
   | "tally"
   | "hurry"
   | "ending"
-  | "firework";
+  | "firework"
+  | "flame";
 export type Particle = {
   x: number;
   y: number;
@@ -575,7 +589,14 @@ export class Simulation {
       destPage: destination.page,
       arrival,
       destLevel,
-      clip: pipeClip(room.offset, room.data.width * 32, pipe, dir),
+      clip: pipeClip(
+        room.offset,
+        room.data.width * 32,
+        pipe,
+        dir,
+        this.cameraY,
+        this.cameraZoom,
+      ),
       escape: escape || undefined,
     };
     actor.idleDrop = undefined;
@@ -643,6 +664,8 @@ export class Simulation {
             target.data.width * 32,
             dest,
             "up",
+            this.cameraY,
+            this.cameraZoom,
           );
         Body.setPosition(actor.body, {
           x: left + dest.width * 16,
@@ -2333,9 +2356,57 @@ export class Simulation {
       }
     }
     if (!smashed.length) return;
-    for (const key of smashed) room.smashedTiles.add(key);
+    const expanded = new Set(smashed);
+    for (const key of smashed) {
+      const [column, row] = key.split(",").map(Number);
+      for (const extra of this.stackSmashKeys(room, column!, row!)) {
+        if (expanded.has(extra) || room.smashedTiles.has(extra)) continue;
+        expanded.add(extra);
+        const [c, r] = extra.split(",").map(Number);
+        this.burst(room.offset + c! * 32 + 16, MAP_TOP + r! * 32 + 16, false);
+      }
+    }
+    for (const key of expanded) room.smashedTiles.add(key);
+    room.cannons = room.cannons.filter(
+      (c) => !expanded.has(`${c.column},${c.row}`),
+    );
     this.rebuildTerrain(room);
     this.events.push("break");
+  }
+
+  // Hitting one cannon or spring tile destroys that column's paired tiles.
+  // Dual-barrel columns bind a hit to one barrel: walk up through cannon
+  // tiles, down through pedestal/shaft only, and stop at another barrel.
+  private stackSmashKeys(room: Room, column: number, row: number) {
+    const tile = room.data.tiles[row]?.[column] ?? 0;
+    if (isSpringTile(tile)) {
+      const keys: string[] = [];
+      for (let r = 2; r <= 12; r++) {
+        const id = room.data.tiles[r]?.[column] ?? 0;
+        if (!isSpringTile(id)) continue;
+        keys.push(`${column},${r}`);
+      }
+      return keys;
+    }
+    if (!isCannonTile(tile)) return [] as string[];
+    const keys = [`${column},${row}`];
+    const hitBarrel = tile === 100;
+    for (let r = row - 1; r >= 2; r--) {
+      const id = room.data.tiles[r]?.[column] ?? 0;
+      if (!isCannonTile(id)) break;
+      if (id === 100) {
+        if (hitBarrel) break;
+        keys.push(`${column},${r}`);
+        break;
+      }
+      keys.push(`${column},${r}`);
+    }
+    for (let r = row + 1; r <= 12; r++) {
+      const id = room.data.tiles[r]?.[column] ?? 0;
+      if (id !== 101 && id !== 102) break;
+      keys.push(`${column},${r}`);
+    }
+    return keys;
   }
 
   // Stood-on elevated floor and flush wall, or the armed pair after floor
@@ -2397,6 +2468,11 @@ export class Simulation {
       return false;
     if (room.data.objects.some((o) => o.opcode === 35 && o.column === column))
       return false;
+    if (room.axe) {
+      const axeCol = Math.floor((room.axe.x - room.offset) / 32);
+      const axeRow = Math.floor((room.axe.y - MAP_TOP) / 32);
+      if (column === axeCol && row === axeRow) return false;
+    }
     const top = MAP_TOP + row * 32;
     const above = room.data.tiles[row - 1]?.[column] ?? 0;
     const standableTop = row === 0 || !isSolidTile(above);
@@ -5028,6 +5104,7 @@ export class Simulation {
             vx: b.facing * T.bowserFlameSpeed,
             age: 0,
           });
+          this.events.push("flame");
           b.fireWait = T.bowserFlamePeriod;
         }
       } else {

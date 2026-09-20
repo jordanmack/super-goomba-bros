@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import campaign from "../../src/assets/levels/campaign.json" with { type: "json" };
-import { TUNING as T } from "../../src/game/config";
+import { MAP_TOP, TUNING as T, VIEW_HEIGHT } from "../../src/game/config";
 import { test, expect, skipIntro } from "./skip-intro.ts";
 import { WORLD_TILES } from "../fixtures/world-tiles";
 import { WORLD_1_1 as LEVEL } from "../fixtures/world-1-1";
@@ -14,7 +14,7 @@ test("Starman music follows only player and Mario stars and respects death cues"
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 23,
+    () => (window as any).__game.audio.buffers.size === 24,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -99,7 +99,7 @@ test("area music resumes after Mario death from the saved seek", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 23,
+    () => (window as any).__game.audio.buffers.size === 24,
   );
   await page.evaluate(() => {
     const g = (window as any).__game;
@@ -210,6 +210,129 @@ test("area music resumes after Mario death from the saved seek", async ({
     .toBe(true);
 });
 
+test("8x side-pipe shrink-blink keeps sprite pixels above the playfield top", async ({
+  page,
+}) => {
+  await page.goto("/?level=1-2");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.waitForFunction(() => !!(window as any).__game?.renderer.play);
+  const sample = await page.evaluate(async ({ mapTop, viewHeight, huge }) => {
+    const g = (window as any).__game;
+    const s = g.sim;
+    g.paused = true;
+    s.pipeIntro = false;
+    s.mode = "playing";
+    s.player.areaId = "40";
+    const sub = s.loadRoom("40");
+    const goal = sub.data.goal;
+    const goalData = sub.data.pipes.find(
+      (p: { column: number; row: number }) =>
+        p.column === goal.column && p.row === goal.row,
+    );
+    const goalPipe = s.obstacles.find((c: { kind: string; x: number }) => {
+      const x = sub.offset + (goalData.column + goalData.width / 2) * 32;
+      return c.kind === "pipe" && Math.abs(c.x - x) < 1;
+    });
+    for (const other of s.npcs) {
+      other.alive = false;
+      other.body.position.x = sub.offset - 400;
+    }
+    s.player.alive = false;
+    const n = s.mario;
+    s.marioActive = true;
+    n.alive = true;
+    n.areaId = "40";
+    n.body.frozen = false;
+    n.saved = false;
+    const box = s.obstacles.find(
+      (c: { question?: boolean; used?: boolean; hidden?: boolean; content?: string }) =>
+        c.question && !c.used && !c.hidden && c.content !== "1-up",
+    );
+    s.random = () => 0.5;
+    s.hitBlock(box, s.player);
+    const item = s.items.at(-1);
+    item.kind = "mushroom8x";
+    s.collect(n, item);
+    const mouthX = sub.offset + goalData.column * 32;
+    // Sit on the lip so the 8x Mario body fills the band above MAP_TOP, left
+    // of the mouth. Pipe-center standing hides that body inside the clip.
+    n.body.position.x = mouthX;
+    n.body.position.y = goalPipe.body.bounds.min.y - n.body.height / 2;
+    n.body.velocity.x = 0;
+    n.body.velocity.y = 0;
+    n.grounded = true;
+    s.player.body.position.x = mouthX - 200;
+    n.pipeTravel = {
+      phase: "enter",
+      dir: "right",
+      remaining: 80,
+      destArea: "40",
+      destPage: 0,
+      clip: {
+        x: sub.offset,
+        y: s.cameraY + (viewHeight / 2) * (1 - 1 / (s.cameraZoom || 1)),
+        w: Math.max(1, mouthX - sub.offset),
+        h: viewHeight / (s.cameraZoom || 1),
+      },
+    };
+    n.scale = 3;
+    n.transformFrom = huge;
+    n.transformLeft = 0.7;
+    g.renderer.render(s, 0);
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    const source = g.renderer.game.canvas;
+    const canvas = document.createElement("canvas");
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(source, 0, 0);
+    const zoom = s.cameraZoom || 1;
+    const viewX = s.cameraX + (g.renderer.width / 2) * (1 - 1 / zoom);
+    const viewY = s.cameraY + (viewHeight / 2) * (1 - 1 / zoom);
+    const toPixel = (worldX: number, worldY: number) => [
+      Math.floor((((worldX - viewX) * zoom) / g.renderer.width) * canvas.width),
+      Math.floor((((worldY - viewY) * zoom) / viewHeight) * canvas.height),
+    ];
+    const sampleAt = (worldX: number, worldY: number) => {
+      const [px, py] = toPixel(worldX, worldY);
+      if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height)
+        return [px, py, 0, 0, 0, 0];
+      const pixel = ctx.getImageData(px, py, 1, 1).data;
+      return [px, py, pixel[0], pixel[1], pixel[2], pixel[3]];
+    };
+    let lit = 0;
+    let checked = 0;
+    for (let worldX = mouthX - 80; worldX < mouthX; worldX += 2) {
+      for (let worldY = 1; worldY < mapTop; worldY += 1) {
+        const pix = sampleAt(worldX, worldY);
+        if (pix[0] < 0 || pix[1] < 0) continue;
+        checked++;
+        if (pix[5] > 0 && pix[2] + pix[3] + pix[4] > 30) lit++;
+      }
+    }
+    const clip = n.pipeTravel.clip;
+    return {
+      ok: true,
+      lit,
+      checked,
+      clip,
+      shown: s.displayScale(n),
+      spriteTop: n.body.bounds.max.y - 64 * huge,
+    };
+  }, { mapTop: MAP_TOP, viewHeight: VIEW_HEIGHT, huge: T.hugeScale });
+  expect(sample.ok, sample.reason ?? "sampled 8x blink").toBe(true);
+  expect(sample.shown).toBe(T.hugeScale);
+  expect(sample.spriteTop).toBeLessThan(MAP_TOP);
+  expect(sample.clip.y).toBeLessThanOrEqual(0);
+  expect(sample.clip.y + sample.clip.h).toBeGreaterThan(MAP_TOP);
+  expect(sample.checked).toBeGreaterThan(0);
+  // Underground sky is black. A clip that starts at the playfield top hides
+  // this band. Sprite pixels above MAP_TOP must still be drawn.
+  expect(sample.lit, JSON.stringify(sample)).toBeGreaterThan(0);
+});
+
 test("pipe segments and background bushes retain their map pixels", async ({
   page,
 }) => {
@@ -306,7 +429,7 @@ test("flower Goombas turn white, Shift runs, and Mario's death cue finishes befo
   await skipIntro(page);
   await expect(page.getByRole("button", { name: "B", exact: true })).toBeVisible();
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 23,
+    () => (window as any).__game.audio.buffers.size === 24,
   );
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -1462,7 +1585,7 @@ test("death restart, open castle door, tally, and no finish banner", async ({
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 23,
+    () => (window as any).__game.audio.buffers.size === 24,
   );
   await page.evaluate(() => {
     const s = (window as any).__game.sim;
@@ -1752,7 +1875,7 @@ test("original recordings decode and play as effects, with level clear replacing
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
   await page.waitForFunction(
-    () => (window as any).__game.audio.buffers.size === 23,
+    () => (window as any).__game.audio.buffers.size === 24,
   );
   await page.waitForFunction(
     () => !!(window as any).__game?.audio?.music?.markers?.loop,
@@ -1770,6 +1893,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "appear",
       "kick",
       "firework",
+      "flame",
     ];
     const names = [
       "jump",
@@ -1782,6 +1906,7 @@ test("original recordings decode and play as effects, with level clear replacing
       "appear",
       "kick",
       "fireworks",
+      "bowserFire",
     ];
     const valid = effects.every((event, i) => {
       a.event(event);

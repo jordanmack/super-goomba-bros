@@ -13,10 +13,16 @@ import { physics } from "./support/arcade.ts";
 import {
   Simulation as RulesSimulation,
   emptyInput,
+  pipeClip,
 } from "../src/game/simulation.ts";
 import { MAP_TOP, PHRASES, TUNING as T, VIEW_HEIGHT, blockDrawY, jumpArc } from "../src/game/config.ts";
 import { firstEmptySpawnCell, spawnCellCenter } from "../src/game/spawn-cell.ts";
-import { CAMPAIGN, areaData, areaGaps } from "../src/game/levels.ts";
+import {
+  CAMPAIGN,
+  areaData,
+  areaGaps,
+  isCannonTile,
+} from "../src/game/levels.ts";
 import { ENEMY_BALANCE_LIFT, ENEMY_FISH } from "../src/game/room.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
@@ -4786,15 +4792,24 @@ function assertLipClip(
   dir: "down" | "up" | "right" | "left",
   spriteW: number,
   spriteH: number,
+  cameraY = 0,
+  zoom = 1,
 ) {
   const mouthX = room.offset + pipe.column * 32;
   const mouthY = MAP_TOP + pipe.row * 32;
   const pipeW = pipe.width * 32;
   const pipeH = pipe.height * 32;
+  const z = zoom || 1;
+  const viewTop = cameraY + (VIEW_HEIGHT / 2) * (1 - 1 / z);
+  const viewH = VIEW_HEIGHT / z;
   if (dir === "down" || dir === "up") {
     assert.ok(clip.w >= spriteW, "vertical clip is not cropped to pipe width");
     assert.ok(clip.w > pipeW, "vertical clip is wider than the pipe");
     assert.ok(clip.y + clip.h <= mouthY + 1e-6, "vertical clip stops at the lip");
+    assert.ok(
+      Math.abs(clip.y - viewTop) < 1e-6,
+      "vertical clip starts at the live camera top",
+    );
     assert.ok(
       inClip(clip, mouthX + pipeW / 2, mouthY - 4),
       "the part still above the lip is visible",
@@ -4817,6 +4832,18 @@ function assertLipClip(
     assert.ok(clip.h >= spriteH, "side clip is not cropped to pipe height");
     assert.ok(clip.h > pipeH, "side clip is taller than the pipe");
     assert.ok(clip.x + clip.w <= mouthX + 1e-6, "side clip stops at the mouth");
+    assert.ok(
+      Math.abs(clip.y - viewTop) < 1e-6,
+      "side clip starts at the live camera top",
+    );
+    assert.ok(
+      Math.abs(clip.h - viewH) < 1e-6,
+      "side clip spans the live camera view height",
+    );
+    assert.ok(
+      inClip(clip, mouthX - 4, viewTop + 1),
+      "pixels at the camera top stay visible",
+    );
     assert.ok(
       inClip(clip, mouthX - 4, mouthY + pipeH / 2),
       "the part still outside the mouth is visible",
@@ -4844,6 +4871,69 @@ function waitPipePhase(s: Simulation, actor: Actor, phase: "enter" | "exit") {
     s.step(dt, emptyInput());
   assert.equal(actor.pipeTravel?.phase, phase);
 }
+
+test("pipe clip rectangles follow live camera y and zoom", () => {
+  const pipe = { column: 10, row: 10, width: 2, height: 3 };
+  const mouthY = MAP_TOP + pipe.row * 32;
+  const side = pipeClip(0, 3200, pipe, "right");
+  assert.equal(side.y, 0);
+  assert.equal(side.h, VIEW_HEIGHT);
+  const shifted = pipeClip(0, 3200, pipe, "right", 40, 1);
+  assert.equal(shifted.y, 40);
+  assert.equal(shifted.h, VIEW_HEIGHT);
+  assert.ok(inClip(shifted, pipe.column * 32 - 4, 41));
+  assert.equal(inClip(shifted, pipe.column * 32 - 4, 1), false);
+  const zoomed = pipeClip(0, 3200, pipe, "right", 0, 2);
+  assert.equal(zoomed.y, VIEW_HEIGHT / 4);
+  assert.equal(zoomed.h, VIEW_HEIGHT / 2);
+  const down = pipeClip(0, 3200, pipe, "down", 40, 1);
+  assert.equal(down.y, 40);
+  assert.equal(down.y + down.h, mouthY);
+
+  const s = game();
+  s.cameraY = 40;
+  s.cameraZoom = 1;
+  const entry = s.activeRoom.data.pipes.find((p) => p.direction === "down")!;
+  at(
+    s,
+    (entry.column + entry.width / 2) * 32,
+    MAP_TOP + entry.row * 32 - 14,
+  );
+  s.step(dt, { ...emptyInput(), down: true });
+  assert.equal(s.player.pipeTravel?.clip?.y, 40);
+  assertLipClip(
+    s.player.pipeTravel!.clip!,
+    s.activeRoom,
+    entry,
+    "down",
+    32,
+    32,
+    40,
+    1,
+  );
+  s.physics.clear();
+
+  const sidePipe = goalPipeSim();
+  sidePipe.s.cameraY = 24;
+  sidePipe.s.cameraZoom = 2;
+  standOnPipe(sidePipe.s.player, sidePipe.goalPipe);
+  tick(sidePipe.s, 0.1, { down: true });
+  assert.ok(sidePipe.s.player.pipeTravel);
+  const goalData = sidePipe.sub.data.pipes.find(
+    (p) => p.column === sidePipe.sub.data.goal!.column,
+  )!;
+  assertLipClip(
+    sidePipe.s.player.pipeTravel!.clip!,
+    sidePipe.sub,
+    goalData,
+    "right",
+    32,
+    32,
+    24,
+    2,
+  );
+  sidePipe.s.physics.clear();
+});
 
 test("3x and 8x pipe clips hide only the part past the lip", () => {
   const down = game();
@@ -5986,7 +6076,7 @@ test("8x smash claims remaining multi-coins for the player; NPC smash pops witho
   assert.ok(s3.coinPops.length >= T.multiCoinCount);
 });
 
-test("8x does not smash floors, flagpole, goal pipe, springs, castle bridges, or an elevated flush walk volume", () => {
+test("8x does not smash floors, flagpole, goal pipe, castle bridges, the axe, or an elevated flush walk volume", () => {
   const s = game();
   parkNpcs(s, []);
   give(s, s.player, "mushroom8x");
@@ -6050,6 +6140,17 @@ test("8x does not smash floors, flagpole, goal pipe, springs, castle bridges, or
         break;
       }
   assert.ok(bridgeCol >= 0);
+  const axe = castle.activeRoom.axe!;
+  const axeCol = Math.floor((axe.x - castle.activeRoom.offset) / 32);
+  const axeRow = Math.floor((axe.y - MAP_TOP) / 32);
+  at(castle, axe.x, axe.y);
+  tick(castle, dt);
+  assert.ok(castle.activeRoom.axe);
+  assert.equal(castle.activeRoom.bridgeDropped, false);
+  assert.equal(
+    castle.activeRoom.smashedTiles.has(`${axeCol},${axeRow}`),
+    false,
+  );
   const pair = campaignMergedPair(castle);
   assert.ok(pair, "1-4 has a merged wall+floor above groundY");
   const towardLeft = Math.abs(pair.wall.bounds.max.x - pair.floor.bounds.min.x) < 1;
@@ -6158,31 +6259,6 @@ test("8x does not smash floors, flagpole, goal pipe, springs, castle bridges, or
   assert.equal(underground.player.hugeLeft, 0);
   underground.physics.clear();
 
-  const springLevel = new Simulation(() => 0.5);
-  springLevel.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
-  springLevel.reset();
-  springLevel.marioReturn = 1e6;
-  parkNpcs(springLevel, []);
-  give(springLevel, springLevel.player, "mushroom8x");
-  const spring = springLevel.activeRoom.data.objects.find((o) => o.opcode === 33)!;
-  const springCol = spring.column;
-  const springRow = spring.row;
-  at(
-    springLevel,
-    springLevel.activeRoom.offset + springCol * 32 + 16,
-    T.groundY - 14 * springLevel.player.scale,
-  );
-  tick(springLevel, dt);
-  assert.equal(
-    springLevel.activeRoom.smashedTiles.has(`${springCol},${springRow}`),
-    false,
-  );
-  assert.equal(
-    springLevel.activeRoom.smashedTiles.has(`${springCol},${springRow + 1}`),
-    false,
-  );
-  springLevel.physics.clear();
-
   const usedFloor = new Simulation(() => 0.5);
   usedFloor.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-4");
   usedFloor.reset();
@@ -6199,6 +6275,155 @@ test("8x does not smash floors, flagpole, goal pipe, springs, castle bridges, or
   assert.equal(usedFloor.activeRoom.smashedTiles.has(`${floorCol},13`), false);
   assert.equal(cellSolid(usedFloor, floorCol, 13), true);
   usedFloor.physics.clear();
+});
+
+function smashActors(s: Simulation): { player: Actor; npc: Actor; mario: Actor } {
+  parkNpcs(s, []);
+  const npc = s.npcs.find((a) => a.kind === "goomba") ?? s.npcs[0]!;
+  npc.areaId = s.player.areaId;
+  npc.alive = true;
+  npc.saved = false;
+  Body.setFrozen(npc.body, false);
+  stillMario(s);
+  s.mario.areaId = s.player.areaId;
+  return { player: s.player, npc, mario: s.mario };
+}
+
+function overlapAt(actor: Actor, x: number, y: number) {
+  Body.setPosition(actor.body, { x, y });
+  Body.setVelocity(actor.body, { x: 0, y: 0 });
+}
+
+test("8x player, NPC, and Mario smash a cannon stack and leave in-flight bills", () => {
+  const smashOne = (who: "player" | "npc" | "mario") => {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "8-2");
+    s.reset();
+    s.marioReturn = 1e6;
+    parkNpcs(s, []);
+    const room = s.activeRoom;
+    const cannons = [...room.cannons].sort((a, b) => a.column - b.column);
+    assert.ok(cannons.length >= 2, "8-2 has several cannons");
+    const cannon = cannons[0]!;
+    const neighbor = cannons.find((c) => Math.abs(c.column - cannon.column) > 10);
+    assert.ok(neighbor, "8-2 has a cannon outside 8x width");
+    const actors = smashActors(s);
+    const hitter = actors[who];
+    // Keep the player near the cannon so viewWindow does not cull the bill.
+    at(s, cannon.x, T.groundY - 14);
+    overlapAt(hitter, cannon.x, cannon.y);
+    const flying = s.spawnBulletBill(
+      cannon.x + 400,
+      cannon.y,
+      -T.bulletSpeed,
+      room.data.id,
+      cannon.x,
+    );
+    const before = room.cannons.length;
+    s.events.length = 0;
+    give(s, hitter, "mushroom8x");
+    assert.equal(hitter.scale, T.hugeScale, `${who}: became 8x`);
+    const stack = room.data.tiles
+      .map((row, r) =>
+        r >= 2 && r <= 12 && isCannonTile(row[cannon.column] ?? 0) ? r : -1,
+      )
+      .filter((r) => r >= 0);
+    assert.ok(stack.length >= 2, `${who}: cannon has a stack`);
+    for (const row of stack) {
+      assert.equal(
+        room.smashedTiles.has(`${cannon.column},${row}`),
+        true,
+        `${who}: smashed ${cannon.column},${row}`,
+      );
+      assert.equal(cellSolid(s, cannon.column, row), false, `${who}: ${row}`);
+    }
+    assert.equal(
+      room.cannons.some((c) => c.column === cannon.column),
+      false,
+      `${who}: cannon removed`,
+    );
+    assert.equal(room.cannons.length, before - 1, `${who}: only that cannon`);
+    assert.ok(
+      room.cannons.some((c) => c.column === neighbor.column),
+      `${who}: neighbor cannon stays`,
+    );
+    assert.ok(
+      s.bulletBills.some((b) => b.id === flying.id),
+      `${who}: in-flight bill stays`,
+    );
+    assert.ok(s.events.includes("break"), `${who}: brick-break cue`);
+    s.physics.clear();
+  };
+  smashOne("player");
+  smashOne("npc");
+  smashOne("mario");
+});
+
+test("8x smash of a dual-barrel column removes only the hit barrel", () => {
+  const s = new Simulation(() => 0.5);
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "8-2");
+  s.reset();
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  const room = s.activeRoom;
+  const dual = room.cannons.filter((c) => c.column === 93);
+  assert.equal(dual.length, 2, "8-2 col 93 has two barrels");
+  const upper = dual.find((c) => c.row === 10)!;
+  const lower = dual.find((c) => c.row === 12)!;
+  const hitter = s.player;
+  give(s, hitter, "mushroom8x");
+  // Keep feet above the lower barrel so only the upper stack is overlapping.
+  overlapAt(hitter, upper.x, 390 - hitter.body.height / 2);
+  tick(s, dt);
+  assert.equal(room.smashedTiles.has("93,10"), true);
+  assert.equal(room.smashedTiles.has("93,11"), true);
+  assert.equal(room.smashedTiles.has("93,12"), false);
+  assert.equal(
+    room.cannons.some((c) => c.column === 93 && c.row === 10),
+    false,
+  );
+  assert.ok(room.cannons.some((c) => c.column === 93 && c.row === 12));
+  assert.equal(lower.column, 93);
+  s.physics.clear();
+});
+
+test("8x player, NPC, and Mario smash a spring pair and it no longer bounces", () => {
+  const smashOne = (who: "player" | "npc" | "mario") => {
+    const s = world21();
+    const spring = s.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+    const x = s.activeRoom.offset + spring.column * 32 + 16;
+    const topY = MAP_TOP + spring.row * 32 + 16;
+    const actors = smashActors(s);
+    const hitter = actors[who];
+    overlapAt(hitter, x, topY);
+    if (who === "player") at(s, x, topY);
+    s.events.length = 0;
+    give(s, hitter, "mushroom8x");
+    assert.equal(hitter.scale, T.hugeScale, `${who}: became 8x`);
+    assert.equal(
+      s.activeRoom.smashedTiles.has(`${spring.column},${spring.row}`),
+      true,
+      `${who}: spring top`,
+    );
+    assert.equal(
+      s.activeRoom.smashedTiles.has(`${spring.column},${spring.row + 1}`),
+      true,
+      `${who}: spring bottom`,
+    );
+    assert.equal(cellSolid(s, spring.column, spring.row), false, `${who}: top gone`);
+    assert.equal(
+      cellSolid(s, spring.column, spring.row + 1),
+      false,
+      `${who}: bottom gone`,
+    );
+    overlapAt(hitter, x, MAP_TOP + spring.row * 32 - hitter.body.height / 2);
+    assert.equal(s.activeRoom.onSpring(hitter), false, `${who}: no bounce`);
+    assert.ok(s.events.includes("break"), `${who}: brick-break cue`);
+    s.physics.clear();
+  };
+  smashOne("player");
+  smashOne("npc");
+  smashOne("mario");
 });
 
 test("8x smash of a ground pipe keeps the floor in that column", () => {

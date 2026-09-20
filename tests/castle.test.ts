@@ -349,6 +349,39 @@ test("Bowser does not damage the player", () => {
   s.physics.clear();
 });
 
+test("Bowser flame spawn pushes a flame event and stays silent when he is not spitting", () => {
+  const quiet = castleGame("1-4");
+  parkNpcs(quiet);
+  const idle = quiet.bowsers[0]!;
+  quiet.marioActive = false;
+  idle.fireWait = 0;
+  quiet.events.length = 0;
+  tick(quiet, dt);
+  assert.equal(quiet.bowserFlames.length, 0);
+  assert.equal(quiet.events.includes("flame"), false);
+  quiet.physics.clear();
+
+  const s = castleGame("1-4");
+  parkNpcs(s);
+  const b = s.bowsers[0]!;
+  stillMario(s);
+  s.mario.areaId = s.activeRoom.data.id;
+  s.setMarioStage(1);
+  Body.setPosition(s.player.body, { x: b.x - 180, y: T.groundY - 14 });
+  s.cameraX = b.x - 400;
+  Body.setPosition(s.mario.body, {
+    x: b.x - T.bowserWidth * 2,
+    y: T.groundY - s.mario.body.height / 2,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  b.fireWait = 0;
+  s.events.length = 0;
+  tick(s, dt);
+  assert.ok(s.bowserFlames.length >= 1);
+  assert.ok(s.events.includes("flame"));
+  s.physics.clear();
+});
+
 test("Bowser ground fire breath can damage or delay Mario", () => {
   const s = castleGame("1-4");
   parkNpcs(s);

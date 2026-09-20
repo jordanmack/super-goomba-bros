@@ -29,11 +29,12 @@ export function isCannonBarrel(id: number) {
 export function isCannonTile(id: number) {
   return id === 100 || id === 101 || id === 102;
 }
+export function isSpringTile(id: number) {
+  return id === 103 || id === 104;
+}
 export function isSmashExemptTile(id: number) {
-  // Springs 103-104, cannon 100-102, and castle bridge 137 stay solid for 8x.
-  return (
-    isCannonTile(id) || id === 103 || id === 104 || id === 137 || isFlagpoleTile(id)
-  );
+  // Castle bridge 137 and flagpole tiles stay solid for 8x.
+  return id === 137 || isFlagpoleTile(id);
 }
 export function isSolidTile(id: number) {
   if (isFlagpoleTile(id)) return false;

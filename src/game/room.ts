@@ -550,6 +550,8 @@ export class Room {
     return this.data.objects.some(
       (o) =>
         o.opcode === 33 &&
+        !this.smashedTiles.has(`${o.column},${o.row}`) &&
+        !this.smashedTiles.has(`${o.column},${o.row + 1}`) &&
         Math.abs(actor.body.position.x - this.offset - o.column * 32 - 16) <
           Math.max(28, half + 16) &&
         Math.abs(actor.body.bounds.max.y - MAP_TOP - o.row * 32) < 12,

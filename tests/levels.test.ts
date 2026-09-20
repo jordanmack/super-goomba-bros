@@ -16,6 +16,7 @@ import {
   isFlagpoleTile,
   isSmashExemptTile,
   isSolidTile,
+  isSpringTile,
 } from "../src/game/levels.ts";
 
 const root = new URL("../src/assets/levels/", import.meta.url);
@@ -80,7 +81,7 @@ test("World 1-1 decoded collision anchors match the existing reference map", () 
   );
 });
 
-test("cannon tiles stay solid and 8x-unsmashable, and all 31 barrels exist", () => {
+test("cannon tiles stay solid and 8x-smashable, and all 31 barrels exist", () => {
   assert.equal(isCannonBarrel(100), true);
   assert.equal(isCannonTile(100), true);
   assert.equal(isCannonTile(101), true);
@@ -88,9 +89,9 @@ test("cannon tiles stay solid and 8x-unsmashable, and all 31 barrels exist", () 
   assert.equal(isSolidTile(100), true);
   assert.equal(isSolidTile(101), true);
   assert.equal(isSolidTile(102), true);
-  assert.equal(isSmashExemptTile(100), true);
-  assert.equal(isSmashExemptTile(101), true);
-  assert.equal(isSmashExemptTile(102), true);
+  assert.equal(isSmashExemptTile(100), false);
+  assert.equal(isSmashExemptTile(101), false);
+  assert.equal(isSmashExemptTile(102), false);
   const counts: Record<string, number> = {
     "21": 3,
     "2a": 3,
@@ -117,11 +118,13 @@ test("cannon tiles stay solid and 8x-unsmashable, and all 31 barrels exist", () 
   assert.equal(total, 31);
 });
 
-test("spring tiles stay solid and 8x-unsmashable", () => {
+test("spring tiles stay solid and 8x-smashable", () => {
+  assert.equal(isSpringTile(103), true);
+  assert.equal(isSpringTile(104), true);
   assert.equal(isSolidTile(103), true);
   assert.equal(isSolidTile(104), true);
-  assert.equal(isSmashExemptTile(103), true);
-  assert.equal(isSmashExemptTile(104), true);
+  assert.equal(isSmashExemptTile(103), false);
+  assert.equal(isSmashExemptTile(104), false);
   for (const id of ["24", "28", "2d", "31", "32", "33"]) {
     const area = areaOf(id);
     const springs = area.objects.filter((o) => o.opcode === 33);

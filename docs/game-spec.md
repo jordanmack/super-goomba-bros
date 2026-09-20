@@ -480,7 +480,11 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   spawns already free (`emerge` 0, not frozen) and flies out; it does not use
   the emerge rise or the appear cue. Unrevealed hidden blocks stay hidden.
   Floors, stairs you stand on, moving platforms, the flagpole, the goal door,
-  a goal pipe, castle bridges, the axe, springs, and cannons stay. The elevated
+  a goal pipe, castle bridges, and the axe stay. Hitting any tile of a cannon
+  destroys that column's barrel, pedestal, and shaft, removes that cannon so it
+  does not fire again, and leaves in-flight Bullet Bills. Hitting either tile
+  of a spring destroys both tiles of that pad, and it no longer bounces.
+  The elevated
   flush wall of a stood-on merged wall+floor also stays, so 8x can keep walking
   after the floor AABB overlap ends. Ground-level walls still smash. 8x never smashes a
   goal pipe or castle door. The door stays solid. 8x no longer passes through
@@ -534,7 +538,8 @@ areas.
 ## Cannons and Bullet Bills
 
 Cannons are terrain (metatiles 100 barrel, 101 pedestal, 102 shaft). They stay
-solid. 8x does not smash them. Every cannon barrel in the level data fires; do
+solid until 8x smashes them, as in the 8x smash rule. Every cannon barrel in
+the level data fires; do
 not hard-code per stage. Timing follows SMB1. A cannon does not fire when the
 player is too close or in the same column. Bullet Bills travel horizontally at
 the original speed, ignore gravity, and are removed when they leave the area.

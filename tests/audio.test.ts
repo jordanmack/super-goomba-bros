@@ -98,6 +98,8 @@ test("bundled WAV cues share the documented peak target and do not clip", () => 
   assert.ok(files.includes("stage_clear.wav"));
   assert.ok(files.includes("pipe.wav"));
   assert.ok(files.includes("fireworks.wav"));
+  assert.ok(files.includes("bowserfire.wav"));
+  assert.ok(files.includes("fireball.wav"));
   const levels = new Map<string, { peak: number; rms: number }>();
   for (const name of files) {
     const measured = wavLevels(readFileSync(join(audioDir, name)));
@@ -135,6 +137,22 @@ test("bundled WAV cues share the documented peak target and do not clip", () => 
     coin.rms < stageClear.rms,
     `short coin rms ${coin.rms} should sit under stage_clear ${stageClear.rms}`,
   );
+});
+
+test("Bowser flame cue is the Mayhem bowser-fire WAV, not fireball or fireworks", () => {
+  const audioSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../src/game/audio.ts"),
+    "utf8",
+  );
+  assert.match(audioSrc, /flame:\s*"bowserFire"/);
+  assert.match(audioSrc, /fire:\s*"fireball"/);
+  assert.match(audioSrc, /firework:\s*"fireworks"/);
+  const flame = readFileSync(join(audioDir, "bowserfire.wav"));
+  const fireball = readFileSync(join(audioDir, "fireball.wav"));
+  const fireworks = readFileSync(join(audioDir, "fireworks.wav"));
+  assert.ok(flame.length > 0);
+  assert.notEqual(Buffer.compare(flame, fireball), 0);
+  assert.notEqual(Buffer.compare(flame, fireworks), 0);
 });
 
 test("mix constants keep looping music under cues and tally quieter than a coin", () => {

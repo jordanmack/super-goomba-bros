@@ -42,7 +42,8 @@ question-block item uses the original appear effect with the bump. A 1-up uses
 `smb_1-up.wav`. Game over uses `smb_gameover.wav`. TIME 100 uses
 `smb_warning.wav`, then the area theme plays faster. Leftover TIME tally
 retriggers a quieter copy of the coin sample on one voice. Flagpole fireworks
-use `smb_fireworks.wav` as each burst scores. World 8-4 uses
+use `smb_fireworks.wav` as each burst scores. Each Bowser flame spawn uses
+`smb_bowserfire.wav`, not the fireball or fireworks cue. World 8-4 uses
 `smb_world_clear.wav` after the castle tally.
 Warnings use a custom short square-wave voice, picked at random from a small
 pool of chirps. Pitch shapes live in `../../game/config.ts`. There is no

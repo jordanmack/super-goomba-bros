@@ -24,6 +24,7 @@ import appear from "../assets/audio/powerup_appears.wav?inline";
 import warning from "../assets/audio/warning.wav?inline";
 import worldClear from "../assets/audio/world_clear.wav?inline";
 import fireworks from "../assets/audio/fireworks.wav?inline";
+import bowserFire from "../assets/audio/bowserfire.wav?inline";
 
 export const RECORDINGS = {
   overworld,
@@ -49,6 +50,7 @@ export const RECORDINGS = {
   warning,
   worldClear,
   fireworks,
+  bowserFire,
 };
 const MUSIC_LOOPS: Record<
   string,
@@ -69,7 +71,7 @@ const MUSIC_LOOPS: Record<
   },
   castle: { intro: 0.52 - 529 / 44100, start: 8.52 - 529 / 44100, duration: 8 },
 };
-const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
+export const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   jump: "jump",
   bump: "bump",
   warn: "bump",
@@ -92,6 +94,7 @@ const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   hurry: "warning",
   ending: "worldClear",
   firework: "fireworks",
+  flame: "bowserFire",
 };
 
 export class GameAudio {
