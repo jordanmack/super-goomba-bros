@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import {
   MAP_TOP,
   TUNING as T,
-  VIEW_HEIGHT,
   blockDrawY,
   titleCamera,
 } from "../config";
@@ -114,11 +113,11 @@ export class Play extends Phaser.Scene {
     this.draw?.();
   }
 
-  renderState(sim: Simulation, width: number, height = VIEW_HEIGHT) {
+  renderState(sim: Simulation, width: number) {
     const room = sim.activeRoom;
     if (this.room !== room) this.loadRoom(room);
     if (sim.mode === "title") {
-      const frame = titleCamera(width, height);
+      const frame = titleCamera();
       sim.cameraX = frame.scrollX;
       sim.cameraY = frame.scrollY;
       sim.cameraZoom = frame.zoom;
@@ -311,7 +310,7 @@ export class Play extends Phaser.Scene {
         image(
           n.body.position.x,
           n.body.bounds.max.y -
-            this.actorSpriteHeight(n, sim) -
+            actorSpriteBox(n, sim.displayScale(n)).h -
             SWEAT_DROP_HEIGHT -
             2,
           SWEAT_DROP_WIDTH * 2,
@@ -467,10 +466,6 @@ export class Play extends Phaser.Scene {
       sprite.destroy();
       this.actors.delete(id);
     }
-  }
-
-  private actorSpriteHeight(actor: Actor, sim: Simulation) {
-    return actorSpriteBox(actor, sim.displayScale(actor)).h;
   }
 
   private bindItemClip(

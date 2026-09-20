@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,10 +12,6 @@ import {
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const EVIDENCE_DIR = process.env.EVIDENCE_DIR || join(root, "test-results");
-
-// Half a scaled game pixel at the largest viewport, so the live color has to
-// sit on the landmark itself rather than anywhere in the frame.
-const LANDMARK_SLACK = 3;
 
 const surfaces = [
   ["tagline", ".title-screen .level-label"],
@@ -295,7 +290,7 @@ function isBlank(pixel: { r: number; g: number; b: number; a: number }) {
   return pixel.a < 8 && pixel.r < 8 && pixel.g < 8 && pixel.b < 8;
 }
 
-async function readTitleLandmarks(page: Page) {
+async function readTitleCamera(page: Page) {
   return page.evaluate(() => {
     const g = (window as any).__game;
     g.renderer.render(g.sim, 0);
@@ -308,139 +303,47 @@ async function readTitleLandmarks(page: Page) {
     ctx.drawImage(source, 0, 0);
     const view = cam.worldView;
     const sample = (wx: number, wy: number) => {
+      const inView =
+        wx >= view.x &&
+        wx < view.x + view.width &&
+        wy >= view.y &&
+        wy < view.y + view.height;
       const sx = Math.floor(((wx - view.x) / view.width) * canvas.width);
       const sy = Math.floor(((wy - view.y) / view.height) * canvas.height);
-      const p = ctx.getImageData(sx, sy, 1, 1).data;
+      const onBuffer =
+        inView &&
+        sx >= 0 &&
+        sy >= 0 &&
+        sx < canvas.width &&
+        sy < canvas.height;
+      const p = onBuffer
+        ? ctx.getImageData(sx, sy, 1, 1).data
+        : ([0, 0, 0, 0] as const);
       return {
         wx,
         wy,
         sx,
         sy,
+        inView,
         r: p[0]!,
         g: p[1]!,
         b: p[2]!,
         a: p[3]!,
       };
     };
-    const pipe = sample(28 * 32 + 16, 14 + 11 * 32 + 16);
-    const question = sample(16 * 32 + 16, 14 + 9 * 32 + 16);
-    const player = sample(
-      g.sim.player.body.position.x,
-      g.sim.player.body.bounds.max.y - 16,
-    );
-    const canvasBox = source.getBoundingClientRect();
     return {
-      pipe,
-      question,
-      player,
+      hill: sample(48, 14 + 12 * 32 + 16),
+      pipe: sample(28 * 32 + 16, 14 + 11 * 32 + 16),
+      question: sample(16 * 32 + 16, 14 + 9 * 32 + 16),
       npcs: g.sim.npcs.length,
       zoom: cam.zoom,
       cameraX: g.sim.cameraX,
       cameraY: g.sim.cameraY,
+      cameraZoom: g.sim.cameraZoom,
       playerX: g.sim.player.body.position.x,
       worldView: { x: view.x, y: view.y, w: view.width, h: view.height },
-      canvas: {
-        left: canvasBox.left,
-        top: canvasBox.top,
-        width: canvasBox.width,
-        height: canvasBox.height,
-        bufferW: canvas.width,
-        bufferH: canvas.height,
-      },
     };
   });
-}
-
-// Buffer pixels upscale to CSS blocks, so aim at the block center; a corner
-// can land on the neighbouring tile when the landmark sits on a color edge.
-function pagePoint(
-  canvas: { left: number; top: number; width: number; height: number; bufferW: number; bufferH: number },
-  sx: number,
-  sy: number,
-) {
-  return {
-    x: canvas.left + ((sx + 0.5) / canvas.bufferW) * canvas.width,
-    y: canvas.top + ((sy + 0.5) / canvas.bufferH) * canvas.height,
-  };
-}
-
-// ImageMagick 7 drops the `identify` and `convert` binaries in favour of
-// `magick <subcommand>`, so both spellings are tried before giving up.
-function runMagick(legacy: string, args: string[], maxBuffer: number) {
-  try {
-    return execFileSync(legacy, args, { maxBuffer });
-  } catch (error) {
-    if ((error as { code?: string }).code !== "ENOENT") throw error;
-  }
-  try {
-    return execFileSync("magick", [legacy, ...args], { maxBuffer });
-  } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT")
-      throw new Error("ImageMagick required to inspect title stills");
-    throw error;
-  }
-}
-
-function readShot(file: string) {
-  const dimensions = runMagick(
-    "identify",
-    ["-format", "%w %h", file],
-    1e4,
-  ).toString("utf8");
-  const rgba = runMagick("convert", [file, "-depth", "8", "rgba:-"], 2e7);
-  const [width, height] = dimensions.trim().split(" ").map(Number);
-  expect(rgba.length, `${file} pixel payload`).toBe(width! * height! * 4);
-  return {
-    width: width!,
-    height: height!,
-    at(x: number, y: number) {
-      const i = (y * width! + x) * 4;
-      return { r: rgba[i]!, g: rgba[i + 1]!, b: rgba[i + 2]!, a: rgba[i + 3]! };
-    },
-  };
-}
-
-// Landmark colors are checked in the written PNG against the live canvas
-// sample from the same frame, so a stale or hand-built still cannot pass.
-function assertShotLandmarks(
-  file: string,
-  viewport: { width: number; height: number },
-  marks: {
-    name: string;
-    page: { x: number; y: number };
-    live: { r: number; g: number; b: number; a: number };
-  }[],
-) {
-  const shot = readShot(file);
-  expect(shot.width, `${file} width`).toBe(viewport.width);
-  expect(shot.height, `${file} height`).toBe(viewport.height);
-  for (const mark of marks) {
-    const label = `${file} ${mark.name}`;
-    const x = Math.floor(mark.page.x);
-    const y = Math.floor(mark.page.y);
-    expect(x, `${label} x in frame`).toBeGreaterThanOrEqual(0);
-    expect(x, `${label} x in frame`).toBeLessThan(shot.width);
-    expect(y, `${label} y in frame`).toBeGreaterThanOrEqual(0);
-    expect(y, `${label} y in frame`).toBeLessThan(shot.height);
-    const pixel = shot.at(x, y);
-    expect(isBlank(pixel), `${label} blank`).toBe(false);
-    expect(isSky(pixel), `${label} is sky`).toBe(false);
-    expect(pixel.a, `${label} opaque`).toBeGreaterThan(200);
-    // The canvas buffer scales to CSS pixels, so the landmark center can round
-    // onto a neighbouring color band.
-    let matched = false;
-    for (let dy = -LANDMARK_SLACK; dy <= LANDMARK_SLACK && !matched; dy++)
-      for (let dx = -LANDMARK_SLACK; dx <= LANDMARK_SLACK && !matched; dx++) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= shot.width || ny >= shot.height) continue;
-        const near = shot.at(nx, ny);
-        matched = (["r", "g", "b"] as const).every(
-          (channel) => Math.abs(near[channel] - mark.live[channel]) <= 24,
-        );
-      }
-    expect(matched, `${label} carries the live canvas color`).toBe(true);
-  }
 }
 
 async function assertTitleComposition(
@@ -456,28 +359,22 @@ async function assertTitleComposition(
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   );
-  const marks = await readTitleLandmarks(page);
+  const marks = await readTitleCamera(page);
   expect(marks.npcs, `${shotName} npc population`).toBe(0);
-  expect(isBlank(marks.pipe), `${shotName} pipe blank`).toBe(false);
-  expect(isBlank(marks.question), `${shotName} question blank`).toBe(false);
-  expect(isSky(marks.pipe), `${shotName} pipe is scenery`).toBe(false);
-  expect(isSky(marks.question), `${shotName} question is scenery`).toBe(false);
-  const pipePage = pagePoint(marks.canvas, marks.pipe.sx, marks.pipe.sy);
-  const qPage = pagePoint(marks.canvas, marks.question.sx, marks.question.sy);
-  for (const [name, selector] of surfaces) {
-    const box = await page.locator(selector).evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
-    });
-    const hits = (pt: { x: number; y: number }) =>
-      pt.x >= box.left &&
-      pt.x <= box.right &&
-      pt.y >= box.top &&
-      pt.y <= box.bottom;
-    expect(hits(pipePage), `${shotName} ${name} covers pipe`).toBe(false);
-    expect(hits(qPage), `${shotName} ${name} covers question`).toBe(false);
+  expect(marks.zoom, `${shotName} camera zoom`).toBe(1);
+  expect(marks.cameraZoom, `${shotName} sim zoom`).toBe(1);
+  expect(marks.worldView.x, `${shotName} left-anchored`).toBeCloseTo(0, 5);
+  expect(marks.cameraX, `${shotName} cameraX`).toBeCloseTo(0, 5);
+  expect(marks.cameraY, `${shotName} cameraY`).toBeCloseTo(0, 5);
+  expect(marks.hill.inView, `${shotName} start hill in view`).toBe(true);
+  expect(isBlank(marks.hill), `${shotName} hill blank`).toBe(false);
+  expect(isSky(marks.hill), `${shotName} hill is scenery`).toBe(false);
+  if (marks.worldView.w < 16 * 32) {
+    expect(marks.pipe.inView, `${shotName} portrait crops pipe`).toBe(false);
+    expect(marks.question.inView, `${shotName} portrait crops question`).toBe(
+      false,
+    );
   }
-  // Shot before the camera probe below moves the player.
   if (shotFile) {
     mkdirSync(dirname(shotFile), { recursive: true });
     await page.screenshot({ path: shotFile, fullPage: false });
@@ -501,10 +398,7 @@ async function assertTitleComposition(
   expect(after.x).toBeCloseTo(before.x, 5);
   expect(after.y).toBeCloseTo(before.y, 5);
   expect(after.z).toBeCloseTo(before.z, 5);
-  return [
-    { name: "pipe", page: pipePage, live: marks.pipe },
-    { name: "question", page: qPage, live: marks.question },
-  ];
+  expect(after.z).toBe(1);
 }
 
 const compositionViewports = [
@@ -514,7 +408,7 @@ const compositionViewports = [
 ] as const;
 
 for (const viewport of compositionViewports) {
-  test(`title still shows pipe and question blocks at ${viewport.width}x${viewport.height}`, async ({
+  test(`title still is a native-zoom left-anchored opening at ${viewport.width}x${viewport.height}`, async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -526,8 +420,7 @@ for (const viewport of compositionViewports) {
     await page.goto("/");
     const file = resolve(EVIDENCE_DIR, viewport.file);
     rmSync(file, { force: true });
-    const marks = await assertTitleComposition(page, viewport.file, file);
-    assertShotLandmarks(file, viewport, marks);
+    await assertTitleComposition(page, viewport.file, file);
     expect(errors, `${viewport.file} page errors`).toEqual([]);
   });
 }

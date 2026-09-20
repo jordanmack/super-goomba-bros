@@ -369,3 +369,56 @@ test("the Choose stage click updates the title-cheat ref, not just React state",
   // Start reads the ref, so the ref must be current before the next pad poll.
   assert.match(app, /titleStartAllowed\(titleCheatRef\.current\)/);
 });
+
+test("title Back buttons update the title-cheat ref in the same frame", () => {
+  const app = readFileSync(
+    new URL("../src/App.tsx", import.meta.url),
+    "utf8",
+  );
+  const handlers: string[] = [];
+  let from = 0;
+  while (true) {
+    const marker = app.indexOf("title-back", from);
+    if (marker < 0) break;
+    const start = app.indexOf("onClick=", marker);
+    assert.ok(start > marker, "each Back button has a click handler");
+    const end = app.indexOf("Back", start);
+    assert.ok(end > start, "each Back button keeps its label");
+    handlers.push(app.slice(start, end));
+    from = marker + 1;
+  }
+  assert.equal(handlers.length, 2, "world pick and stage pick each have Back");
+  for (const handler of handlers) {
+    assert.match(handler, /titleCheatRef\.current = backTitlePick\(/);
+    assert.match(handler, /setTitleCheat\(backTitlePick\)/);
+    assert.ok(
+      handler.indexOf("titleCheatRef.current =") <
+        handler.indexOf("setTitleCheat(backTitlePick)"),
+    );
+  }
+});
+
+test("gamepad inject log path is repo-derived, not a stale /tmp agent path", () => {
+  const spec = readFileSync(
+    new URL("./browser/gamepad.spec.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(spec, /\/tmp\/grok-goal-/);
+  assert.match(spec, /fileURLToPath\(import\.meta\.url\)/);
+  assert.match(spec, /test-results\/gamepad-inject\.log/);
+  assert.match(spec, /process\.env\.GAMEPAD_INJECT_LOG/);
+});
+
+test("START GAME wait uses a load-tolerant budget, not a nested 20s cap", () => {
+  const skip = readFileSync(
+    new URL("./browser/skip-intro.ts", import.meta.url),
+    "utf8",
+  );
+  const config = readFileSync(
+    new URL("../playwright.config.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(skip, /timeout:\s*20000/);
+  assert.match(skip, /timeout:\s*60_?000/);
+  assert.match(config, /timeout:\s*60_?000/);
+});

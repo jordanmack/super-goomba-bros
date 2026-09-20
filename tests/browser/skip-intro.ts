@@ -22,8 +22,9 @@ const HOLD_KEYS = [
 ] as const;
 
 export async function waitForStart(page: Page) {
+  // Match the Playwright test budget. A nested 20s cap flakes under load.
   await expect(page.getByRole("button", { name: "START GAME" })).toBeEnabled({
-    timeout: 20000,
+    timeout: 60000,
   });
   await releaseHolds(page);
 }

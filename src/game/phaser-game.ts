@@ -77,7 +77,7 @@ export class PhaserGame {
     physics.bind(this.play!.physics.world, Phaser.Physics.Arcade);
   }
   render(sim: Simulation, _time: number) {
-    this.play?.renderState(sim, this.width, this.height);
+    this.play?.renderState(sim, this.width);
   }
   screen(x: number, y: number, sim: Simulation) {
     const zoom = sim.cameraZoom || 1;

@@ -320,6 +320,8 @@ test("Play draws the sweat drop unscaled, never a scaling exclaim bang", () => {
   assert.match(draw, /SWEAT_DROP_WIDTH \* 2/);
   assert.match(draw, /SWEAT_DROP_HEIGHT \* 2/);
   assert.match(draw, /SWEAT_DROP_KEY/);
+  assert.match(draw, /actorSpriteBox\([\s\S]*?\)\.h/);
+  assert.doesNotMatch(play, /actorSpriteHeight/);
   assert.doesNotMatch(draw, /n\.scale/);
   assert.doesNotMatch(play, /["']exclaim["']/);
   assert.doesNotMatch(sprites, /pixelExclaim/);

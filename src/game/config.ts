@@ -223,20 +223,11 @@ export function pickWarningChirp(random: () => number) {
 
 export const MAP_TOP = TUNING.groundY - 13 * 32;
 export const VIEW_HEIGHT = 540;
-// 1-1 opening: start hill through the first pipe (column 28, 2 tiles).
-export const TITLE_SHOT = { x: 0, y: 0, w: 30 * 32, h: VIEW_HEIGHT } as const;
 
-export function titleCamera(
-  viewWidth: number,
-  viewHeight: number,
-  shot: { x: number; y: number; w: number; h: number } = TITLE_SHOT,
-) {
-  const zoom = Math.min(1, viewWidth / shot.w, viewHeight / shot.h);
-  return {
-    scrollX: shot.x + (viewWidth / 2) * (1 / zoom - 1),
-    scrollY: shot.y + shot.h - viewHeight / 2 - viewHeight / (2 * zoom),
-    zoom,
-  };
+// Native play zoom, left-anchored 1-1 opening. Narrow views crop; they do not
+// zoom out. Extra width on a wide screen shows more stage to the right.
+export function titleCamera() {
+  return { scrollX: 0, scrollY: 0, zoom: 1 };
 }
 
 export function cameraWorldView(

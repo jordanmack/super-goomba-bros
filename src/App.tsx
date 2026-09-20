@@ -705,7 +705,10 @@ export default function App() {
               <button
                 type="button"
                 className="secondary title-back"
-                onClick={() => setTitleCheat(backTitlePick)}
+                onClick={() => {
+                  titleCheatRef.current = backTitlePick(titleCheatRef.current);
+                  setTitleCheat(backTitlePick);
+                }}
               >
                 Back
               </button>
@@ -733,7 +736,10 @@ export default function App() {
               <button
                 type="button"
                 className="secondary title-back"
-                onClick={() => setTitleCheat(backTitlePick)}
+                onClick={() => {
+                  titleCheatRef.current = backTitlePick(titleCheatRef.current);
+                  setTitleCheat(backTitlePick);
+                }}
               >
                 Back
               </button>

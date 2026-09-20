@@ -1,4 +1,6 @@
 import { writeFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   test,
   expect,
@@ -14,18 +16,15 @@ async function waitReady(page: Page) {
   await waitForStart(page);
 }
 
-const INJECT_LOG = "/tmp/grok-goal-6eb0e4eeb2e9/implementer/issue-75/gamepad-inject.log";
-const INJECT_COPY =
-  "/tmp/grok-goal-6eb0e4eeb2e9/implementer/gamepad-inject.log";
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const INJECT_LOG =
+  process.env.GAMEPAD_INJECT_LOG ||
+  join(repoRoot, "test-results/gamepad-inject.log");
 
 function recordInjectFailure(message: string) {
   const body = `${new Date().toISOString()} ${message}\n`;
-  mkdirSync("/tmp/grok-goal-6eb0e4eeb2e9/implementer/issue-75", {
-    recursive: true,
-  });
-  mkdirSync("/tmp/grok-goal-6eb0e4eeb2e9/implementer", { recursive: true });
+  mkdirSync(dirname(INJECT_LOG), { recursive: true });
   writeFileSync(INJECT_LOG, body);
-  writeFileSync(INJECT_COPY, body);
 }
 
 async function injectPad(page: Page) {
