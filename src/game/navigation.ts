@@ -1,6 +1,11 @@
 import { Body } from "./physics.ts";
 import type { Point } from "./physics.ts";
 import { MAP_TOP, TUNING as T } from "./config.ts";
+import {
+  firebarHits,
+  plannerFirebarFrame,
+  type Firebar,
+} from "./castle.ts";
 
 type Box = { min: Point; max: Point };
 
@@ -35,6 +40,9 @@ export function planJump(
   preferLow = false,
   gravity?: { hold: number; fall: number },
   clear?: (point: { x: number; y: number; frames: number }) => boolean,
+  // Drop paths that replay with no hold ask for 0. A higher-scored delayed
+  // arc must not hide a delay-0 candidate those paths can still fly.
+  maxDelay?: number,
 ) {
   const half = body.width / 2,
     tall = body.height / 2;
@@ -67,7 +75,8 @@ export function planJump(
   ];
   const holdG = (gravity?.hold ?? T.jumpHoldGravity) / 3600,
     fallG = (gravity?.fall ?? T.npcJumpFallGravity) / 3600;
-  for (const delay of [0, 10, 18, 24])
+  for (const delay of [0, 10, 18, 24]) {
+    if (maxDelay !== undefined && delay > maxDelay) continue;
     for (const pace of paces) {
       let x = start.x,
         y = start.y;
@@ -149,9 +158,85 @@ export function planJump(
         if (clear && !clear({ x, y, frames: frame + 1 })) break;
       }
     }
+  }
   return options.sort(
     (a, b) => (preferLow ? b.y - a.y : 0) || b.score - a.score,
   )[0];
+}
+
+// Frame-by-frame walk from here to exitX: 1 steps at vx, 0 holds. Undefined
+// when no route stays off every bar and every x where `wall` is true. A
+// crossing usually advances, waits out a ball, then advances again.
+export function firebarCrossing(
+  startX: number,
+  y: number,
+  vx: number,
+  exitX: number,
+  half: number,
+  tall: number,
+  simFrame: number,
+  bars: Firebar[],
+  wall: (x: number) => boolean = () => false,
+): Uint8Array | undefined {
+  const direction = Math.sign(vx);
+  const pace = Math.abs(vx);
+  const cells = Math.ceil(Math.abs(exitX - startX) / Math.max(0.01, pace));
+  if (cells <= 0) return new Uint8Array(0);
+  const lo = Math.min(startX, exitX),
+    hi = Math.max(startX, exitX);
+  // Keep every bar whose arm can reach the walked span. A flat margin drops
+  // the very bar being crossed, since a length-12 hub sits 184 px away.
+  const reach = bars.filter((bar) => {
+    const span =
+      (bar.length - 1) * T.firebarSpacing + T.firebarBallRadius + half;
+    return bar.x > lo - span && bar.x < hi + span;
+  });
+  if (!reach.length) return new Uint8Array(0);
+  const xAt = (cell: number) => startX + direction * cell * pace;
+  const hit = (cell: number, flight: number) => {
+    const x = xAt(cell);
+    const frame = plannerFirebarFrame(simFrame, flight);
+    for (const bar of reach)
+      if (firebarHits(bar, frame, x, y, half, tall)) return true;
+    return false;
+  };
+  // Two bars at different speeds realign only at their joint period, so allow
+  // the slower one a full revolution plus the walk itself.
+  const horizon =
+    Math.ceil((32 * 256) / Math.min(...reach.map((b) => b.nesSpeed))) + cells;
+  const width = horizon + 1;
+  const from = new Int32Array((cells + 1) * width).fill(-1);
+  from[0] = -2;
+  const queue = [0];
+  let goal = -1;
+  for (let head = 0; head < queue.length && goal < 0; head++) {
+    const node = queue[head]!;
+    const cell = Math.floor(node / width),
+      frame = node % width;
+    if (frame >= horizon) continue;
+    for (const move of [1, 0]) {
+      const next = cell + move;
+      if (next > cells) continue;
+      const index = next * width + frame + 1;
+      if (from[index] !== -1) continue;
+      // A solid inside the span stops the step. Holding does not cross it.
+      if (move && wall(xAt(next))) continue;
+      if (hit(next, frame + 1)) continue;
+      from[index] = node;
+      if (next === cells) {
+        goal = index;
+        break;
+      }
+      queue.push(index);
+    }
+  }
+  if (goal < 0) return;
+  const moves: number[] = [];
+  for (let node = goal; from[node]! >= 0; node = from[node]!)
+    moves.push(
+      Math.floor(node / width) > Math.floor(from[node]! / width) ? 1 : 0,
+    );
+  return Uint8Array.from(moves.reverse());
 }
 
 // A shared distance field lets swimmers route around coral and pipe walls.

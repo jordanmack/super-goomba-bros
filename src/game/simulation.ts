@@ -41,7 +41,7 @@ import {
   vineExitColumn,
 } from "./levels.ts";
 import { Room, enemyRole } from "./room.ts";
-import { enclosedWell, planJump } from "./navigation.ts";
+import { enclosedWell, firebarCrossing, planJump } from "./navigation.ts";
 import { firstEmptySpawnCell } from "./spawn-cell.ts";
 import { warpZoneSignage } from "./warp-zone.ts";
 
@@ -1397,6 +1397,53 @@ export class Simulation {
     if (!water) a.jumpHeld = true;
     if (a === this.player) this.events.push("jump");
   }
+  // Bar clearance at the frame the body occupies that cell. Undefined when
+  // this actor does not have to dodge bars.
+  private npcFirebarClear(a: Actor) {
+    const room = this.roomFor(a);
+    if (a === this.mario || !room.firebars.length) return;
+    const half = a.body.width / 2;
+    const tall = a.body.height / 2;
+    return (point: { x: number; y: number; frames: number }) =>
+      !this.firebarBlocks(
+        room,
+        point.x,
+        point.y,
+        half,
+        tall,
+        plannerFirebarFrame(this.frame, point.frames),
+      );
+  }
+  // Jump plan from the body that is about to leave the ground. Backoff stores
+  // a probe arc only as a reason to walk here; a firebar room flies this one.
+  resolveBackoff(a: Actor) {
+    const room = this.roomFor(a);
+    const p = a.body.position;
+    const direction =
+      a.navDetourBelow ||
+      (room.data.goal?.kind === "pipe" && p.x > room.goalX + 20)
+        ? -1
+        : 1;
+    const pace = this.runSpeedFor(a);
+    const impulse = room.onSpring(a) ? T.springImpulse : jumpArc(pace).impulse;
+    const solids = this.solids.filter(
+      (s) =>
+        !s.headOnly &&
+        s.bounds.max.x > p.x - 400 &&
+        s.bounds.min.x < p.x + 400,
+    );
+    return planJump(
+      a.body,
+      solids,
+      direction,
+      pace,
+      impulse,
+      undefined,
+      false,
+      undefined,
+      this.npcFirebarClear(a),
+    );
+  }
   private autoJump(a: Actor, direction: number) {
     if (!a.grounded) return;
     const p = a.body.position,
@@ -1432,18 +1479,7 @@ export class Simulation {
     // Arcs are checked against each bar's phase at the frame the body is there.
     // step() advances frame before updateNpcs, so flight 1 is the current frame.
     const room = this.roomFor(a);
-    const firebarFree =
-      a === this.mario || !room.firebars.length
-        ? undefined
-        : (point: { x: number; y: number; frames: number }) =>
-            !this.firebarBlocks(
-              room,
-              point.x,
-              point.y,
-              half,
-              a.body.height / 2,
-              plannerFirebarFrame(this.frame, point.frames),
-            );
+    const firebarFree = this.npcFirebarClear(a);
     // A bar mounted at walking height can only be jumped, so a halt falls
     // through to the jump planner instead of standing until a ball arrives.
     let firebarHalt = false;
@@ -1568,10 +1604,12 @@ export class Simulation {
           true,
           undefined,
           firebarFree,
+          0,
         );
-        // updateNpcs replays a navDrop without the launch delay, so a delayed
-        // option is not the arc that was planned. Take only delay-0 arcs, and
-        // in a firebar room only when the fall starts from here this frame.
+        // updateNpcs replays a navDrop without the launch delay, so only a
+        // delay-0 arc is the one that was planned. Ask planJump for that arc
+        // directly: a higher-scored delayed landing must not discard it. In a
+        // firebar room the fall also has to start from here this frame.
         const flyable =
           drop?.delay === 0 && (!firebarFree || Math.abs(x - p.x) <= a.speed);
         if (drop && flyable && Math.abs(x - p.x) < a.body.width + 40) {
@@ -1616,6 +1654,7 @@ export class Simulation {
         true,
         undefined,
         firebarFree,
+        0,
       );
       // The replay forces navDelay 0, so a delayed arc is not the one cleared.
       if (fall?.delay === 0) {
@@ -1680,6 +1719,9 @@ export class Simulation {
           false,
           undefined,
           firebarFree,
+          // A firebar replay flies delay 0, so that is the arc to rank.
+          // Elsewhere a delayed option is still accepted, then flown with no hold.
+          firebarFree ? 0 : undefined,
         );
         if (drop && (!firebarFree || drop.delay === 0)) {
           this.move(a, drop.vx);
@@ -1729,10 +1771,9 @@ export class Simulation {
             retry &&
             ((retry.x - p.x) * direction > 24 || retry.y < p.y - 32)
           ) {
-            // updateNpcs launches a backoff from wherever the NPC stands a
-            // later frame, so a bar-cleared arc from the probe is not the arc
-            // flown. Skip the backoff entirely in firebar rooms.
-            if (firebarFree) break;
+            // The probe only chooses where to stand. The launch re-solves
+            // from the body that actually jumps, so a firebar room can back
+            // up without flying an arc cleared at the probe.
             a.navBackoff = { x, vx: retry.vx, delay: retry.delay };
             break;
           }
@@ -3943,8 +3984,22 @@ export class Simulation {
       if (n.navBackoff) {
         const target = n.navBackoff;
         if (n.grounded && Math.abs(p.x - target.x) <= n.speed) {
-          this.launchJump(n, target.vx, T.runJumpSpeed, target.delay);
-          n.navBackoff = undefined;
+          // Firebar clearance belongs to the body that jumps, not the probe
+          // that picked this x. Re-solve here. Other rooms keep the stored arc.
+          if (this.roomFor(n).firebars.length) {
+            const solved = this.resolveBackoff(n);
+            n.navBackoff = undefined;
+            if (solved) {
+              const pace = this.runSpeedFor(n);
+              const impulse = this.roomFor(n).onSpring(n)
+                ? T.springImpulse
+                : jumpArc(pace).impulse;
+              this.launchJump(n, solved.vx, impulse, solved.delay);
+            } else this.move(n, 0);
+          } else {
+            this.launchJump(n, target.vx, T.runJumpSpeed, target.delay);
+            n.navBackoff = undefined;
+          }
         } else this.move(n, Math.sign(target.x - p.x) * n.speed);
         continue;
       }
@@ -4945,73 +5000,36 @@ export class Simulation {
     return false;
   }
 
-  // A frame-by-frame plan that walks the actor from here to `exitX` without
-  // ever touching a bar: 1 means step at vx, 0 means hold still. undefined when
-  // no such plan exists. A breadth-first search over (cell, frame) finds it,
-  // because a crossing usually needs the NPC to advance, pause for a sweeping
-  // ball, then advance again.
+  // Walk to exitX without touching a bar or a solid. `wall` uses the same
+  // vertical test as wallAhead, at each pace step instead of a fixed lookahead.
   private firebarCrossPlan(a: Actor, vx: number, exitX: number) {
-    const room = this.roomFor(a);
     const start = a.body.position;
-    const direction = Math.sign(vx);
-    const pace = Math.abs(vx);
-    const cells = Math.ceil(Math.abs(exitX - start.x) / Math.max(0.01, pace));
-    if (cells <= 0) return new Uint8Array(0);
     const half = a.body.width / 2 + 6,
       tall = a.body.height / 2 + 8;
-    // Keep every bar whose arm can reach the walked span. A flat margin drops
-    // the very bar being crossed, since a length-12 hub sits 184 px away.
-    const lo = Math.min(start.x, exitX),
-      hi = Math.max(start.x, exitX);
-    const bars = room.firebars.filter((bar) => {
-      const span =
-        (bar.length - 1) * T.firebarSpacing + T.firebarBallRadius + half;
-      return bar.x > lo - span && bar.x < hi + span;
-    });
-    if (!bars.length) return new Uint8Array(0);
-    const y = start.y;
-    // Same frame index the collider will hold when this search step arrives.
-    const hit = (cell: number, flight: number) => {
-      const x = start.x + direction * cell * pace;
-      const frame = plannerFirebarFrame(this.frame, flight);
-      for (const bar of bars)
-        if (firebarHits(bar, frame, x, y, half, tall)) return true;
-      return false;
-    };
-    // Two bars at different speeds realign only at their joint period, so allow
-    // the slower one a full revolution plus the walk itself.
-    const horizon =
-      Math.ceil((32 * 256) / Math.min(...bars.map((b) => b.nesSpeed))) + cells;
-    const width = horizon + 1;
-    const from = new Int32Array((cells + 1) * width).fill(-1);
-    const startIndex = 0;
-    from[startIndex] = -2;
-    const queue = [startIndex];
-    let goal = -1;
-    for (let head = 0; head < queue.length && goal < 0; head++) {
-      const node = queue[head]!;
-      const cell = Math.floor(node / width),
-        frame = node % width;
-      if (frame >= horizon) continue;
-      for (const move of [1, 0]) {
-        const next = cell + move;
-        if (next > cells) continue;
-        const index = next * width + frame + 1;
-        if (from[index] !== -1) continue;
-        if (hit(next, frame + 1)) continue;
-        from[index] = node;
-        if (next === cells) {
-          goal = index;
-          break;
-        }
-        queue.push(index);
-      }
-    }
-    if (goal < 0) return;
-    const moves: number[] = [];
-    for (let node = goal; from[node]! >= 0; node = from[node]!)
-      moves.push(Math.floor(node / width) > Math.floor(from[node]! / width) ? 1 : 0);
-    return Uint8Array.from(moves.reverse());
+    const bodyHalf = a.body.width / 2;
+    const feet = a.body.bounds.max.y;
+    const head = a.body.bounds.min.y;
+    return firebarCrossing(
+      start.x,
+      start.y,
+      vx,
+      exitX,
+      half,
+      tall,
+      this.frame,
+      this.roomFor(a).firebars,
+      (x) => {
+        if (a.body.ignoreWalls) return false;
+        return this.solids.some(
+          (solid) =>
+            !solid.headOnly &&
+            x + bodyHalf > solid.bounds.min.x &&
+            x - bodyHalf < solid.bounds.max.x &&
+            feet > solid.bounds.min.y + 5 &&
+            head < solid.bounds.max.y,
+        );
+      },
+    );
   }
 
   // Danger zone of the nearest bar ahead that reaches the actor's lane: `hold`

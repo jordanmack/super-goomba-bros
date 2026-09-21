@@ -15,7 +15,7 @@ import {
   isFirebarType,
   plannerFirebarBalls,
 } from "../src/game/castle.ts";
-import { planJump } from "../src/game/navigation.ts";
+import { firebarCrossing, planJump } from "../src/game/navigation.ts";
 import type { Input } from "../src/game/simulation.ts";
 import {
   axeMetatileRow,
@@ -751,4 +751,156 @@ test("a non-row-2 ceiling support cannot re-arm the below-detour every frame", (
   }
   assert.ok(armed > 0, "at least one non-row-2 slab armed a detour");
   s.physics.clear();
+});
+
+// #153: planJump returned only its top-scored arc. A delayed landing that
+// outscored every delay-0 arc made the firebar drop paths throw the whole
+// result away, even though a delay-0 landing was valid.
+test("planJump keeps a delay-0 landing when a delayed arc scores higher", () => {
+  const body = new Body(0, 200, 24, 28);
+  // Near ledge is the delay-0 touch. A hold falls past it onto the lower
+  // floor, and that longer run scores higher, so the old single-best return
+  // was the delayed arc.
+  const near = new Body(100, 256, 80, 32, true);
+  const far = new Body(180, 516, 200, 32, true);
+  const solids = [near, far];
+  const best = planJump(body, solids, 1, T.runSpeed, 0);
+  const immediate = planJump(
+    body,
+    solids,
+    1,
+    T.runSpeed,
+    0,
+    undefined,
+    false,
+    undefined,
+    undefined,
+    0,
+  );
+  assert.ok(best, "an arc exists");
+  assert.ok(immediate, "a delay-0 arc exists");
+  assert.ok(best.delay > 0, `top arc delay ${best.delay} should be a hold`);
+  assert.equal(immediate.delay, 0);
+  assert.ok(
+    best.score > immediate.score,
+    `delayed score ${best.score} should beat delay-0 score ${immediate.score}`,
+  );
+  assert.ok(
+    immediate.y < best.y,
+    "the kept arc is the upper ledge, not the lower floor the hold reaches",
+  );
+});
+
+// #154: updateNpcs used to fly the probe's vx and delay from wherever the NPC
+// stood later. In a firebar room the launch re-solves from that body.
+test("firebar backoff launches the arc solved at the launch position, not the probe", () => {
+  const s = castleGame("1-4");
+  assert.ok(s.activeRoom.firebars.length > 0, "1-4 has firebars");
+  const n = s.npcs[0]!;
+  for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+  s.npcs = [n];
+  s.player.saved = true;
+  Body.setFrozen(s.player.body, true);
+  const floor = new Body(200, 400, 400, 32, true);
+  const land = new Body(520, 400, 160, 32, true);
+  const low = new Body(360, 520, 120, 32, true);
+  s.solids = [floor, land, low];
+  const launchX = 264;
+  const probeX = 200;
+  const y = floor.bounds.min.y - n.body.height / 2;
+  Body.setPosition(n.body, { x: launchX, y });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.speed = T.runSpeed;
+  n.navDrop = undefined;
+  n.navDetourBelow = undefined;
+  n.navRetry = 0;
+  n.grounded = true;
+  const impulse = jumpArc(T.runSpeed).impulse;
+  const probe = planJump(
+    new Body(probeX, y, n.body.width, n.body.height),
+    s.solids,
+    1,
+    T.runSpeed,
+    impulse,
+  );
+  const solved = s.resolveBackoff(n);
+  assert.ok(probe, "probe position has an arc");
+  assert.ok(solved, "launch position has an arc");
+  assert.notEqual(
+    probe.delay,
+    solved.delay,
+    "probe and launch are different plans",
+  );
+  assert.equal(
+    solved.delay,
+    planJump(n.body, s.solids, 1, T.runSpeed, impulse)?.delay,
+    "resolveBackoff is planJump at the launch body",
+  );
+  n.navBackoff = { x: launchX, vx: probe.vx, delay: probe.delay };
+  s.step(dt, emptyInput());
+  assert.equal(n.navBackoff, undefined, "the backoff was consumed");
+  assert.equal(n.navDelay, solved.delay, "flew the launch delay, not the probe");
+  assert.equal(n.navVx, solved.vx);
+  assert.notEqual(n.navDelay, probe.delay);
+  s.physics.clear();
+});
+
+// #156: the crossing replay stepped `pace` per frame and never asked whether
+// a solid occupied that x. A fixture block in the span is enough to prove it.
+test("a firebar crossing that hits a wall does not pass a solid inside the span", () => {
+  const pace = T.runSpeed;
+  const startX = 0;
+  const exitX = 80;
+  const y = 300;
+  const bodyHalf = 12;
+  const solidMin = 36;
+  const solidMax = 52;
+  const bar = {
+    x: 40,
+    y: y - 400,
+    type: 0x1b as const,
+    length: 6,
+    nesSpeed: 0x28,
+    clockwise: true,
+  };
+  const overlapsSolid = (x: number) =>
+    x + bodyHalf > solidMin && x - bodyHalf < solidMax;
+  const open = firebarCrossing(
+    startX,
+    y,
+    pace,
+    exitX,
+    bodyHalf + 6,
+    14 + 8,
+    0,
+    [bar],
+    () => false,
+  );
+  assert.ok(open && open.length > 0, "without a wall the span can be crossed");
+  let x = startX;
+  let crossed = false;
+  for (const move of open) {
+    if (move) x += pace;
+    if (overlapsSolid(x)) crossed = true;
+  }
+  assert.equal(crossed, true, "the open replay walks through the fixture solid");
+  const blocked = firebarCrossing(
+    startX,
+    y,
+    pace,
+    exitX,
+    bodyHalf + 6,
+    14 + 8,
+    0,
+    [bar],
+    overlapsSolid,
+  );
+  assert.equal(
+    blocked,
+    undefined,
+    "consulting wall refuses a solid inside the span",
+  );
 });
