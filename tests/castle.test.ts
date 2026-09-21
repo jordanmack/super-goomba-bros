@@ -9,7 +9,12 @@ import {
 } from "../src/game/simulation.ts";
 import { MAP_TOP, STANDING_JUMP_IMPULSE, TUNING as T, jumpArc } from "../src/game/config.ts";
 import { CAMPAIGN, areaData, isSolidTile } from "../src/game/levels.ts";
-import { firebarHits, isFirebarType } from "../src/game/castle.ts";
+import {
+  colliderFirebarBalls,
+  firebarHits,
+  isFirebarType,
+  plannerFirebarBalls,
+} from "../src/game/castle.ts";
 import { planJump } from "../src/game/navigation.ts";
 import type { Input } from "../src/game/simulation.ts";
 import {
@@ -502,8 +507,8 @@ test("planJump reports landing frames so the firebar phase is sampled on arrival
       for (const y of [bar.y - 24, bar.y, bar.y + 24]) {
         const x = bar.x + offset;
         if (
-          firebarHits(bar, takeoff / 60, x, y, half, tall) !==
-          firebarHits(bar, (takeoff + flight) / 60, x, y, half, tall)
+          firebarHits(bar, takeoff, x, y, half, tall) !==
+          firebarHits(bar, takeoff + flight, x, y, half, tall)
         )
           differed++;
       }
@@ -527,10 +532,10 @@ test("planJump reports landing frames so the firebar phase is sampled on arrival
   let trapped: number | undefined;
   for (let takeoff = 0; takeoff < 400 && trapped === undefined; takeoff++)
     if (
-      !firebarHits(trap, takeoff / 60, target.x, target.y, half, tall) &&
+      !firebarHits(trap, takeoff, target.x, target.y, half, tall) &&
       firebarHits(
         trap,
-        (takeoff + target.frames) / 60,
+        takeoff + target.frames,
         target.x,
         target.y,
         half,
@@ -588,7 +593,7 @@ test("planJump reports landing frames so the firebar phase is sampled on arrival
     (point) =>
       !firebarHits(
         trap,
-        (trapped! + point.frames) / 60,
+        trapped! + point.frames,
         point.x,
         point.y,
         half,
@@ -607,14 +612,14 @@ test("planJump reports landing frames so the firebar phase is sampled on arrival
   // arc lands on, the takeoff-time question says clear and the landing-time
   // question says blocked.
   assert.equal(
-    firebarHits(trap, trapped! / 60, target.x, target.y, half, tall),
+    firebarHits(trap, trapped!, target.x, target.y, half, tall),
     false,
     "the landing cell is clear at takeoff",
   );
   assert.equal(
     firebarHits(
       trap,
-      (trapped! + target.frames) / 60,
+      trapped! + target.frames,
       target.x,
       target.y,
       half,
@@ -622,6 +627,26 @@ test("planJump reports landing frames so the firebar phase is sampled on arrival
     ),
     true,
     "and occupied on the frame the arc actually lands",
+  );
+  s.physics.clear();
+});
+
+// #152: the jump planner used elapsed + k/60 while the collider added dt once
+// per frame. Those clocks disagree by a spin step. Both now read one future
+// frame off the simulation's integer counter.
+test("firebar phase does not drift one step between planner and collider", () => {
+  const s = castleGame("1-4");
+  // Past the first frame where elapsed*60 and the integer counter disagree.
+  for (let i = 0; i < 96; i++) s.step(dt, emptyInput());
+  const bar = s.activeRoom.firebars[0]!;
+  const flight = 128;
+  assert.deepEqual(
+    plannerFirebarBalls(bar, s.frame, flight),
+    colliderFirebarBalls(bar, s.frame, flight),
+  );
+  assert.deepEqual(
+    s.firebarBalls(s.activeRoom),
+    s.activeRoom.firebars.flatMap((b) => colliderFirebarBalls(b, s.frame, 1)),
   );
   s.physics.clear();
 });

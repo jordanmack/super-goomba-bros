@@ -22,7 +22,12 @@ import {
   blockDrawY,
   jumpArc,
 } from "./config.ts";
-import { firebarBalls, firebarHits } from "./castle.ts";
+import {
+  colliderFirebarBalls,
+  colliderFirebarFrame,
+  firebarHits,
+  plannerFirebarFrame,
+} from "./castle.ts";
 import {
   areaData,
   CAMPAIGN,
@@ -967,6 +972,8 @@ export class Simulation {
   events: GameEvent[] = [];
   mode: Mode = "title";
   elapsed = 0;
+  // Play frames. Firebar phase reads this counter, not elapsed.
+  frame = 0;
   warned = 0;
   saved = 0;
   coins = 0;
@@ -1114,6 +1121,7 @@ export class Simulation {
     Body.setFrozen(this.mario.body, true);
     this.mode = mode;
     this.elapsed =
+      this.frame =
       this.warned =
       this.saved =
       this.phase =
@@ -1422,7 +1430,7 @@ export class Simulation {
     );
     const wall = this.wallAhead(a, direction, solids);
     // Arcs are checked against each bar's phase at the frame the body is there.
-    // step() advances elapsed before updateNpcs, so arc frame 1 is elapsed.
+    // step() advances frame before updateNpcs, so flight 1 is the current frame.
     const room = this.roomFor(a);
     const firebarFree =
       a === this.mario || !room.firebars.length
@@ -1434,7 +1442,7 @@ export class Simulation {
               point.y,
               half,
               a.body.height / 2,
-              this.elapsed + (point.frames - 1) / 60,
+              plannerFirebarFrame(this.frame, point.frames),
             );
     // A bar mounted at walking height can only be jumped, so a halt falls
     // through to the jump planner instead of standing until a ball arrives.
@@ -1457,7 +1465,7 @@ export class Simulation {
           0;
       if (!zone || ledgeEndsFirst) a.navFirebarGo = undefined;
       else if ((p.x - zone.hold) * direction >= -pace) {
-        const now = Math.round(this.elapsed * 60);
+        const now = this.frame;
         // Plan once per bar and replay it; deciding per frame makes the NPC
         // dither on the rim. Only valid on consecutive grounded frames, since a
         // resumed plan would meet a phase it was never solved for.
@@ -3449,7 +3457,10 @@ export class Simulation {
     )
       this.endPipeIntro();
     const scripted = this.pipeIntro;
-    if (!scripted) this.elapsed += dt;
+    if (!scripted) {
+      this.elapsed += dt;
+      this.frame += 1;
+    }
     if (this.mode === "playing") {
       if (!this.timerStarted && this.onMainControl()) this.timerStarted = true;
       if (this.timerStarted) this.tickTimer(dt);
@@ -3943,7 +3954,7 @@ export class Simulation {
         // scenery and hop into the swing.
         const waiting =
           n.navFirebarWaitFrame !== undefined &&
-          Math.round(this.elapsed * 60) - n.navFirebarWaitFrame <= 1;
+          this.frame - n.navFirebarWaitFrame <= 1;
         n.blockedFor =
           Math.abs(p.x - n.lastX) < 8 && !waiting ? n.blockedFor + dt : 0;
         n.lastX = p.x;
@@ -4927,10 +4938,10 @@ export class Simulation {
     y: number,
     halfW: number,
     halfH: number,
-    time = this.elapsed,
+    frame = colliderFirebarFrame(this.frame, 1),
   ) {
     for (const bar of room.firebars)
-      if (firebarHits(bar, time, x, y, halfW, halfH)) return true;
+      if (firebarHits(bar, frame, x, y, halfW, halfH)) return true;
     return false;
   }
 
@@ -4959,13 +4970,12 @@ export class Simulation {
     });
     if (!bars.length) return new Uint8Array(0);
     const y = start.y;
-    // Ask firebarHits on the collider's clock; a second pose formula drifts a
-    // step. step() advances elapsed first, so search frame N is elapsed+(N-1)/60.
-    const hit = (cell: number, frame: number) => {
+    // Same frame index the collider will hold when this search step arrives.
+    const hit = (cell: number, flight: number) => {
       const x = start.x + direction * cell * pace;
-      const time = this.elapsed + (frame - 1) / 60;
+      const frame = plannerFirebarFrame(this.frame, flight);
       for (const bar of bars)
-        if (firebarHits(bar, time, x, y, half, tall)) return true;
+        if (firebarHits(bar, frame, x, y, half, tall)) return true;
       return false;
     };
     // Two bars at different speeds realign only at their joint period, so allow
@@ -5033,7 +5043,9 @@ export class Simulation {
   }
 
   firebarBalls(room: Room) {
-    return room.firebars.flatMap((bar) => firebarBalls(bar, this.elapsed));
+    return room.firebars.flatMap((bar) =>
+      colliderFirebarBalls(bar, this.frame, 1),
+    );
   }
 
   private updateCastleHazards(dt: number) {

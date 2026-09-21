@@ -40,9 +40,31 @@ export type Firebar = {
 
 export type Point = { x: number; y: number };
 
-export function firebarBalls(bar: Firebar, elapsed: number): Point[] {
+// Flight 1 is the step already stored in the simulation frame counter.
+// Planner and collider share this offset. A seconds clock drifts a spin step.
+function firebarFrameAt(frame: number, flight: number) {
+  return frame + flight - 1;
+}
+
+export function plannerFirebarFrame(frame: number, flight: number) {
+  return firebarFrameAt(frame, flight);
+}
+
+export function colliderFirebarFrame(frame: number, flight: number) {
+  return firebarFrameAt(frame, flight);
+}
+
+export function plannerFirebarBalls(bar: Firebar, frame: number, flight: number) {
+  return firebarBalls(bar, plannerFirebarFrame(frame, flight));
+}
+
+export function colliderFirebarBalls(bar: Firebar, frame: number, flight: number) {
+  return firebarBalls(bar, colliderFirebarFrame(frame, flight));
+}
+
+export function firebarBalls(bar: Firebar, frame: number): Point[] {
   const sign = bar.clockwise ? 1 : -1;
-  const units = elapsed * 60 * bar.nesSpeed * sign;
+  const units = frame * bar.nesSpeed * sign;
   const step = ((Math.floor(units / 256) % 32) + 32) % 32;
   const angle = (step / 32) * Math.PI * 2;
   const balls: Point[] = [];
@@ -58,14 +80,14 @@ export function firebarBalls(bar: Firebar, elapsed: number): Point[] {
 
 export function firebarHits(
   bar: Firebar,
-  elapsed: number,
+  frame: number,
   x: number,
   y: number,
   halfW: number,
   halfH: number,
 ) {
   const radius = T.firebarBallRadius;
-  for (const ball of firebarBalls(bar, elapsed))
+  for (const ball of firebarBalls(bar, frame))
     if (Math.abs(x - ball.x) < halfW + radius && Math.abs(y - ball.y) < halfH + radius)
       return true;
   return false;
