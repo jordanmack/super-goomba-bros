@@ -33,6 +33,8 @@ export type Cannon = {
   row: number;
   x: number;
   y: number;
+  // ProcessCannons index 0..5. Later barrels share a slot with an earlier one.
+  slot: number;
   timer: number;
 };
 
@@ -87,6 +89,8 @@ export class Room {
   flagpole?: Flagpole;
   platforms: Platform[] = [];
   cannons: Cannon[] = [];
+  // Next shared barrel to try when several map to one LSFR slot.
+  cannonTurn: number[] = [0, 0, 0, 0, 0, 0];
   balanceRopes: BalanceRope[] = [];
   spawnedActors = false;
   firebars: Firebar[] = [];
@@ -131,6 +135,9 @@ export class Room {
             row: y,
             x: offset + x * 32 + 16,
             y: MAP_TOP + y * 32 + 16,
+            slot: this.cannons.length % T.cannonSelectMax,
+            // One $0e before the first shot. Later reloads are Cannon_Timer,
+            // counted only when ProcessCannons selects this slot.
             timer: T.cannonReload + ((x * 13 + y * 7) % T.cannonReload),
           });
       }),

@@ -17,6 +17,7 @@ import {
   MAP_TOP,
   PHRASES,
   STANDING_JUMP_IMPULSE,
+  CANNON_BLAST,
   TUNING as T,
   VIEW_HEIGHT,
   blockDrawY,
@@ -246,6 +247,7 @@ export type GameEvent =
   | "hurry"
   | "ending"
   | "firework"
+  | "blast"
   | "flame";
 export type Particle = {
   x: number;
@@ -277,6 +279,8 @@ export type BulletBill = {
   vx: number;
   areaId: string;
   cannonX: number;
+  // Enemy slot 0..2 from ProcessCannons. A full set blocks new selects.
+  slot: number;
 };
 export type Bowser = {
   id: number;
@@ -964,6 +968,8 @@ export class Simulation {
   obstacles: Obstacle[] = [];
   fireballs: Fireball[] = [];
   bulletBills: BulletBill[] = [];
+  // SMB1 PseudoRandomBitReg. Cold boot seeds the first byte with $a5.
+  private cannonLfsr = Uint8Array.of(0xa5, 0, 0, 0, 0, 0, 0);
   bowsers: Bowser[] = [];
   bowserFlames: BowserFlame[] = [];
   items: Item[] = [];
@@ -1173,6 +1179,8 @@ export class Simulation {
     this.cameraZoom = 1;
     this.fireballs = [];
     this.bulletBills = [];
+    this.cannonLfsr.fill(0);
+    this.cannonLfsr[0] = 0xa5;
     this.items = [];
     this.vines = [];
     this.coinPops = [];
@@ -4827,6 +4835,7 @@ export class Simulation {
     vx: number,
     areaId = this.player.areaId ?? this.level.main,
     cannonX = x,
+    slot = 0,
   ): BulletBill {
     const bill: BulletBill = {
       id: this.nextId++,
@@ -4835,6 +4844,7 @@ export class Simulation {
       vx,
       areaId,
       cannonX,
+      slot,
     };
     this.bulletBills.push(bill);
     return bill;
@@ -4863,26 +4873,72 @@ export class Simulation {
     return { left: cam - 32, right: cam + width + 32 };
   }
 
+  // NMI rotates seven LSFR bytes. Feedback is bit 1 of the first two bytes.
+  private stepCannonLfsr() {
+    const reg = this.cannonLfsr;
+    const mixed = (reg[0] & 0x02) ^ (reg[1] & 0x02);
+    let carry = mixed === 0 ? 0 : 1;
+    for (let i = 0; i < reg.length; i++) {
+      const byte = reg[i] ?? 0;
+      const next = byte & 1;
+      reg[i] = ((byte >>> 1) | (carry << 7)) & 0xff;
+      carry = next;
+    }
+  }
+
+  // Three enemy slots. An empty slot reads PseudoRandomBitReg+1,x, keeps the
+  // lower nybble, and skips the select when that value is >= $06. Cannon_Timer
+  // counts only on a select. A shot that is off screen or too close (same
+  // column included) reloads in silence. A bill that leaves plays Sfx_Blast.
   private updateCannons() {
     if (this.pipeIntro) return;
+    this.stepCannonLfsr();
     for (const room of this.rooms.values()) {
       if (room.data.type === "water" || !room.cannons.length) continue;
-      let live = this.bulletBills.filter(
-        (b) => b.areaId === room.data.id,
-      ).length;
-      for (const cannon of room.cannons) {
-        if (cannon.timer > 0) {
-          cannon.timer--;
-          continue;
+      const bills = this.bulletBills.filter((b) => b.areaId === room.data.id);
+      let live = bills.length;
+      const occupied = new Set(bills.map((b) => b.slot));
+      for (const enemySlot of [2, 1, 0]) {
+        if (live >= T.cannonSlots || occupied.has(enemySlot)) continue;
+        const pick = (this.cannonLfsr[1 + enemySlot] ?? 0) & 0x0f;
+        if (pick >= T.cannonSelectMax) continue;
+        // One enemy slot holds one bill. Barrels that share the LSFR index
+        // still each count $0e, and they take turns so a pair does not volley.
+        const ready: { cannon: (typeof room.cannons)[number]; index: number }[] =
+          [];
+        let index = 0;
+        for (const cannon of room.cannons) {
+          if (cannon.slot !== pick) continue;
+          const at = index++;
+          if (cannon.timer > 0) {
+            cannon.timer--;
+            continue;
+          }
+          cannon.timer = T.cannonReload;
+          ready.push({ cannon, index: at });
         }
-        if (live >= T.cannonSlots) continue;
-        if (this.tryFireCannon(room, cannon)) live++;
-        cannon.timer = T.cannonReload;
+        if (!ready.length || live >= T.cannonSlots) continue;
+        // cannonTurn is an index in the full slot group, not a place in
+        // `ready`. A filtered list would otherwise skip the same barrel.
+        const turn = room.cannonTurn[pick] ?? 0;
+        let start = ready.findIndex((item) => item.index >= turn);
+        if (start < 0) start = 0;
+        for (let i = 0; i < ready.length && live < T.cannonSlots; i++) {
+          const choice = ready[(start + i) % ready.length]!;
+          if (!this.tryFireCannon(room, choice.cannon, enemySlot)) continue;
+          live++;
+          room.cannonTurn[pick] = choice.index + 1;
+          break;
+        }
       }
     }
   }
 
-  private tryFireCannon(room: Room, cannon: { x: number; y: number }) {
+  private tryFireCannon(
+    room: Room,
+    cannon: { x: number; y: number },
+    slot: number,
+  ) {
     if (
       this.player.areaId !== room.data.id ||
       this.inPipe(this.player) ||
@@ -4890,11 +4946,25 @@ export class Simulation {
     )
       return false;
     const view = this.viewWindow(room);
-    if (cannon.x < view.left || cannon.x > view.right) return false;
+    // viewWindow pads 32px past the camera so flying bills are not popped on
+    // the rim. A barrel that does not meet the visible camera is withheld.
+    const cameraLeft = view.left + 32;
+    const cameraRight = view.right - 32;
+    const barrel = 16;
+    if (cannon.x + barrel <= cameraLeft || cannon.x - barrel >= cameraRight)
+      return false;
     const dx = this.player.body.position.x - cannon.x;
     if (Math.abs(dx) < T.cannonClose) return false;
     const vx = dx < 0 ? -T.bulletSpeed : T.bulletSpeed;
-    this.spawnBulletBill(cannon.x, cannon.y, vx, room.data.id, cannon.x);
+    this.spawnBulletBill(
+      cannon.x,
+      cannon.y,
+      vx,
+      room.data.id,
+      cannon.x,
+      slot,
+    );
+    this.events.push(CANNON_BLAST.event);
     return true;
   }
 

@@ -7,6 +7,12 @@ export const MIX = {
   tallyVolume: 0.25,
 } as const;
 
+// Sfx_Blast is the fireworks sample. Cannon fire must not add a wav.
+export const CANNON_BLAST = {
+  event: "blast",
+  cue: "fireworks",
+} as const;
+
 export const TUNING = {
   population: 30,
   elevatedSpawnShare: 1 / 3,
@@ -120,10 +126,13 @@ export const TUNING = {
   // NES BulletBillXSpdData $18 at 2x tiles.
   bulletSpeed: 3,
   bulletSize: 24,
-  // Cannon_Timer $0e plus LSFR select (~3/16) is about 80 frames.
-  cannonReload: 80,
+  // ProcessCannons writes Cannon_Timer $0e and counts it down only when that
+  // slot is the LSFR select. The mean gap is still about 80 frames.
+  cannonReload: 0x0e,
   cannonSlots: 3,
-  // PlayerEnemyDiff adc #$28 / cmp #$50: |dx| < 40 NES px.
+  // Masked LSFR nybble. A select >= this is a miss, so slots are 0..5.
+  cannonSelectMax: 6,
+  // PlayerEnemyDiff adc #$28 / cmp #$50: |dx| < 40 NES px, including same column.
   cannonClose: 80,
   blockBounceSeconds: 0.22,
   pipeWidth: 64,

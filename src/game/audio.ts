@@ -1,6 +1,6 @@
 import type { GameEvent } from "./simulation";
 import type Phaser from "phaser";
-import { MIX, TUNING as T, pickWarningChirp } from "./config";
+import { CANNON_BLAST, MIX, TUNING as T, pickWarningChirp } from "./config";
 import overworld from "../assets/audio/overworld.mp3?inline";
 import starman from "../assets/audio/starman.mp3?inline";
 import underground from "../assets/audio/underground.mp3?inline";
@@ -94,6 +94,7 @@ export const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   hurry: "warning",
   ending: "worldClear",
   firework: "fireworks",
+  blast: CANNON_BLAST.cue,
   flame: "bowserFire",
 };
 

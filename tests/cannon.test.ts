@@ -1,12 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Body } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
 import {
   Simulation as RulesSimulation,
   emptyInput,
 } from "../src/game/simulation.ts";
-import { TUNING as T } from "../src/game/config.ts";
+import { CANNON_BLAST, TUNING as T } from "../src/game/config.ts";
+import { BULLET_BILL_CROP } from "../src/game/smb-sprites.ts";
 import { CAMPAIGN } from "../src/game/levels.ts";
 import type { Input } from "../src/game/simulation.ts";
 
@@ -174,4 +178,158 @@ test("a cannon withholds fire when the player is too close or in line", () => {
     false,
     "withholds when the player is too close",
   );
+});
+
+test("Bullet Bill crop is the 16x16 at (300, 94), drawn 32x32 facing travel", () => {
+  assert.deepEqual(BULLET_BILL_CROP, {
+    x: 300,
+    y: 94,
+    width: 16,
+    height: 16,
+  });
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
+  const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
+  assert.match(sprites, /bulletBill: crop\(\s*enemies,\s*BULLET_BILL_CROP\.x/);
+  assert.match(
+    play,
+    /image\(b\.x, b\.y, 32, 32, "bulletBill", 9\)\.setFlipX\(b\.vx < 0\)/,
+  );
+});
+
+test("a cannon shot plays the fireworks blast only when the bill leaves", () => {
+  assert.equal(CANNON_BLAST.cue, "fireworks");
+  assert.equal(CANNON_BLAST.event, "blast");
+  const s = stage("2a");
+  const room = s.activeRoom;
+  const cannon = room.cannons[0]!;
+  const others = room.cannons.filter((c) => c !== cannon);
+  const arm = () => {
+    cannon.timer = 0;
+    for (const c of others) c.timer = 10_000;
+    s.bulletBills = [];
+    s.events.length = 0;
+  };
+
+  at(s, cannon.x + 200, T.groundY - 14);
+  arm();
+  tick(s, dt);
+  assert.ok(
+    s.bulletBills.some((b) => Math.abs(b.cannonX - cannon.x) < 1),
+    "bill leaves the barrel",
+  );
+  assert.ok(s.events.includes(CANNON_BLAST.event), "blast cue");
+  assert.equal(s.events.includes("firework"), false);
+  // Cold-boot LSFR selects slot 0 from all three enemy slots: write $0e,
+  // then count the same barrel down on the two selects that follow.
+  assert.equal(cannon.timer, T.cannonReload - 2);
+  assert.equal(T.cannonReload, 0x0e);
+
+  at(s, cannon.x, cannon.y);
+  arm();
+  tick(s, dt);
+  assert.equal(
+    s.bulletBills.some((b) => Math.abs(b.cannonX - cannon.x) < 1),
+    false,
+  );
+  assert.equal(s.events.includes(CANNON_BLAST.event), false);
+  assert.equal(cannon.timer, T.cannonReload - 2);
+});
+
+test("a barrel outside the visible camera reloads with no bill and no blast", () => {
+  const s = stage("2a");
+  const room = s.activeRoom;
+  const cannon = room.cannons[0]!;
+  const width = s.viewWidth;
+  // Right edge 8px past the camera, still inside the 32px cull pad.
+  const cam = Math.max(
+    room.offset,
+    Math.min(
+      room.offset + room.data.width * 32 - width,
+      cannon.x + 24,
+    ),
+  );
+  assert.equal(cam, cannon.x + 24);
+  at(s, cam + width * 0.36, T.groundY - 14);
+  cannon.timer = 0;
+  for (const other of room.cannons) if (other !== cannon) other.timer = 10_000;
+  s.bulletBills = [];
+  s.events.length = 0;
+  tick(s, dt);
+  assert.equal(s.bulletBills.length, 0);
+  assert.equal(s.events.includes(CANNON_BLAST.event), false);
+  assert.equal(cannon.timer, T.cannonReload - 2);
+});
+
+test("two barrels on one LSFR slot do not volley into the same enemy slot", () => {
+  const s = stage("32");
+  const pair = s.activeRoom.cannons.filter((c) => c.column === 93);
+  assert.equal(pair.length, 2);
+  assert.equal(pair[0]!.slot, pair[1]!.slot);
+  const others = s.activeRoom.cannons.filter((c) => !pair.includes(c));
+  let saw = false;
+  for (let i = 0; i < 400 && !saw; i++) {
+    for (const c of pair) c.timer = 0;
+    for (const c of others) c.timer = 10_000;
+    s.bulletBills = [];
+    at(s, pair[0]!.x + 200, T.groundY - 14);
+    tick(s, dt);
+    const fired = s.bulletBills.filter(
+      (b) => Math.abs(b.cannonX - pair[0]!.x) < 1,
+    );
+    if (!fired.length) continue;
+    saw = true;
+    assert.equal(fired.length, 1);
+  }
+  assert.ok(saw, "the shared slot eventually fires one bill");
+});
+
+test("shared-slot barrels take turns, including a later column beside an earlier one", () => {
+  const s = stage("33");
+  const room = s.activeRoom;
+  const pair = room.cannons.filter(
+    (c) => c.column === 64 || c.column === 36,
+  );
+  assert.equal(pair.length, 2);
+  assert.equal(pair[0]!.slot, pair[1]!.slot);
+  const left = pair.reduce((a, b) => (a.x < b.x ? a : b));
+  const width = s.viewWidth;
+  const cam = left.x - 32;
+  assert.equal(
+    Math.max(room.offset, Math.min(room.offset + room.data.width * 32 - width, cam)),
+    cam,
+  );
+  const seen = new Set<number>();
+  const others = room.cannons.filter((c) => !pair.includes(c));
+  for (let i = 0; i < 180 && seen.size < 2; i++) {
+    for (const c of pair) c.timer = 0;
+    for (const c of others) c.timer = 10_000;
+    s.bulletBills = [];
+    at(s, cam + width * 0.36, T.groundY - 14);
+    tick(s, dt);
+    for (const bill of s.bulletBills) {
+      const source = pair.find(
+        (c) => Math.abs(c.x - bill.cannonX) < 1 && Math.abs(c.y - bill.y) < 1,
+      );
+      if (source) seen.add(source.column);
+    }
+  }
+  assert.ok(seen.has(36) && seen.has(64), `saw columns ${[...seen].join(",")}`);
+});
+
+test("cannon timers count on an LSFR select, not a flat 80-frame metronome", () => {
+  assert.equal(T.cannonReload, 0x0e);
+  assert.equal(T.cannonSelectMax, 6);
+  assert.notEqual(T.cannonReload, 80);
+  const s = stage("2a");
+  const cannons = s.activeRoom.cannons;
+  assert.equal(cannons.length, 3);
+  const before = cannons.map((c) => c.timer);
+  for (const timer of before)
+    assert.ok(timer >= T.cannonReload && timer < T.cannonReload * 2);
+  assert.ok(Math.max(...before) < 80);
+  tick(s, dt);
+  const changed = cannons.filter((c, i) => c.timer !== before[i]).length;
+  assert.ok(changed > 0 && changed < cannons.length, "only the LSFR slot ticks");
+  for (const cannon of cannons) assert.ok(cannon.timer < 80);
 });

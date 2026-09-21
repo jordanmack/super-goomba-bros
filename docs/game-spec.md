@@ -540,10 +540,14 @@ areas.
 
 Cannons are terrain (metatiles 100 barrel, 101 pedestal, 102 shaft). They stay
 solid until 8x smashes them, as in the 8x smash rule. Every cannon barrel in
-the level data fires; do
-not hard-code per stage. Timing follows SMB1. A cannon does not fire when the
-player is too close or in the same column. Bullet Bills travel horizontally at
-the original speed, ignore gravity, and are removed when they leave the area.
+the level data fires; do not hard-code per stage. Timing follows SMB1
+ProcessCannons: at most three live bills, and Cannon_Timer reloads to $0e and
+counts down only when the LSFR selects that slot. There is no flat 80-frame
+metronome. A cannon does not fire when it is off screen, when the player is
+too close, or when the player is in the same column. A shot that leaves the
+barrel plays the fireworks blast. A withheld shot stays silent. Bullet Bills
+travel horizontally at the original speed, ignore gravity, and are removed
+when they leave the area.
 Contact uses the same lethal terms as other hits for the player, NPCs, and
 Mario. A bill can be stomped. Fireballs bounce or vanish on contact and do not
 harm a bill. A star makes the player immune. An NPC killed by

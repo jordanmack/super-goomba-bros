@@ -382,13 +382,22 @@ function pixelPulley() {
   return canvas;
 }
 
+// (304, 96) starts 4px right and 2px down, so the left fins are missing.
+export const BULLET_BILL_CROP = { x: 300, y: 94, width: 16, height: 16 };
+
 export function scenerySprites({ mario, enemies, items }: SpriteSources) {
   const flag = crop(items, 128, 0, 16, 16);
   const mushroom = crop(items, 0, 0, 16, 16);
   const marioFace = crop(mario, 180, 0, 16, 8);
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
-    bulletBill: crop(enemies, 304, 96, 16, 16),
+    bulletBill: crop(
+      enemies,
+      BULLET_BILL_CROP.x,
+      BULLET_BILL_CROP.y,
+      BULLET_BILL_CROP.width,
+      BULLET_BILL_CROP.height,
+    ),
     bowser: crop(enemies, 2, 211, 32, 32),
     bowserWalk: crop(enemies, 42, 211, 32, 32),
     bowserFlame: crop(enemies, 101, 253, 24, 8),

@@ -26,6 +26,8 @@ type State = {
   bills: BulletBill[];
   billId: number;
   cannonTimers: Record<string, number[]>;
+  cannonTurn: Record<string, number[]>;
+  cannonLfsr: number[];
 };
 type Node = {
   state: State;
@@ -113,6 +115,12 @@ function capture(sim: Simulation): State {
         room.cannons.map((c) => c.timer),
       ]),
     ),
+    cannonLfsr: [
+      ...(sim as unknown as { cannonLfsr: Uint8Array }).cannonLfsr,
+    ],
+    cannonTurn: Object.fromEntries(
+      [...sim.rooms].map(([id, room]) => [id, [...room.cannonTurn]]),
+    ),
   };
 }
 function restore(sim: Simulation, state: State) {
@@ -126,7 +134,11 @@ function restore(sim: Simulation, state: State) {
       const timer = timers[i];
       if (timer !== undefined) room.cannons[i]!.timer = timer;
     }
+    const turn = state.cannonTurn[id];
+    if (turn) room.cannonTurn = [...turn];
   }
+  const lfsr = (sim as unknown as { cannonLfsr: Uint8Array }).cannonLfsr;
+  for (let i = 0; i < lfsr.length; i++) lfsr[i] = state.cannonLfsr[i] ?? 0;
   for (const room of sim.rooms.values()) {
     room.updatePlatforms(state.time, []);
     for (let i = 0; i < room.platforms.length; i++) {

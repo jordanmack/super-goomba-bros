@@ -147,6 +147,8 @@ test("Bowser flame cue is the Mayhem bowser-fire WAV, not fireball or fireworks"
   assert.match(audioSrc, /flame:\s*"bowserFire"/);
   assert.match(audioSrc, /fire:\s*"fireball"/);
   assert.match(audioSrc, /firework:\s*"fireworks"/);
+  assert.match(audioSrc, /blast:\s*CANNON_BLAST\.cue/);
+  assert.doesNotMatch(audioSrc, /blast\.wav/);
   const flame = readFileSync(join(audioDir, "bowserfire.wav"));
   const fireball = readFileSync(join(audioDir, "fireball.wav"));
   const fireworks = readFileSync(join(audioDir, "fireworks.wav"));
