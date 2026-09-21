@@ -4511,7 +4511,7 @@ test("1-2 warp pipes skip to worlds 4, 3, and 2", () => {
   }
 });
 
-test("4-2 vine warp first pipe starts world 5; extra mouths stay inert", () => {
+function enterVineWarp(column: number) {
   const s = new Simulation(() => 0.5);
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "4-2");
   s.reset();
@@ -4519,26 +4519,19 @@ test("4-2 vine warp first pipe starts world 5; extra mouths stay inert", () => {
   finishPipeIntro(s);
   tick(s, T.pipeCooldown + dt);
   s.player.flower = true;
-  const score = s.score;
+  s.score = 1500;
   s.coins = 7;
-  const lives = s.lives;
+  s.lives = 5;
   const room = s.loadRoom("2f");
   s.player.areaId = "2f";
-  for (const column of [54, 58]) {
-    const extra = room.data.pipes.find((p) => p.column === column)!;
-    assert.deepEqual(extra.destinations, []);
-    at(
-      s,
-      room.offset + (extra.column + extra.width / 2) * 32,
-      MAP_TOP + extra.row * 32 - 14,
-    );
-    s.step(dt, { ...emptyInput(), down: true });
-    assert.equal(s.player.pipeTravel, undefined);
-    assert.equal(s.player.areaId, "2f");
-    assert.equal(s.level.id, "4-2");
-  }
-  const pipe = room.data.pipes.find((p) => p.column === 50)!;
-  assert.equal(pipe.destinations[0]?.area, "2a");
+  const pipe = room.data.pipes.find((p) => p.column === column);
+  assert.ok(pipe, `2f column ${column}`);
+  const dest = pipe.destinations.find((d) => d.world === s.level.world);
+  assert.ok(dest, `2f column ${column} has a world-4 destination`);
+  const stage = CAMPAIGN.find(
+    (level) => level.stage === 1 && level.main === dest.area,
+  );
+  assert.ok(stage, `2f column ${column} names a shipped first stage`);
   at(
     s,
     room.offset + (pipe.column + pipe.width / 2) * 32,
@@ -4547,14 +4540,34 @@ test("4-2 vine warp first pipe starts world 5; extra mouths stay inert", () => {
   s.step(dt, { ...emptyInput(), down: true });
   let frames = 1;
   while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
-  assert.equal(s.level.id, "5-1");
-  assert.equal(s.activeRoom.data.id, "2a");
-  assert.equal(s.mode, "intro");
   assert.equal(s.player.flower, true);
-  assert.equal(s.score, score);
+  assert.equal(s.score, 1500);
   assert.equal(s.coins, 7);
-  assert.equal(s.lives, lives);
+  assert.equal(s.lives, 5);
+  assert.equal(s.mode, "intro");
   s.physics.clear();
+  return { levelId: s.level.id, areaId: s.activeRoom.data.id, stageId: stage.id };
+}
+
+test("4-2 vine pipe column 50 enters 8-1 instead of world 5", () => {
+  const arrived = enterVineWarp(50);
+  assert.equal(arrived.stageId, "8-1");
+  assert.equal(arrived.levelId, "8-1");
+  assert.equal(arrived.areaId, CAMPAIGN.find((level) => level.id === "8-1")!.main);
+});
+
+test("4-2 vine pipe column 54 enters 7-1 instead of staying inert", () => {
+  const arrived = enterVineWarp(54);
+  assert.equal(arrived.stageId, "7-1");
+  assert.equal(arrived.levelId, "7-1");
+  assert.equal(arrived.areaId, CAMPAIGN.find((level) => level.id === "7-1")!.main);
+});
+
+test("4-2 vine pipe column 58 enters 6-1 instead of staying inert", () => {
+  const arrived = enterVineWarp(58);
+  assert.equal(arrived.stageId, "6-1");
+  assert.equal(arrived.levelId, "6-1");
+  assert.equal(arrived.areaId, CAMPAIGN.find((level) => level.id === "6-1")!.main);
 });
 
 test("4-2 warp pipe starts world 5", () => {

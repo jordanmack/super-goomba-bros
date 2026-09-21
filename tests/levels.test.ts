@@ -237,16 +237,25 @@ test("1-2 and 4-2 warp-zone pipes go to distinct first stages", () => {
   assert.equal(levelOf("2-1").main, "28");
   assert.equal(levelOf("5-1").main, "2a");
   const area2f = areaOf("2f");
-  const vinePipe = (column: number) =>
-    area2f.pipes.find((p) => p.column === column)!;
-  assert.deepEqual(vinePipe(50).destinations.find((d) => d.world === 4), {
-    world: 4,
-    area: "2a",
-    page: 0,
-    entrance: 0,
-  });
-  assert.deepEqual(vinePipe(54).destinations, []);
-  assert.deepEqual(vinePipe(58).destinations, []);
+  const vinePipe = (column: number, stageId: string) => {
+    assert.deepEqual(
+      area2f.pipes
+        .find((p) => p.column === column)!
+        .destinations.find((d) => d.world === 4),
+      {
+        world: 4,
+        area: levelOf(stageId).main,
+        page: 0,
+        entrance: 0,
+      },
+    );
+  };
+  vinePipe(50, "8-1");
+  vinePipe(54, "7-1");
+  vinePipe(58, "6-1");
+  assert.equal(levelOf("8-1").stage, 1);
+  assert.equal(levelOf("7-1").stage, 1);
+  assert.equal(levelOf("6-1").stage, 1);
 });
 
 test("pipe routes preserve world-specific underground return pages and 8-4 connections", () => {

@@ -66,9 +66,9 @@ const WARP_ZONE_OBJECT = 52;
 // ScrollLockObject_Warp. Sets WarpZoneControl; 4-2's vine bonus has this
 // without a type-52 enemy, so those down pipes still need WarpZoneNumbers.
 const SCROLL_LOCK_WARP = 39;
-// Control 6 is original overworld WarpZoneNumbers (8/7/6). The 4-2 vine bonus
-// 2f uses control 5 instead, so its first mouth is 5-1 and extra mouths stay
-// inert.
+// WarpZoneNumbers. World 1 uses control 4 (4/3/2). Later underground uses
+// control 5 (world 5 only). Later overworld uses control 6 (8/7/6), including
+// the 4-2 vine bonus 2f.
 const WARP_ZONE_WORLDS = { 4: [4, 3, 2], 5: [5], 6: [8, 7, 6] };
 
 function firstStageArea(tables, world) {
@@ -565,8 +565,9 @@ export function decodeArea(tables, pointer) {
     }));
   // Warp pipes share the last area-pointer latch unless we override them.
   // HandlePipeEntry uses WarpZoneNumbers, not that latch, so each warp mouth
-  // gets its own first-stage start (1-2: 4/3/2; 4-2 underground and vine bonus
-  // 2f: control 5 → world 5). Extra mouths with no world stay inert.
+  // gets its own first-stage start. World 1 uses control 4 (4/3/2). A later
+  // overworld (type 1) uses control 6 (8/7/6). A later underground uses
+  // control 5 (world 5). Extra mouths with no world stay inert.
   const warpColumn = enemies
     .filter((enemy) => enemy.type === WARP_ZONE_OBJECT)
     .reduce((min, enemy) => Math.min(min, enemy.column), Infinity);
@@ -579,7 +580,7 @@ export function decodeArea(tables, pointer) {
     );
     const sourceWorlds = worldsReachingArea(tables, id);
     for (const sourceWorld of sourceWorlds.length ? sourceWorlds : [1]) {
-      const control = sourceWorld === 1 ? 4 : 5;
+      const control = sourceWorld === 1 ? 4 : type === 1 ? 6 : 5;
       const warpWorlds = WARP_ZONE_WORLDS[control] ?? [];
       warpPipes.forEach((pipe, index) => {
         const destWorld = warpWorlds[index];

@@ -50,10 +50,11 @@ settings unless a rule below explicitly fixes their relationship.
   main. The script is not a death. Death with lives left, Pause Restart, and
   other retries of that stage skip the strip and spawn at the start of main.
 - Warp-zone pipes skip to that world's first stage: 1-2 columns 178/182/186 go
-  to worlds 4/3/2; 4-2 column 214 starts world 5; the 4-2 vine bonus `2f` first
-  down-pipe (column 50) starts world 5 (WarpZoneNumbers control 5). Extra mouths
-  with no world stay inert. Power-ups, score, coins, and lives persist across a
-  warp. Preserve source warp/vine commands in the data. Climbing a vine goes to
+  to worlds 4/3/2; 4-2 column 214 starts world 5 (WarpZoneNumbers control 5);
+  the 4-2 vine bonus `2f` down pipes at columns 50/54/58 start worlds 8/7/6
+  (control 6; first stages 8-1, 7-1, and 6-1). All three vine mouths are
+  enterable. Power-ups, score, coins, and lives persist across a warp.
+  Preserve source warp/vine commands in the data. Climbing a vine goes to
   that vine's named destination and does not skip worlds. See [Vines](#vines).
 - No logs or hiding spots are added. Bushes are scenery.
 - The goal is the castle doorway. Castle interiors use a visible inverted-white
