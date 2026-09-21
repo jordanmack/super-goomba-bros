@@ -38,6 +38,7 @@ import {
 import { Room, enemyRole } from "./room.ts";
 import { enclosedWell, planJump } from "./navigation.ts";
 import { firstEmptySpawnCell } from "./spawn-cell.ts";
+import { warpZoneSignage } from "./warp-zone.ts";
 
 export type Input = {
   left: boolean;
@@ -368,6 +369,15 @@ export class Simulation {
   }
   get activeRoom() {
     return this.roomFor(this.player);
+  }
+  warpSignage() {
+    const room = this.activeRoom;
+    return warpZoneSignage(
+      room.data,
+      room.offset,
+      this.level.world,
+      this.player.body.position.x,
+    );
   }
   get goalX() {
     return this.activeRoom.goalX;

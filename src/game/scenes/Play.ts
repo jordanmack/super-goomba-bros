@@ -23,6 +23,7 @@ import {
   SWEAT_DROP_KEY,
   SWEAT_DROP_WIDTH,
 } from "../smb-sprites";
+import { WARP_TEXT, type WarpSignage } from "../warp-zone";
 
 export class Play extends Phaser.Scene {
   actors = new Map<number, Phaser.GameObjects.Sprite>();
@@ -44,6 +45,8 @@ export class Play extends Phaser.Scene {
   tick?: (time: number, delta: number) => void;
   draw?: () => void;
   private room?: Room;
+  private warpBanner?: Phaser.GameObjects.Text;
+  private warpDigits: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super("Play");
@@ -67,6 +70,10 @@ export class Play extends Phaser.Scene {
         entry.shape.destroy();
       }
       this.itemMasks.clear();
+      this.warpBanner?.destroy();
+      this.warpBanner = undefined;
+      for (const digit of this.warpDigits) digit.destroy();
+      this.warpDigits = [];
       this.room = undefined;
     });
   }
@@ -320,6 +327,39 @@ export class Play extends Phaser.Scene {
         ).setRotation(0);
     for (; index < this.effects.length; index++)
       this.effects[index].setVisible(false);
+    this.drawWarpSignage(sim.warpSignage());
+  }
+
+  private warpText(existing?: Phaser.GameObjects.Text) {
+    const text =
+      existing ??
+      this.add.text(0, 0, "", { ...WARP_TEXT }).setDepth(7).setScrollFactor(1);
+    text.setOrigin(0.5, 0.5);
+    return text;
+  }
+
+  private drawWarpSignage(signage: WarpSignage | undefined) {
+    this.warpBanner = this.warpText(this.warpBanner);
+    if (!signage) {
+      this.warpBanner.setVisible(false);
+      for (const digit of this.warpDigits) digit.setVisible(false);
+      return;
+    }
+    this.warpBanner
+      .setText(signage.banner.text)
+      .setPosition(Math.round(signage.banner.x), Math.round(signage.banner.y))
+      .setVisible(true);
+    for (let i = 0; i < signage.digits.length; i++) {
+      const spec = signage.digits[i]!;
+      const digit = this.warpText(this.warpDigits[i]);
+      this.warpDigits[i] = digit;
+      digit
+        .setText(spec.text)
+        .setPosition(Math.round(spec.x), Math.round(spec.y))
+        .setVisible(true);
+    }
+    for (let i = signage.digits.length; i < this.warpDigits.length; i++)
+      this.warpDigits[i]!.setVisible(false);
   }
 
   private renderActor(actor: Actor, sim: Simulation) {
