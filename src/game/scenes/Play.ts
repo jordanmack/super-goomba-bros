@@ -273,6 +273,17 @@ export class Play extends Phaser.Scene {
     for (const flame of sim.bowserFlames)
       if (flame.areaId === room.data.id)
         image(flame.x, flame.y, 48, 16, "bowserFlame", 10).setFlipX(flame.vx < 0);
+    for (const lakitu of sim.lakitus) {
+      if (!lakitu.alive || lakitu.areaId !== room.data.id) continue;
+      image(
+        lakitu.x,
+        lakitu.y,
+        T.lakituWidth,
+        T.lakituHeight,
+        Math.floor(sim.elapsed * 6) % 2 ? "lakituWalk" : "lakitu",
+        7,
+      ).setFlipX(lakitu.facing > 0);
+    }
     for (const b of sim.bowsers) {
       if (b.areaId !== room.data.id || !b.alive) continue;
       const walking = !sim.marioActive || sim.mario.areaId !== b.areaId;
@@ -465,7 +476,9 @@ export class Play extends Phaser.Scene {
           ? "fireGoomba"
           : actor.kind === "koopa"
             ? "fireKoopa"
-            : "fireFish"
+            : actor.kind === "spike"
+              ? "fireSpike"
+              : "fireFish"
         : actor.kind;
     const pace = walkPace(actor);
     const moving =

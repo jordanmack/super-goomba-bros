@@ -211,6 +211,17 @@ Cheep Cheeps. They use Cheep Cheep art from the enemy sheet. Fish appear only
 in water areas. WARNED, SAVED, and DIED count every NPC including fish, so the
 tally uses the actual NPC count rather than the land population alone.
 
+4-1, 6-1, and 8-2 spawn one Lakitu from original type-17 placements. Those
+records are spawn points along the stage, not three Lakitus at once. He rides
+a cloud and uses Lakitu art from the enemy sheet. He is an ally. He does not
+harm the player, and he is not a ground rescue NPC, so he is not in WARNED,
+SAVED, or DIED. He throws spike characters. They use Spiny art from that sheet.
+Spike characters are extra rescue NPCs, like fish: they join WARNED, SAVED,
+and DIED, and they are not part of the land population of 30. They do not hurt
+the player or other NPCs. Any contact with a spike character defeats Mario.
+He never chooses a spike character as a stomp target. Fireballs, star, and 8x
+keep their existing rules.
+
 Unwarned NPCs patrol, pause, turn, and step off safe surfaces. They avoid lethal
 gaps and do not rapidly flip direction on a small block. A warning starts their
 reaction delay and then their escape.
@@ -390,7 +401,10 @@ stomp reduces one stage: fire to big, big to small, then small to defeated.
 8x Mario ignores those hits. Shrink and grow blink between the two sizes.
 Damage causes blinking, with no frozen hit pose. An active Mario can upgrade
 only by collecting an item. Elapsed stage time can affect the form in which
-he returns; it cannot spontaneously change his active power. Restarting a
+he returns; it cannot spontaneously change his active power. On a stage with
+Lakitu, every Mario spawn and return is Fire, including the first appearance,
+and that timer does not choose his form. Other stages still use the timer
+(`fasterAt`, then `fireballsAt`). Restarting a
 stage resets its timer.
 
 ## Castle interiors

@@ -131,7 +131,7 @@ export type Vine = {
 export type Actor = {
   id: number;
   body: Body;
-  kind: "goomba" | "koopa" | "mario" | "fish";
+  kind: "goomba" | "koopa" | "mario" | "fish" | "spike";
   alive: boolean;
   saved: boolean;
   warned: boolean;
@@ -302,6 +302,15 @@ export type BowserFlame = {
   y: number;
   vx: number;
   age: number;
+};
+export type Lakitu = {
+  id: number;
+  areaId: string;
+  x: number;
+  y: number;
+  facing: number;
+  alive: boolean;
+  throwWait: number;
 };
 export type MushroomKind = "mushroom" | "mushroom3x" | "mushroom8x";
 export type ItemKind = "star" | "flower" | "oneUp" | MushroomKind;
@@ -985,6 +994,7 @@ export class Simulation {
   private cannonLfsr = Uint8Array.of(0xa5, 0, 0, 0, 0, 0, 0);
   bowsers: Bowser[] = [];
   bowserFlames: BowserFlame[] = [];
+  lakitus: Lakitu[] = [];
   items: Item[] = [];
   private springRides: SpringRide[] = [];
   vines: Vine[] = [];
@@ -1087,6 +1097,7 @@ export class Simulation {
     this.terrainId = 0;
     this.bowsers = [];
     this.bowserFlames = [];
+    this.lakitus = [];
     const retry =
       mode !== "title" &&
       this.retrySpawn &&
@@ -1137,7 +1148,6 @@ export class Simulation {
       for (const npc of this.npcs) Body.setFrozen(npc.body, true);
     this.mario = this.actor(entry.offset - 200, "mario");
     this.mario.areaId = entry.data.id;
-    this.setMarioStage(1);
     Body.setFrozen(this.mario.body, true);
     this.mode = mode;
     this.elapsed =
@@ -1176,7 +1186,7 @@ export class Simulation {
     this.marioRunning = false;
     this.marioStun = 0;
     this.marioDeath = this.playerDeath = null;
-    this.marioStage = 1;
+    this.setMarioStage(this.marioArrivalStage());
     this.marioTarget = null;
     this.marioHuntItem = false;
     this.marioGoal = "";
@@ -1246,6 +1256,103 @@ export class Simulation {
       }
       this.npcs.push(fish);
     }
+  }
+
+  private onLakituStage() {
+    for (const room of this.rooms.values())
+      if (room.lakituPoints.length > 0) return true;
+    return false;
+  }
+
+  private marioArrivalStage(): 0 | 1 | 2 {
+    if (this.onLakituStage()) return 2;
+    if (this.phase >= 2) return 2;
+    return 1;
+  }
+
+  private cameraEdges(room: Room) {
+    const view = this.viewWindow(room);
+    return { left: view.left + 32, right: view.right - 32 };
+  }
+
+  // Type-17 rows are entrances. A live Lakitu claims later points.
+  private updateLakitu(dt: number) {
+    if (this.pipeIntro) return;
+    for (const room of this.rooms.values()) {
+      const points = room.lakituPoints;
+      if (!points.length) continue;
+      // viewWindow follows player x. A bonus room is 20000 away and would
+      // clamp this cloud to the far end and spend every later spawn point.
+      if (this.player.areaId !== room.data.id) continue;
+      const edges = this.cameraEdges(room);
+      let live = this.lakitus.find((l) => l.alive && l.areaId === room.data.id);
+      if (!live) {
+        if (this.lakitus.some((l) => l.alive)) continue;
+        let index = -1;
+        for (let i = 0; i < points.length; i++) {
+          if (room.lakituUsed[i]) continue;
+          if (points[i]!.x > edges.right + 8) break;
+          index = i;
+        }
+        if (index < 0) continue;
+        for (let i = 0; i <= index; i++) room.lakituUsed[i] = true;
+        const point = points[index]!;
+        live = {
+          id: this.nextId++,
+          areaId: room.data.id,
+          x: point.x,
+          y: point.y,
+          facing: 1,
+          alive: true,
+          throwWait: T.lakituThrow,
+        };
+        this.lakitus.push(live);
+      } else {
+        for (let i = 0; i < points.length; i++)
+          if (points[i]!.x <= edges.right + 8) room.lakituUsed[i] = true;
+      }
+      const aim =
+        this.player.areaId === room.data.id
+          ? this.player.body.position.x
+          : live.x;
+      const step = T.lakituSpeed * dt * 60;
+      const dx = aim - live.x;
+      live.x += Math.max(-step, Math.min(step, dx));
+      const minX = Math.max(
+        room.offset + T.lakituWidth / 2,
+        edges.left + T.lakituWidth / 2,
+      );
+      const maxX = edges.right - T.lakituWidth / 2;
+      if (maxX > minX) live.x = Math.max(minX, Math.min(maxX, live.x));
+      live.facing = Math.sign(aim - live.x) || live.facing || 1;
+      live.throwWait -= dt;
+      if (live.throwWait > 0) continue;
+      const spikes = this.npcs.filter(
+        (n) => n.kind === "spike" && n.alive && !n.saved,
+      ).length;
+      if (spikes >= T.lakituSpikeCap) {
+        live.throwWait = 0;
+        continue;
+      }
+      live.throwWait = T.lakituThrow;
+      this.throwSpike(live);
+    }
+  }
+
+  private throwSpike(lakitu: Lakitu) {
+    const spike = this.actor(lakitu.x, "spike");
+    spike.areaId = lakitu.areaId;
+    const facing = lakitu.facing || 1;
+    Body.setPosition(spike.body, {
+      x: lakitu.x,
+      y: lakitu.y + T.lakituHeight / 2 + spike.body.height / 2 + 1,
+    });
+    spike.facing = facing;
+    spike.homeX = lakitu.x;
+    spike.grounded = false;
+    Body.setVelocity(spike.body, { x: facing * 1.2, y: T.spikeThrowVy });
+    if (overlaps(spike.body, this.solids, 0.01).length) this.fitActor(spike);
+    this.npcs.push(spike);
   }
 
   private actor(x: number, kind: Actor["kind"]): Actor {
@@ -3145,6 +3252,11 @@ export class Simulation {
         this.hurt(a);
         continue;
       }
+      if (a.kind === "spike") {
+        // Star and 8x already returned above. Any other touch is a loss.
+        if (this.mario.starLeft <= 0) this.defeatMario(false);
+        continue;
+      }
       if (this.inWater(a)) {
         if (a.kind === "koopa" && a.shell !== "none") continue;
         this.hurtFromWaterContact(a);
@@ -3797,8 +3909,8 @@ export class Simulation {
       this.elapsed >= T.fireballsAt ? 2 : this.elapsed >= T.fasterAt ? 1 : 0;
     if (phase !== this.phase) {
       this.phase = phase;
-      if (!this.marioActive)
-        this.setMarioStage((phase === 0 ? 1 : phase) as 0 | 1 | 2);
+      if (!this.marioActive && !this.onLakituStage())
+        this.setMarioStage(this.marioArrivalStage());
     }
     for (const a of [this.player, ...this.npcs, this.mario]) {
       this.ground(a);
@@ -3874,6 +3986,7 @@ export class Simulation {
     if (!scripted) {
       this.updateNpcs(dt);
       this.updateCrowd(dt);
+      this.updateLakitu(dt);
     }
     if (!scripted) this.updateMario(dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
@@ -4402,6 +4515,7 @@ export class Simulation {
       this.isHuge(a)
     )
       return false;
+    if (a.kind === "spike") return false;
     if (a.kind === "koopa" && a.shell !== "none") return false;
     if (
       this.marioStage === 0 &&
@@ -4692,7 +4806,7 @@ export class Simulation {
       }
       if (this.marioReturn > 0 || this.marioDeath) return;
       if (this.isHuge(this.mario)) this.expireHuge(this.mario, false);
-      this.setMarioStage((this.phase === 0 ? 1 : this.phase) as 0 | 1 | 2);
+      this.setMarioStage(this.marioArrivalStage());
       this.mario.starLeft = 0;
       this.mario.areaId = this.player.areaId;
       if (!this.placeHunterMario()) return;
@@ -4962,6 +5076,7 @@ export class Simulation {
     if (!water)
       for (const a of candidates) {
         const p = a.body.position;
+        if (a.kind === "spike") continue;
         if (
           a.kind === "koopa" &&
           a.shell !== "none"

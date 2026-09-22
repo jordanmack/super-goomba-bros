@@ -29,6 +29,13 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
   const fish = crop(enemies, 0, 32, 16, 16, true);
   const fishWalk = crop(enemies, 32, 32, 16, 16, true);
+  // Both Lakitu frames face left. (60, 90) is the right-facing mirror, so flipX
+  // would reverse him every other frame. (30, 90) is the cloud pose.
+  const lakitu = crop(enemies, 0, 90, 16, 24);
+  const lakituWalk = crop(enemies, 30, 90, 16, 24);
+  // y=180 is four blank rows. The feet sit on y=199, so the 16px frame starts at 184.
+  const spike = crop(enemies, 0, 184, 16, 16, true);
+  const spikeWalk = crop(enemies, 30, 184, 16, 16, true);
   const koopa = crop(enemies, 150, 0, 16, 24, true);
   const koopaWalk = crop(enemies, 180, 0, 16, 24, true);
   const koopaShell = crop(enemies, 360, 4, 16, 16);
@@ -50,6 +57,10 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     goombaWalk,
     fish,
     fishWalk,
+    lakitu,
+    lakituWalk,
+    spike,
+    spikeWalk,
     koopa,
     koopaWalk,
     koopaShell,
@@ -58,6 +69,8 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     fireGoombaWalk: firePalette(goombaWalk),
     fireFish: firePalette(fish),
     fireFishWalk: firePalette(fishWalk),
+    fireSpike: firePalette(spike),
+    fireSpikeWalk: firePalette(spikeWalk),
     fireKoopa: firePalette(koopa),
     fireKoopaWalk: firePalette(koopaWalk),
     fireKoopaShell: firePalette(koopaShell),

@@ -40,12 +40,14 @@ export type Cannon = {
 
 /** SMB1 enemy IDs from the bundled disassembly InitEnemyRoutines table. */
 export const ENEMY_FISH = 7;
+export const ENEMY_LAKITU = 17;
 export const ENEMY_BALANCE_LIFT = 36;
 export const ENEMY_PLATFORM_MIN = 36;
 export const ENEMY_PLATFORM_MAX = 44;
 
 export type EnemyRole =
   | "fish"
+  | "lakitu"
   | "balance-lift"
   | "platform"
   | "firebar"
@@ -54,6 +56,7 @@ export type EnemyRole =
 
 export function enemyRole(type: number): EnemyRole {
   if (type === ENEMY_FISH) return "fish";
+  if (type === ENEMY_LAKITU) return "lakitu";
   if (isFirebarType(type)) return "firebar";
   if (isBowserType(type)) return "bowser";
   if (type === ENEMY_BALANCE_LIFT) return "balance-lift";
@@ -93,6 +96,9 @@ export class Room {
   cannonTurn: number[] = [0, 0, 0, 0, 0, 0];
   balanceRopes: BalanceRope[] = [];
   spawnedActors = false;
+  // Type 17 is a spawn point for the one cloud Lakitu, not a ground NPC.
+  lakituPoints: { x: number; y: number }[] = [];
+  lakituUsed: boolean[] = [];
   firebars: Firebar[] = [];
   bowserSpawn?: { x: number; y: number };
   axe?: { x: number; y: number };
@@ -202,6 +208,13 @@ export class Room {
     }
     for (const enemy of this.data.enemies) {
       const role = enemyRole(enemy.type);
+      if (role === "lakitu") {
+        this.lakituPoints.push({
+          x: offset + enemy.column * 32 + 16,
+          y: MAP_TOP + enemy.row * 32 + 16,
+        });
+        continue;
+      }
       if (role === "platform" || role === "balance-lift") {
         const width = enemy.type >= 43 ? 48 : 96;
         const origin = {
@@ -241,6 +254,8 @@ export class Room {
         );
       }
     }
+    this.lakituPoints.sort((a, b) => a.x - b.x);
+    this.lakituUsed = this.lakituPoints.map(() => false);
     this.pairBalanceLifts();
     this.refreshBalanceRopes();
     const axe = this.data.objects.find((o) => o.opcode === AXE_OPCODE);

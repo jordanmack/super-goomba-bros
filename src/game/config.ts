@@ -163,6 +163,13 @@ export const TUNING = {
   bowserFlameLife: 3.2,
   bowserShoutRange: 240,
   bowserShoutCooldown: 3.2,
+  // One cloud Lakitu. Type-17 rows are spawn points, not extra riders.
+  lakituWidth: 32,
+  lakituHeight: 48,
+  lakituSpeed: 1.6,
+  lakituThrow: 2.2,
+  lakituSpikeCap: 4,
+  spikeThrowVy: 1.5,
 } as const;
 
 export function blockDrawY(y: number, bounce: number) {
