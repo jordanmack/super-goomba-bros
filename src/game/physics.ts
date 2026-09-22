@@ -27,6 +27,8 @@ export class Body {
   ignoreWalls = false;
   // "top": 8x may stand on the lid; the volume is empty until smash (pipes).
   passHuge: "volume" | "top" = "volume";
+  // Player only. A rising graze on a wall face must not resolve as a ceiling.
+  riseAlongWall = false;
   // Feet Y, stood-on floor, and bound volume of an 8x volume-hold. Keeps
   // that merged wall+floor after the floor AABB overlap ends. Frozen spans
   // keep rebuild rematch on the original pair, not another column.
@@ -369,6 +371,102 @@ export function hugeHoldAt(
   );
 }
 
+// Phaser separates on Y first while gravity is vertical. Rising into a wall
+// the body was not already under then resolves that side as a ceiling and
+// cancels the jump. Push the body back out on X and skip the vertical
+// separation. A head that already meets a ceiling, including the next tile
+// of a low overhang, still takes the normal bonk.
+const SIDE_FACE = 0.01;
+
+type ArcadeBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  checkCollision: { up: boolean; down: boolean; left: boolean; right: boolean };
+};
+
+type ArcadeMover = ArcadeBox & {
+  prev: { x: number; y: number };
+  velocity: { x: number; y: number };
+  updateCenter(): void;
+};
+
+function asArcadeBox(value: object): ArcadeBox | undefined {
+  const box = value as Partial<ArcadeBox>;
+  if (
+    typeof box.x !== "number" ||
+    typeof box.y !== "number" ||
+    typeof box.width !== "number" ||
+    typeof box.height !== "number" ||
+    !box.checkCollision
+  )
+    return undefined;
+  return box as ArcadeBox;
+}
+
+function headMeetsCeiling(mover: ArcadeMover, solid: ArcadeBox) {
+  if (!solid.checkCollision.up || !solid.checkCollision.down) return false;
+  const prevTop = mover.prev.y;
+  const prevBottom = prevTop + mover.height;
+  const prevLeft = mover.prev.x;
+  const prevRight = prevLeft + mover.width;
+  const overlapX =
+    Math.min(prevRight, solid.x + solid.width) - Math.max(prevLeft, solid.x);
+  if (overlapX <= SIDE_FACE) return false;
+  const underside = solid.y + solid.height;
+  // A floor or tall volume reaches the feet. That underside is not a ceiling.
+  if (underside >= prevBottom - 1) return false;
+  const rise = prevTop - mover.y;
+  if (prevTop > underside + Math.max(rise, 0) + SIDE_FACE) return false;
+  return prevBottom > solid.y;
+}
+
+function releaseRisingSide(
+  mover: ArcadeMover,
+  solidValue: object,
+  nearby: readonly object[],
+) {
+  const solid = asArcadeBox(solidValue);
+  if (!solid) return false;
+  const dy = mover.y - mover.prev.y;
+  if (dy >= 0) return false;
+  const dx = mover.x - mover.prev.x;
+  if (dx === 0) return false;
+  const prevLeft = mover.prev.x;
+  const prevRight = prevLeft + mover.width;
+  const solidLeft = solid.x;
+  const solidRight = solid.x + solid.width;
+  const prevOverlap =
+    Math.min(prevRight, solidRight) - Math.max(prevLeft, solidLeft);
+  if (prevOverlap > SIDE_FACE) return false;
+  const fromLeft = dx > 0 && prevRight <= solidLeft + SIDE_FACE;
+  const fromRight = dx < 0 && prevLeft >= solidRight - SIDE_FACE;
+  if (fromLeft && !solid.checkCollision.left) return false;
+  if (fromRight && !solid.checkCollision.right) return false;
+  if (!fromLeft && !fromRight) return false;
+  // A body whose center has crossed the face is entering under a ceiling.
+  const center = mover.x + mover.width / 2;
+  if (fromLeft && center >= solidLeft) return false;
+  if (fromRight && center <= solidRight) return false;
+  if (
+    nearby.some((other) => {
+      const box = asArcadeBox(other);
+      return !!box && box !== solid && headMeetsCeiling(mover, box);
+    })
+  )
+    return false;
+  if (fromLeft) {
+    mover.x = solidLeft - mover.width;
+    if (mover.velocity.x > 0) mover.velocity.x = 0;
+  } else {
+    mover.x = solidRight;
+    if (mover.velocity.x < 0) mover.velocity.x = 0;
+  }
+  mover.updateCenter();
+  return true;
+}
+
 export function rayBlocked(solids: Body[], start: Point, end: Point) {
   return solids.some((solid) => {
     if (solid.headOnly) return false;
@@ -497,7 +595,11 @@ export class PhysicsWorld {
         .sort((a, b) => this.order.get(a)! - this.order.get(b)!);
       if (nearby.length) {
         this.world.collide(native, nearby, undefined, (_actor, solid) => {
-          if (!wrapper.ignoreWalls) return true;
+          if (!wrapper.ignoreWalls) {
+            if (wrapper.riseAlongWall && releaseRisingSide(native, solid, nearby))
+              return false;
+            return true;
+          }
           const top = (solid as Phaser.Physics.Arcade.StaticBody).y;
           return (
             native.velocity.y >= 0 && native.prev.y + native.height <= top + 6
