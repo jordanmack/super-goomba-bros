@@ -1959,16 +1959,15 @@ export class Simulation {
           0,
           !!a.navDetourBelow,
         );
-        // A detour drop is cleared from the lip. updateNpcs must not store it
-        // and walk the gap at trait speed: that starts the fall frames later,
-        // so a firebar arc is stale and a 4-4 hole is missed. Within one run
-        // step, snap to the lip and fly now. Farther away, keep walking.
-        const reach = a.navDetourBelow ? this.runSpeedFor(a) : a.speed;
+        // A stored firebar drop is replayed later at trait speed, so the
+        // fall misses the frame planJump cleared. Fly that arc now instead.
+        const step = this.runSpeedFor(a);
         const dist = Math.abs(x - p.x);
+        const reach = a.navDetourBelow ? step : a.speed;
         const flyable = drop?.delay === 0 && (!firebarFree || dist <= reach);
         if (drop?.delay === 0 && dist < a.body.width + 40) {
           if (a.navDetourBelow && !flyable) return;
-          if (flyable && a.navDetourBelow && dist <= this.runSpeedFor(a)) {
+          if (flyable && (firebarFree || a.navDetourBelow)) {
             if (dist >= 0.5) Body.setPosition(a.body, { x, y: p.y });
             this.move(a, drop.vx);
             a.navVx = drop.vx;
@@ -4333,9 +4332,11 @@ export class Simulation {
       if (n.navDrop) {
         const drop = n.navDrop,
           dx = drop.x - p.x;
-        // Fall on the frame the remaining gap is within the arm pace.
-        // Waiting until the body is already on the lip adds a late frame.
-        const pace = n.speed;
+        // Replay at run speed in a firebar room. Trait speed is slower than
+        // the step that armed the drop, so the fall would start late.
+        const pace = this.roomFor(n).firebars.length
+          ? this.runSpeedFor(n)
+          : n.speed;
         if (Math.abs(dx) <= pace) {
           n.navDrop = undefined;
           if (Math.abs(dx) >= 0.5) Body.setPosition(n.body, { x: drop.x, y: p.y });

@@ -913,6 +913,77 @@ test("a firebar detour 4px from the lip falls on the cleared frame, not after a 
   s.physics.clear();
 });
 
+// This is the firebar path that still stored navDrop: the lip is inside
+// trait speed, so the old code armed the drop and the next frame crawled
+// at 2.1. A 4px lip uses the same bug when the arm window is run speed
+// (the detour test above). Here the window is n.speed itself.
+test("a firebar drop inside trait speed falls on that frame instead of crawling at 2.1", () => {
+  const s = castleGame("1-4");
+  assert.ok(s.activeRoom.firebars.length > 0, "1-4 has firebars");
+  for (const bar of s.activeRoom.firebars) bar.x = -100000;
+  const n = s.npcs[0]!;
+  for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+  s.npcs = [n];
+  s.player.saved = true;
+  Body.setFrozen(s.player.body, true);
+  s.marioActive = false;
+  const half = n.body.width / 2;
+  const tall = n.body.height / 2;
+  const platformRight = 560;
+  const lip = platformRight + half + 0.5;
+  const gap = 2;
+  const feet = 320;
+  const platform = new Body(platformRight - 80, feet + 16, 160, 32, true);
+  const floor = new Body(lip, feet + 96, 220, 32, true);
+  s.solids = [platform, floor];
+  const start = lip - gap;
+  Body.setPosition(n.body, { x: start, y: feet - tall });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.speed = 2.1;
+  n.grounded = true;
+  n.navDrop = undefined;
+  n.navBackoff = undefined;
+  n.navVx = undefined;
+  n.navDelay = 0;
+  n.navRetry = 0;
+  n.navDetourBelow = undefined;
+  const cleared = planJump(
+    new Body(lip, feet - tall, n.body.width, n.body.height),
+    s.solids,
+    1,
+    T.runSpeed,
+    0,
+    (landing) => landing.y > feet - tall + 16,
+    true,
+    undefined,
+    () => true,
+    0,
+    false,
+  );
+  assert.ok(cleared && cleared.delay === 0, "the lip has a delay-0 drop");
+  s.step(dt, emptyInput());
+  assert.equal(
+    n.navDrop,
+    undefined,
+    "a lip inside trait speed must not be stored for a 2.1 crawl",
+  );
+  assert.ok(
+    Math.abs(n.body.position.x - (lip + cleared.vx)) < 0.51,
+    `flew vx ${cleared.vx} from lip ${lip}, body is at ${n.body.position.x}`,
+  );
+  assert.equal(n.body.velocity.x, cleared.vx);
+  s.step(dt, emptyInput());
+  assert.notEqual(
+    n.body.velocity.x,
+    -n.speed,
+    "frame 2 must not crawl back toward the lip at trait speed",
+  );
+  s.physics.clear();
+});
+
 // Same gap with no firebar, which is the World 4-4 detour. Storing navDrop
 // and walking it at trait speed (2.1) starts the fall frames later and misses
 // the floor under the hole.
