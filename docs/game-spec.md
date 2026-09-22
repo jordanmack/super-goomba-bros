@@ -310,7 +310,11 @@ The castle door is always open. Reaching it completes the stage:
    Pause and Escape stay ignored for the whole finishing sequence. Mute still
    works.
 6. Auto-advance to the next WORLD n-n intro. There is no NEXT LEVEL button.
-   After 8-4, play the short world-clear cue, then return to the title.
+   After 8-4, stay on an ending screen. Show the final SCORE and a short line
+   that the Goombas won. Do not thank Mario or the Princess. Loop the
+   world-clear cue until the player chooses the title with the TITLE button
+   or Start. That control does not fire by itself. Earlier stages still
+   auto-advance.
 
 Castle breakdown points:
 
@@ -590,7 +594,9 @@ playfield scale, then the current stage restarts with cleared counters,
 powers, items, speech, used blocks, and pursuit state. Pipe-intro stages skip the overworld strip and
 spawn on main. The intro is silent; area music starts with play.
 Start Game, auto-continue after a castle tally, and Pause Restart Level go
-through that intro when lives remain. The title screen stays the title screen.
+through that intro when lives remain. World 8-4 does not auto-continue. It
+holds the ending until the player returns to the title. The title screen stays
+the title screen.
 When lives reach 0, the
 death cue still finishes, then GAME OVER appears on that same black screen
 with the original game-over music. When that cue finishes, return to the title.

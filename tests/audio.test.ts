@@ -9,6 +9,7 @@ import {
   WAV_PEAK_TARGET,
   pickWarningChirp,
 } from "../src/game/config.ts";
+import { victoryCue } from "../src/game/simulation.ts";
 
 const audioDir = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -155,6 +156,25 @@ test("Bowser flame cue is the Mayhem bowser-fire WAV, not fireball or fireworks"
   assert.ok(flame.length > 0);
   assert.notEqual(Buffer.compare(flame, fireball), 0);
   assert.notEqual(Buffer.compare(flame, fireworks), 0);
+});
+
+test("the 8-4 ending loops world clear and game over stays a one-shot", () => {
+  assert.deepEqual(victoryCue("ending"), { name: "worldClear", loop: true });
+  assert.equal(victoryCue("gameover"), null);
+  assert.equal(victoryCue("win"), null);
+  const audioSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../src/game/audio.ts"),
+    "utf8",
+  );
+  assert.match(audioSrc, /victoryLooping && name === "worldClear"/);
+  assert.match(audioSrc, /play\(\{ volume, loop \}\)/);
+  const appSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../src/App.tsx"),
+    "utf8",
+  );
+  assert.match(appSrc, /audio\.syncVictory\(sim\.victoryLoop\)/);
+  assert.match(appSrc, /ENDING_LINE/);
+  assert.match(appSrc, />\s*TITLE\s*</);
 });
 
 test("mix constants keep looping music under cues and tally quieter than a coin", () => {

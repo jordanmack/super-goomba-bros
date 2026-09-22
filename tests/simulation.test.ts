@@ -11,9 +11,11 @@ import {
 } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
 import {
+  ENDING_LINE,
   Simulation as RulesSimulation,
   emptyInput,
   pipeClip,
+  victoryCue,
 } from "../src/game/simulation.ts";
 import { MAP_TOP, PHRASES, TUNING as T, VIEW_HEIGHT, blockDrawY, jumpArc } from "../src/game/config.ts";
 import { firstEmptySpawnCell, spawnCellCenter } from "../src/game/spawn-cell.ts";
@@ -9782,7 +9784,12 @@ test("leftover TIME tally drains a 400-unit stage in a few seconds at +50 each",
   s.score = 0;
   s.finish();
   s.events.length = 0;
-  while (s.tallyPhase === "time") tick(s, dt);
+  let drainFrames = 0;
+  while (s.tallyPhase === "time") {
+    tick(s, dt);
+    drainFrames++;
+  }
+  const drained = drainFrames * dt;
   assert.equal(s.timeLeft, 0);
   assert.equal(s.tallyPhase, "warned");
   assert.equal(s.score, 400 * T.timeScore);
@@ -9790,13 +9797,11 @@ test("leftover TIME tally drains a 400-unit stage in a few seconds at +50 each",
     s.events.filter((event) => event === "tally").length,
     400,
   );
-  const finishElapsed = (s as unknown as { finishElapsed: number })
-    .finishElapsed;
   assert.ok(
-    finishElapsed < 8,
-    `400-unit drain took ${finishElapsed}s, expected a few seconds not ~27`,
+    drained < 8,
+    `400-unit drain took ${drained}s, expected a few seconds not ~27`,
   );
-  assert.ok(finishElapsed > 400 / 60 - dt);
+  assert.ok(drained > 400 / 60 - dt);
 });
 
 test("leftover TIME and castle lines add to SCORE then auto-continue", () => {
@@ -9834,63 +9839,56 @@ test("leftover TIME and castle lines add to SCORE then auto-continue", () => {
   );
 });
 
-test("World 8-4 tally holds through world-clear then returns to the title", () => {
-  const reachEnding = (dyingMario: boolean) => {
-    const s = game();
-    s.levelIndex = CAMPAIGN.length - 1;
-    s.reset();
-    s.marioReturn = 1e6;
-    for (const n of s.npcs) {
-      n.warned = true;
-      n.wait = 99;
-      n.idleWalking = false;
-    }
-    // Leftover TIME lets the clear cue finish before world-clear starts.
-    s.timeLeft = 400;
-    s.finish();
-    while (s.mode === "finishing" && s.tallyPhase === "time") tick(s, dt);
-    if (dyingMario) {
-      while (s.mode === "finishing" && s.tallyPhase !== "mario") {
-        s.tallyHold = 0;
-        tick(s, dt);
-      }
-      const n = s.npcs.find((npc) => npc.alive && !npc.saved);
-      assert.ok(n, "living NPC can touch Mario");
-      n.starLeft = T.starSeconds;
-      stillMario(s);
-      Body.setPosition(s.mario.body, { ...n.body.position });
-      Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-      tick(s, dt);
-      assert.ok(s.marioDeath);
-    }
-    while (s.mode === "finishing" && s.tallyPhase !== "ending") {
-      s.tallyHold = 0;
-      tick(s, dt);
-    }
-    assert.equal(s.tallyPhase, "ending");
-    return s;
-  };
-
-  const alive = reachEnding(false);
-  const aliveHold = alive.tallyHold;
-  const droppedSlack = T.endingSeconds + T.deathSequenceSeconds - aliveHold;
-  assert.ok(
-    Math.abs(droppedSlack - T.deathSequenceSeconds) < 0.25,
-    `alive hold ${aliveHold} drops death slack by ${droppedSlack}`,
-  );
-  tick(alive, aliveHold - dt);
-  assert.equal(alive.mode, "finishing");
-  tick(alive, 2 * dt);
-  assert.equal(alive.mode, "title");
-  assert.equal(alive.levelIndex, 0);
-  assert.equal(alive.score, 0);
-
-  const dying = reachEnding(true);
-  assert.ok(dying.marioDeath);
-  assert.ok(
-    Math.abs(dying.tallyHold - aliveHold - T.deathSequenceSeconds) < 0.25,
-    `dying hold ${dying.tallyHold} alive ${aliveHold}`,
-  );
+test("World 8-4 ending holds SCORE and looped world clear until title", () => {
+  assert.equal(ENDING_LINE, "THE CASTLE IS OURS");
+  assert.doesNotMatch(ENDING_LINE, /mario|princess/i);
+  const s = game();
+  s.levelIndex = CAMPAIGN.length - 1;
+  s.reset();
+  assert.equal(s.level.id, "8-4");
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  for (const actor of [...s.npcs, s.mario]) {
+    Body.setFrozen(actor.body, true);
+    actor.wait = 99;
+    actor.idleWalking = false;
+  }
+  s.warned = 2;
+  s.score = 1000;
+  s.timeLeft = 3;
+  s.finish();
+  assert.equal(s.mode, "finishing");
+  s.leaveEnding();
+  assert.equal(s.mode, "finishing", "title control does not fire before the card");
+  while (s.mode === "finishing" && s.tallyPhase === "time") tick(s, dt);
+  while (s.mode === "finishing" && s.tallyPhase !== "ending") {
+    s.tallyHold = 0;
+    tick(s, dt);
+  }
+  assert.equal(s.tallyPhase, "ending");
+  assert.equal(s.mode, "finishing");
+  const score =
+    1000 + 3 * T.timeScore + 2 * T.warnedScore;
+  assert.equal(s.score, score);
+  assert.equal(s.victoryLoop, "worldClear");
+  assert.deepEqual(victoryCue("ending"), { name: "worldClear", loop: true });
+  assert.equal(victoryCue("gameover"), null);
+  assert.ok(s.events.includes("ending"));
+  // Cover the old auto-title window. Do not zero the ending hold first.
+  tick(s, T.clearSeconds + T.deathSequenceSeconds + 7);
+  assert.equal(s.mode, "finishing");
+  assert.equal(s.tallyPhase, "ending");
+  assert.equal(s.score, score);
+  assert.equal(s.victoryLoop, "worldClear");
+  s.leaveEnding();
+  assert.equal(s.mode, "title");
+  assert.equal(s.levelIndex, 0);
+  assert.equal(s.level.id, "1-1");
+  assert.equal(s.score, 0);
+  assert.equal(s.victoryLoop, "");
+  assert.equal(s.lives, T.startingLives);
+  s.leaveEnding();
+  assert.equal(s.mode, "title");
 });
 
 test("leftover TIME tally starts from a fresh accumulator", () => {

@@ -45,7 +45,6 @@ export const TUNING = {
   tallyLineSeconds: 0.7,
   tallyEndHold: 0.8,
   clearSeconds: 5.5,
-  endingSeconds: 6.3,
   // 2x NES SMB1: 16 px tiles and 16 subpixels/px scale to 32 px tiles.
   walkSpeed: 3,
   runSpeed: 5,

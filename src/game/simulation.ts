@@ -224,6 +224,8 @@ export type TallyPhase =
   | "flag"
   | "mario"
   | "ending";
+/** Shown on the 8-4 card. The player won. Not a Mario or Princess thank-you. */
+export const ENDING_LINE = "THE CASTLE IS OURS";
 export type GameEvent =
   | "jump"
   | "bump"
@@ -249,6 +251,12 @@ export type GameEvent =
   | "firework"
   | "blast"
   | "flame";
+/** Looped cue for the 8-4 card. Game over and stage clear stay one-shots. */
+export function victoryCue(
+  event: GameEvent,
+): { name: "worldClear"; loop: true } | null {
+  return event === "ending" ? { name: "worldClear", loop: true } : null;
+}
 export type Particle = {
   x: number;
   y: number;
@@ -421,6 +429,13 @@ export class Simulation {
       this.levelIndex++;
       this.reset("intro");
     }
+  }
+  /** Title control for the 8-4 card. No-op unless that card is already up. */
+  leaveEnding() {
+    if (this.mode !== "finishing" || this.tallyPhase !== "ending") return;
+    this.levelIndex = 0;
+    this.lives = T.startingLives;
+    this.reset("title");
   }
   private inPipe(actor: Actor) {
     return !!actor.pipeTravel;
@@ -1023,11 +1038,12 @@ export class Simulation {
   marioKills = 0;
   tallyPhase: TallyPhase = "";
   tallyHold = 0;
+  /** Looped recording while the 8-4 card is up. Empty once the player leaves. */
+  victoryLoop: "" | "worldClear" = "";
   fireworksTotal = 0;
   private fireworksLeft = 0;
   private fireworkWait = 0;
   private fireworksArmed = false;
-  private finishElapsed = 0;
   deadLeft = 0;
   marioActive = false;
   marioEntered = false;
@@ -1169,11 +1185,11 @@ export class Simulation {
     this.marioKills = 0;
     this.tallyPhase = "";
     this.tallyHold = 0;
+    this.victoryLoop = "";
     this.fireworksTotal = 0;
     this.fireworksLeft = 0;
     this.fireworkWait = 0;
     this.fireworksArmed = false;
-    this.finishElapsed = 0;
     this.awarded = { warned: 0, saved: 0, died: 0, flag: false, mario: 0 };
     this.introLeft = mode === "intro" ? T.introSeconds : 0;
     this.gameoverLeft = 0;
@@ -3610,7 +3626,6 @@ export class Simulation {
     Body.setFrozen(this.player.body, true);
     this.events.push("win");
     this.timerAcc = 0;
-    this.finishElapsed = 0;
     this.tallyPhase = this.timeLeft > 0 ? "time" : "warned";
     this.tallyHold = this.timeLeft > 0 ? 0 : T.tallyLineSeconds;
     this.applyTallyDeltas();
@@ -3771,16 +3786,8 @@ export class Simulation {
   }
 
   private stepTally(dt: number) {
-    this.finishElapsed += dt;
-    if (this.tallyPhase === "ending") {
-      this.tallyHold -= dt;
-      if (this.tallyHold <= 0) {
-        this.levelIndex = 0;
-        this.lives = T.startingLives;
-        this.reset("title");
-      }
-      return;
-    }
+    // The 8-4 card waits for leaveEnding. A hold timer must not send it to title.
+    if (this.tallyPhase === "ending") return;
     if (this.tallyPhase === "time") {
       this.timerAcc += dt * 60;
       while (this.timeLeft > 0 && this.timerAcc >= T.timerTallyFrames) {
@@ -3801,11 +3808,7 @@ export class Simulation {
     if (this.tallyPhase === "mario") {
       if (this.levelIndex >= CAMPAIGN.length - 1) {
         this.tallyPhase = "ending";
-        const clearLeft = Math.max(0, T.clearSeconds - this.finishElapsed);
-        this.tallyHold =
-          T.endingSeconds +
-          clearLeft +
-          (this.marioDeath ? T.deathSequenceSeconds : 0);
+        this.victoryLoop = "worldClear";
         this.events.push("ending");
       } else this.nextLevel();
       return;

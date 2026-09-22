@@ -15,7 +15,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { Simulation, emptyInput } from "./game/simulation";
+import { ENDING_LINE, Simulation, emptyInput } from "./game/simulation";
 import type { Input, ItemKind, Mode, TallyPhase } from "./game/simulation";
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
@@ -68,6 +68,7 @@ type Runtime = {
   padMap: Record<PadMapAction, PadBinding>;
   remapTarget: PadMapAction | null;
   clearInput: () => void;
+  leaveEnding: () => void;
   controls?: GameControls;
 };
 type Snapshot = {
@@ -202,6 +203,7 @@ export default function App() {
         padMap: defaultPadMap(),
         remapTarget: null,
         clearInput: () => {},
+        leaveEnding: () => {},
       };
       runtime.current = game;
       let disposed = false;
@@ -260,6 +262,7 @@ export default function App() {
                 startAudio(game);
                 (document.activeElement as HTMLElement)?.blur();
               },
+              onEndingTitle: () => game.leaveEnding(),
               onGamepadUse: () => {
                 if (hidPad.current) return;
                 hidPad.current = true;
@@ -277,6 +280,17 @@ export default function App() {
           );
           game.controls = controls;
           game.clearInput = () => controls?.clear();
+          game.leaveEnding = () => {
+            if (sim.mode !== "finishing" || sim.tallyPhase !== "ending") return;
+            sim.leaveEnding();
+            audio.resetMusic();
+            game.clearInput();
+            game.paused = false;
+            setPaused(false);
+            game.helpOpen = false;
+            setHelpOpen(false);
+            (document.activeElement as HTMLElement)?.blur();
+          };
           setPortrait(renderer.game.registry.get("portrait"));
           setItemIcons(renderer.game.registry.get("itemIcons") ?? {});
           if (!audio.available) {
@@ -310,6 +324,7 @@ export default function App() {
             accumulator -= 1 / 60;
           }
           for (const event of sim.events.splice(0)) audio.event(event);
+          audio.syncVictory(sim.victoryLoop);
           audio.update(
             sim.mode === "playing",
             (sim.player.alive && sim.player.starLeft > 0) ||
@@ -429,6 +444,7 @@ export default function App() {
     if (!game || game.sim.lives <= 0) return;
     enterLevel();
   };
+  const leaveEnding = () => runtime.current?.leaveEnding();
   const pause = () => {
     const game = runtime.current;
     if (!game || game.sim.mode === "finishing") return;
@@ -916,6 +932,17 @@ export default function App() {
                 )}
               </div>
             </footer>
+      )}
+      {state.mode === "finishing" && state.tallyPhase === "ending" && !paused && (
+        <section className="overlay ending-overlay" aria-label="Ending">
+          <h2>{ENDING_LINE}</h2>
+          <p className="ending-score" data-testid="ending-score">
+            SCORE {formatScore(state.score)}
+          </p>
+          <button type="button" className="primary" onClick={leaveEnding}>
+            TITLE
+          </button>
+        </section>
       )}
       {interstitial && !paused && (
         <section

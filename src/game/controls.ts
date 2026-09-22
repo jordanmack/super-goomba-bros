@@ -1,6 +1,6 @@
 import type Phaser from "phaser";
 import { emptyInput } from "./simulation";
-import type { Input, Mode } from "./simulation";
+import type { Input, Mode, TallyPhase } from "./simulation";
 import {
   capturePadBinding,
   GAMEPAD_DEADZONE,
@@ -27,6 +27,7 @@ export type PadAction = keyof Input | "start" | "select";
 export type ControlHooks = {
   onSonami: () => void;
   onTitleStart: () => void;
+  onEndingTitle: () => void;
   onGamepadUse: () => void;
   onPadMapChange: (map: Record<PadMapAction, PadBinding>) => void;
   onRemapChange: (target: PadMapAction | null) => void;
@@ -37,7 +38,7 @@ type ControlState = {
   paused: boolean;
   helpOpen: boolean;
   ignoreEscapeUntilUp: boolean;
-  sim: { mode: Mode };
+  sim: { mode: Mode; tallyPhase: TallyPhase };
   padMap: Record<PadMapAction, PadBinding>;
   remapTarget: PadMapAction | null;
 };
@@ -78,6 +79,7 @@ export class GameControls {
   private togglePause: () => void;
   private hooks: ControlHooks;
   private startHeld = false;
+  private endingArmed = false;
   private sonamiIndex = 0;
   private prevPad: PadSnapshot | null = null;
   private padIndex: number | null = null;
@@ -372,10 +374,19 @@ export class GameControls {
     this.applyPadHold("jump", holds.jump, live);
     this.applyPadHold("run", holds.run, live);
     this.applyPadHold("down", holds.down, live);
+    if (this.onEndingScreen()) {
+      if (!this.endingArmed) {
+        this.endingArmed = true;
+        // A Start already held when the card appears must not leave by itself.
+        this.padNeedRelease.add("start");
+      }
+    } else this.endingArmed = false;
     this.applyPadHold(
       "start",
       holds.pause,
-      this.state.sim.mode === "playing" || this.state.sim.mode === "title",
+      this.state.sim.mode === "playing" ||
+        this.state.sim.mode === "title" ||
+        this.onEndingScreen(),
     );
     this.sync();
   }
@@ -476,6 +487,12 @@ export class GameControls {
   private playing() {
     return !this.state.paused && this.state.sim.mode === "playing";
   }
+  private onEndingScreen() {
+    return (
+      this.state.sim.mode === "finishing" &&
+      this.state.sim.tallyPhase === "ending"
+    );
+  }
   private inControls(target: EventTarget | null) {
     return (
       target instanceof Element &&
@@ -513,6 +530,11 @@ export class GameControls {
     if (start && !this.startHeld) {
       if (this.state.sim.mode === "playing") {
         this.togglePause();
+        return;
+      }
+      if (this.onEndingScreen()) {
+        this.startHeld = true;
+        this.hooks.onEndingTitle();
         return;
       }
       if (this.state.sim.mode === "title" && !this.state.helpOpen) {

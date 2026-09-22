@@ -1,4 +1,4 @@
-import type { GameEvent } from "./simulation";
+import { victoryCue, type GameEvent } from "./simulation";
 import type Phaser from "phaser";
 import { CANNON_BLAST, MIX, TUNING as T, pickWarningChirp } from "./config";
 import overworld from "../assets/audio/overworld.mp3?inline";
@@ -109,6 +109,7 @@ export class GameAudio {
   private cue: Phaser.Sound.WebAudioSound | null = null;
   private cueQueue: ("death" | "clear" | "gameover" | "warning" | "worldClear")[] =
     [];
+  private victoryLooping = false;
   private musicResume: { key: string; seek: number } | null = null;
   private tally: Phaser.Sound.WebAudioSound | null = null;
   random: () => number;
@@ -190,6 +191,12 @@ export class GameAudio {
   resetMusic(preserveCue = false) {
     this.stopMusic();
     this.musicResume = null;
+    // Drop the victory loop before destroy so its complete handler cannot restart it.
+    if (!preserveCue) {
+      this.victoryLooping = false;
+      this.cueQueue = [];
+      this.cue = null;
+    }
     for (const voice of this.voices) voice.stop();
     this.voices.clear();
     for (const effect of this.effects) {
@@ -199,8 +206,6 @@ export class GameAudio {
       this.effects.delete(effect);
     }
     if (!preserveCue) {
-      this.cue = null;
-      this.cueQueue = [];
       this.musicHoldUntil = 0;
       this.pausedAt = null;
     }
@@ -209,6 +214,7 @@ export class GameAudio {
     name: keyof typeof RECORDINGS,
     complete?: () => void,
     volume = 1,
+    loop = false,
   ) {
     if (!this.game.cache.audio.exists(name)) return;
     const effect = this.manager.add(name) as Phaser.Sound.WebAudioSound;
@@ -218,7 +224,7 @@ export class GameAudio {
       complete?.();
       effect.destroy();
     });
-    effect.play({ volume });
+    effect.play({ volume, loop });
     return effect;
   }
   private playTally() {
@@ -244,15 +250,52 @@ export class GameAudio {
         this.cueQueue.push(name);
       return;
     }
-    const effect = this.play(name, () => {
-      if (this.cue !== effect) return;
-      this.cue = null;
-      const next = this.cueQueue.shift();
-      if (next) this.playCue(next);
-    });
+    const loop = this.victoryLooping && name === "worldClear";
+    const effect = this.play(
+      name,
+      () => {
+        if (this.cue !== effect) return;
+        this.cue = null;
+        if (loop && this.victoryLooping) {
+          this.playCue(name);
+          return;
+        }
+        const next = this.cueQueue.shift();
+        if (next) this.playCue(next);
+      },
+      1,
+      loop,
+    );
     this.cue = effect ?? null;
-    this.musicHoldUntil =
-      this.context.currentTime + (this.buffers.get(name)?.duration ?? 0);
+    this.musicHoldUntil = loop
+      ? Number.POSITIVE_INFINITY
+      : this.context.currentTime + (this.buffers.get(name)?.duration ?? 0);
+  }
+  private beginVictoryLoop() {
+    if (this.victoryLooping || !this.available) return;
+    this.victoryLooping = true;
+    this.playCue("worldClear");
+    if (this.cue?.key !== "worldClear" && !this.cueQueue.includes("worldClear"))
+      this.victoryLooping = false;
+  }
+  private stopVictoryLoop() {
+    this.victoryLooping = false;
+    this.cueQueue = this.cueQueue.filter((name) => name !== "worldClear");
+    if (this.cue?.key === "worldClear") {
+      const cue = this.cue;
+      this.cue = null;
+      this.effects.delete(cue);
+      cue.destroy();
+    }
+    if (this.musicHoldUntil === Number.POSITIVE_INFINITY) this.musicHoldUntil = 0;
+  }
+  /** Keep world clear looping while the 8-4 card asks for it. */
+  syncVictory(loop: "" | "worldClear") {
+    if (!loop) {
+      if (this.victoryLooping) this.stopVictoryLoop();
+      return;
+    }
+    this.beginVictoryLoop();
   }
   private playWarning() {
     if (!this.context || !this.masterGain || this.muted) return;
@@ -291,8 +334,8 @@ export class GameAudio {
       this.playCue("warning");
       return;
     }
-    if (event === "ending") {
-      this.playCue("worldClear");
+    if (victoryCue(event)) {
+      this.beginVictoryLoop();
       return;
     }
     if (
@@ -328,6 +371,7 @@ export class GameAudio {
     if (this.music) this.music.rate = rate;
     if (
       !music ||
+      this.victoryLooping ||
       this.music ||
       this.cue ||
       this.cueQueue.length > 0 ||

@@ -43,8 +43,9 @@ question-block item uses the original appear effect with the bump. A 1-up uses
 `smb_warning.wav`, then the area theme plays faster. Leftover TIME tally
 retriggers a quieter copy of the coin sample on one voice. Flagpole fireworks
 use `smb_fireworks.wav` as each burst scores. Each Bowser flame spawn uses
-`smb_bowserfire.wav`, not the fireball or fireworks cue. World 8-4 uses
-`smb_world_clear.wav` after the castle tally.
+`smb_bowserfire.wav`, not the fireball or fireworks cue. World 8-4 loops
+`smb_world_clear.wav` on the ending screen after the castle tally until the
+player returns to the title.
 Warnings use a custom short square-wave voice, picked at random from a small
 pool of chirps. Pitch shapes live in `../../game/config.ts`. There is no
 approach heartbeat or distance-based music change. The world intro is silent.

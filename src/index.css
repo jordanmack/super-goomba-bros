@@ -733,6 +733,28 @@ p {
   gap: round(nearest, calc(var(--play-h) * 40 / 540), 1px);
   padding: 8px;
 }
+.overlay.ending-overlay {
+  --play-h: max(100dvh, 340px);
+  background: #000;
+  z-index: 6;
+  gap: round(nearest, calc(var(--play-h) * 28 / 540), 1px);
+}
+.overlay.ending-overlay h2,
+.overlay.ending-overlay .ending-score {
+  color: #fff;
+  text-shadow: none;
+  letter-spacing: 0.08em;
+  max-width: 100%;
+  line-height: 1.6;
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
+}
+.overlay.ending-overlay h2 {
+  font-size: round(nearest, min(calc(var(--play-h) * 16 / 540), 4.2vw), 1px);
+}
+.overlay.ending-overlay .ending-score {
+  font-size: round(nearest, min(calc(var(--play-h) * 14 / 540), 3.6vw), 1px);
+}
 .help-overlay {
   z-index: 13;
   gap: 18px;
