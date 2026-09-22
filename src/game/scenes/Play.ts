@@ -19,6 +19,7 @@ import {
 } from "../simulation";
 import {
   flagTextureKey,
+  SPRING_DRAW,
   SWEAT_DROP_HEIGHT,
   SWEAT_DROP_KEY,
   SWEAT_DROP_WIDTH,
@@ -89,6 +90,8 @@ export class Play extends Phaser.Scene {
       row.map((id, x) => {
         if (id === 194 || id === 195)
           return area.type === "water" ? palette + 135 : -1;
+        // The pad on screen is the three item-sheet frames. The tiles stay solid.
+        if (id === 103 || id === 104) return -1;
         return !id || blocks.has(`${x},${y}`) ? -1 : palette + id;
       }),
     );
@@ -234,6 +237,23 @@ export class Play extends Phaser.Scene {
       image(rope.leftX, rope.pulleyY + leftH / 2, 4, leftH, "rope", 3);
       image(rope.rightX, rope.pulleyY + rightH / 2, 4, rightH, "rope", 3);
       image(rope.pulleyX, rope.pulleyY, 16, 12, "pulley", 5);
+    }
+    for (const spring of sim.springDraw(room)) {
+      const size = SPRING_DRAW[spring.pose];
+      const key =
+        spring.pose === "mid"
+          ? "springMid"
+          : spring.pose === "compressed"
+            ? "springCompressed"
+            : "springExtended";
+      image(
+        room.offset + spring.column * 32 + 16,
+        MAP_TOP + spring.row * 32 + spring.offset + size.height / 2,
+        size.width,
+        size.height,
+        key,
+        3,
+      ).setRotation(0);
     }
     for (const platform of room.platforms)
       image(

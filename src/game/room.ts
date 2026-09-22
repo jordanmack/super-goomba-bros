@@ -552,9 +552,9 @@ export class Room {
     }
     this.refreshBalanceRopes();
   }
-  onSpring(actor: Actor) {
+  springAt(actor: Actor) {
     const half = actor.body.width / 2;
-    return this.data.objects.some(
+    return this.data.objects.find(
       (o) =>
         o.opcode === 33 &&
         !this.smashedTiles.has(`${o.column},${o.row}`) &&
@@ -563,6 +563,9 @@ export class Room {
           Math.max(28, half + 16) &&
         Math.abs(actor.body.bounds.max.y - MAP_TOP - o.row * 32) < 12,
     );
+  }
+  onSpring(actor: Actor) {
+    return !!this.springAt(actor);
   }
   swimPath(actor: Actor, target?: Point) {
     target ??= {

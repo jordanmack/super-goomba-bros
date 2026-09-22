@@ -385,6 +385,22 @@ function pixelPulley() {
 // (304, 96) starts 4px right and 2px down, so the left fins are missing.
 export const BULLET_BILL_CROP = { x: 300, y: 94, width: 16, height: 16 };
 
+// Three JumpspringObject poses on the overworld strip of items.png.
+// Extended is idle and the launch pose. Mid and compressed are the squash.
+export const SPRING_SHEET = {
+  extended: { x: 80, y: 97, width: 16, height: 24 },
+  mid: { x: 96, y: 105, width: 16, height: 16 },
+  compressed: { x: 112, y: 113, width: 16, height: 8 },
+} as const;
+
+// The pad is two 32px tiles. Draw heights keep the plate on the landing
+// surface and the base on the bottom of that column.
+export const SPRING_DRAW = {
+  extended: { width: 32, height: 64 },
+  mid: { width: 32, height: 48 },
+  compressed: { width: 32, height: 32 },
+} as const;
+
 export function scenerySprites({ mario, enemies, items }: SpriteSources) {
   const flag = crop(items, 128, 0, 16, 16);
   const mushroom = crop(items, 0, 0, 16, 16);
@@ -416,6 +432,27 @@ export function scenerySprites({ mario, enemies, items }: SpriteSources) {
     mushroomFlag: emblemFlag(flag, mushroom),
     vineHead: crop(items, 64, 48, 16, 16),
     vine: crop(items, 64, 64, 16, 16),
+    springExtended: crop(
+      items,
+      SPRING_SHEET.extended.x,
+      SPRING_SHEET.extended.y,
+      SPRING_SHEET.extended.width,
+      SPRING_SHEET.extended.height,
+    ),
+    springMid: crop(
+      items,
+      SPRING_SHEET.mid.x,
+      SPRING_SHEET.mid.y,
+      SPRING_SHEET.mid.width,
+      SPRING_SHEET.mid.height,
+    ),
+    springCompressed: crop(
+      items,
+      SPRING_SHEET.compressed.x,
+      SPRING_SHEET.compressed.y,
+      SPRING_SHEET.compressed.width,
+      SPRING_SHEET.compressed.height,
+    ),
     [SWEAT_DROP_KEY]: pixelSweatDrop(),
   };
 }

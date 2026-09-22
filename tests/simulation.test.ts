@@ -2100,12 +2100,6 @@ function springPad(s: Simulation) {
   };
 }
 
-function standOnSpring(s: Simulation, xOffset = 0) {
-  const pad = springPad(s);
-  at(s, pad.x + xOffset, pad.y - s.player.body.height / 2);
-  Body.setVelocity(s.player.body, { x: 0, y: 0 });
-}
-
 function world21() {
   const s = game();
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
@@ -2115,43 +2109,395 @@ function world21() {
   return s;
 }
 
-function launchVy(s: Simulation) {
-  tick(s, 0.15);
-  assert.ok(s.player.grounded, "player should stand before jumping");
-  s.events.length = 0;
-  tick(s, dt, { jump: true });
-  assert.ok(s.events.includes("jump"));
-  return s.player.body.velocity.y;
+function dropOntoSpring(s: Simulation, actor: Actor, xOffset = 0) {
+  const pad = springPad(s);
+  actor.areaId = s.activeRoom.data.id;
+  Body.setFrozen(actor.body, false);
+  Body.setPosition(actor.body, {
+    x: pad.x + xOffset,
+    y: pad.y - actor.body.height / 2 - 36,
+  });
+  Body.setVelocity(actor.body, { x: 0, y: 12 });
+  return pad;
 }
 
-test("a player jumping from a World 2-1 spring uses the spring impulse", () => {
-  const spring = world21();
-  standOnSpring(spring);
-  const springVy = launchVy(spring);
-  assert.ok(
-    springVy < -T.springImpulse + 1,
-    `spring launch ${springVy}`,
-  );
-  assert.ok(springVy < -T.jumpSpeed - 4, `spring vs walk jump ${springVy}`);
-
-  const floor = world21();
-  at(floor, 120, T.groundY - floor.player.body.height / 2);
-  const floorVy = launchVy(floor);
-  assert.ok(floorVy > -T.jumpSpeed - 1, `floor launch ${floorVy}`);
-  assert.ok(springVy < floorVy - 4);
+test("a spring landing squashes 4 frames at each offset, then launches at -14", () => {
+  const s = world21();
+  const pad = dropOntoSpring(s, s.player);
+  const spring = s.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+  const feet = () => s.player.body.bounds.max.y;
+  const poseAt = () =>
+    s.springDraw(s.activeRoom).find((draw) => draw.column === spring.column);
+  let started = false;
+  const offsets: number[] = [];
+  const poses: string[] = [];
+  let lockedX = 0;
+  for (let frame = 0; frame < 90; frame++) {
+    s.step(dt, { ...emptyInput(), right: started });
+    if (!started) {
+      if (Math.abs(feet() - (pad.y + 16)) > 0.5) continue;
+      started = true;
+      lockedX = s.player.body.position.x;
+    }
+    assert.equal(s.player.body.position.x, lockedX, "walk input moves a squashing rider");
+    if (s.player.body.velocity.y === -T.springVy && Math.abs(feet() - pad.y) < 0.5) {
+      assert.equal(s.player.grounded, false);
+      assert.deepEqual(offsets, [16, 16, 16, 16, 32, 32, 32, 32, 16, 16, 16, 16]);
+      assert.deepEqual(poses, [
+        "mid",
+        "mid",
+        "mid",
+        "mid",
+        "compressed",
+        "compressed",
+        "compressed",
+        "compressed",
+        "mid",
+        "mid",
+        "mid",
+        "mid",
+      ]);
+      return;
+    }
+    const draw = poseAt();
+    assert.ok(draw, "spring frame missing during squash");
+    offsets.push(Math.round(feet() - pad.y));
+    poses.push(draw!.pose);
+    assert.equal(draw!.offset, Math.round(feet() - pad.y));
+    assert.equal(s.player.body.velocity.y, 0);
+  }
+  assert.fail(`spring did not launch, feet ${feet()} vy ${s.player.body.velocity.y}`);
 });
 
-test("spring detection still launches 2x, 3x, and 8x players, including off-centre", () => {
-  for (const scale of [T.mushroomScale, T.giantScale, T.hugeScale]) {
+test("holding jump from before the landing does not select the high spring", () => {
+  const s = world21();
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  for (let frame = 0; frame < 90; frame++) {
+    s.step(dt, { ...emptyInput(), jump: true });
+    if (s.player.body.velocity.y < -1 && Math.abs(feet() - pad.y) < 0.5) {
+      assert.equal(s.player.body.velocity.y, -T.springVy);
+      assert.notEqual(s.player.body.velocity.y, -T.springVyJump);
+      return;
+    }
+  }
+  assert.fail("held jump never launched");
+});
+
+test("a new jump press during the mid squash launches at -24", () => {
+  const s = world21();
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  let sawCompressed = false;
+  for (let frame = 0; frame < 90; frame++) {
+    const press = Math.abs(feet() - (pad.y + 32)) < 0.5;
+    if (press) sawCompressed = true;
+    s.step(dt, { ...emptyInput(), jump: press });
+    if (s.player.body.velocity.y < -1 && Math.abs(feet() - pad.y) < 0.5) {
+      assert.equal(sawCompressed, true);
+      assert.equal(s.player.body.velocity.y, -T.springVyJump);
+      return;
+    }
+  }
+  assert.fail("mid-squash jump never launched");
+});
+
+test("a jump press only on the launch frame stays at the default spring speed", () => {
+  const s = world21();
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  const offsets: number[] = [];
+  let started = false;
+  for (let frame = 0; frame < 90; frame++) {
+    const launchFrame = started && offsets.length === 12;
+    s.step(dt, { ...emptyInput(), jump: launchFrame });
+    if (
+      s.player.body.velocity.y < -1 &&
+      Math.abs(feet() - pad.y) < 0.5
+    ) {
+      assert.equal(launchFrame, true);
+      assert.equal(s.player.body.velocity.y, -T.springVy);
+      return;
+    }
+    if (!started) {
+      if (Math.abs(feet() - (pad.y + 16)) > 0.5) continue;
+      started = true;
+    }
+    offsets.push(Math.round(feet() - pad.y));
+  }
+  assert.fail("launch frame never arrived");
+});
+
+test("a player's mid-squash jump does not raise an NPC on the same spring", () => {
+  const s = world21();
+  const npc = s.npcs.find((a) => a.kind === "goomba") ?? s.npcs[0]!;
+  parkNpcs(s, [npc]);
+  npc.idleWalking = false;
+  const pad = dropOntoSpring(s, s.player);
+  dropOntoSpring(s, npc, 8);
+  const feet = (actor: Actor) => actor.body.bounds.max.y;
+  let sawCompressed = false;
+  for (let frame = 0; frame < 90; frame++) {
+    const press = Math.abs(feet(s.player) - (pad.y + 32)) < 0.5;
+    if (press) sawCompressed = true;
+    s.step(dt, { ...emptyInput(), jump: press });
+    if (
+      s.player.body.velocity.y < -1 &&
+      Math.abs(feet(s.player) - pad.y) < 0.5 &&
+      Math.abs(feet(npc) - pad.y) < 0.5
+    ) {
+      assert.equal(sawCompressed, true);
+      assert.equal(s.player.body.velocity.y, -T.springVyJump);
+      assert.equal(npc.body.velocity.y, -T.springVy);
+      return;
+    }
+  }
+  assert.fail(
+    `co-riders missed launch player ${s.player.body.velocity.y} npc ${npc.body.velocity.y}`,
+  );
+});
+
+test("an 8x overlap still smashes a spring while another actor is riding it", () => {
+  const s = world21();
+  const spring = s.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+  const npc = s.npcs.find((a) => a.kind === "goomba") ?? s.npcs[0]!;
+  parkNpcs(s, [npc]);
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  let riding = false;
+  for (let frame = 0; frame < 40 && !riding; frame++) {
+    s.step(dt, emptyInput());
+    riding = Math.abs(feet() - (pad.y + 16)) < 0.5;
+  }
+  assert.equal(riding, true, "player never started the squash");
+  give(s, npc, "mushroom8x");
+  overlapAt(
+    npc,
+    s.activeRoom.offset + spring.column * 32 + 16,
+    MAP_TOP + spring.row * 32 + 16,
+  );
+  s.step(dt, emptyInput());
+  assert.equal(
+    s.activeRoom.smashedTiles.has(`${spring.column},${spring.row}`),
+    true,
+  );
+  assert.equal(
+    s.activeRoom.smashedTiles.has(`${spring.column},${spring.row + 1}`),
+    true,
+  );
+});
+
+test("smashing the pad releases the rider instead of launching them", () => {
+  const s = world21();
+  const spring = s.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+  const npc = s.npcs.find((a) => a.kind === "goomba") ?? s.npcs[0]!;
+  parkNpcs(s, [npc]);
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  let riding = false;
+  for (let frame = 0; frame < 40 && !riding; frame++) {
+    s.step(dt, emptyInput());
+    riding = Math.abs(feet() - (pad.y + 16)) < 0.5;
+  }
+  assert.equal(riding, true, "player never started the squash");
+  give(s, npc, "mushroom8x");
+  overlapAt(
+    npc,
+    s.activeRoom.offset + spring.column * 32 + 16,
+    MAP_TOP + spring.row * 32 + 16,
+  );
+  s.step(dt, emptyInput());
+  assert.equal(s.player.body.frozen, false);
+  assert.equal(s.player.body.velocity.y, 0);
+  tick(s, 0.2);
+  assert.equal(s.player.body.frozen, false);
+  assert.ok(
+    s.player.body.velocity.y >= 0,
+    `rider launched after the pad was gone (${s.player.body.velocity.y})`,
+  );
+  assert.ok(feet() >= pad.y - 1, "rider rose off a missing pad");
+});
+
+test("an 8x smash on the launch frame does not still fling the rider", () => {
+  const s = world21();
+  const spring = s.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+  const npc = s.npcs.find((a) => a.kind === "goomba") ?? s.npcs[0]!;
+  parkNpcs(s, [npc]);
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  const offsets: number[] = [];
+  let started = false;
+  for (let frame = 0; frame < 90; frame++) {
+    if (started && offsets.length === 12) {
+      give(s, npc, "mushroom8x");
+      overlapAt(
+        npc,
+        s.activeRoom.offset + spring.column * 32 + 16,
+        MAP_TOP + spring.row * 32 + 16,
+      );
+      s.step(dt, emptyInput());
+      assert.equal(
+        s.activeRoom.smashedTiles.has(`${spring.column},${spring.row}`),
+        true,
+      );
+      assert.equal(s.player.body.frozen, false);
+      assert.notEqual(s.player.body.velocity.y, -T.springVy);
+      assert.notEqual(s.player.body.velocity.y, -T.springVyJump);
+      assert.ok(s.player.body.velocity.y >= 0);
+      return;
+    }
+    s.step(dt, emptyInput());
+    if (!started) {
+      if (Math.abs(feet() - (pad.y + 16)) > 0.5) continue;
+      started = true;
+    }
+    offsets.push(Math.round(feet() - pad.y));
+  }
+  assert.fail("launch frame never arrived");
+});
+
+test("a spring launch keeps fall gravity while jump is held", () => {
+  const s = world21();
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  for (let frame = 0; frame < 90; frame++) {
+    s.step(dt, emptyInput());
+    if (s.player.body.velocity.y !== -T.springVy) continue;
+    if (Math.abs(feet() - pad.y) > 0.5) continue;
+    s.step(dt, { ...emptyInput(), jump: true });
+    const fallStep = T.jumpFallGravity / 3600;
+    const holdStep = T.jumpHoldGravity / 3600;
+    assert.equal(s.player.grounded, false);
+    assert.ok(feet() < pad.y - 4, `feet stayed on the pad ${feet()}`);
+    assert.ok(
+      Math.abs(s.player.body.velocity.y - (-T.springVy + fallStep)) < 0.05,
+      `vy ${s.player.body.velocity.y} is not fall gravity`,
+    );
+    assert.ok(
+      Math.abs(s.player.body.velocity.y - (-T.springVy + holdStep)) > 0.2,
+    );
+    return;
+  }
+  assert.fail("spring did not launch");
+});
+
+test("an emerged walking mushroom is collected in the air after a spring launch", () => {
+  const s = world21();
+  const pad = dropOntoSpring(s, s.player);
+  const body = s.physics.rectangle(pad.x - 30, pad.y - 150, 24, 28, false);
+  s.items.push({
+    id: 9001,
+    kind: "mushroom",
+    body,
+    emerge: 0,
+    originY: pad.y - 150,
+    direction: 1,
+    age: 0,
+    hold: 0,
+  });
+  const feet = () => s.player.body.bounds.max.y;
+  for (let frame = 0; frame < 120; frame++) {
+    s.step(dt, emptyInput());
+    if (s.items.some((item) => item.id === 9001)) continue;
+    assert.equal(s.player.grounded, false, "pickup waited until the rider landed");
+    assert.ok(s.player.body.velocity.y < 0, "pickup was not on the way up");
+    assert.ok(feet() < pad.y - 4, "pickup happened on the pad");
+    assert.equal(s.player.scale, T.mushroomScale);
+    return;
+  }
+  assert.fail("walking mushroom was not collected on the spring arc");
+});
+
+test("a mushroom still emerging from a block is not collected in the air", () => {
+  const s = world21();
+  at(s, 200, 200);
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  const body = s.physics.rectangle(200, 200, 24, 28, false);
+  Body.setFrozen(body, true);
+  s.items.push({
+    id: 9002,
+    kind: "mushroom",
+    body,
+    emerge: 0.45,
+    originY: 220,
+    direction: 1,
+    age: 0,
+    hold: 0,
+  });
+  tick(s, 0.2);
+  assert.equal(s.items.some((item) => item.id === 9002), true);
+  assert.equal(s.player.scale, 1);
+});
+
+test("Mario and an NPC bounce from a spring landing without pressing jump", () => {
+  for (const who of ["npc", "mario"] as const) {
+    const s = world21();
+    const actor = who === "npc" ? s.npcs[0]! : s.mario;
+    if (who === "npc") actor.idleWalking = false;
+    else {
+      s.marioActive = true;
+      s.setMarioStage(0);
+    }
+    const pad = dropOntoSpring(s, actor);
+    s.cameraX = pad.x - 400;
+    s.viewWidth = 960;
+    at(s, pad.x + 120, T.groundY - s.player.body.height / 2);
+    const feet = () => actor.body.bounds.max.y;
+    let squashed = false;
+    for (let frame = 0; frame < 90; frame++) {
+      s.step(dt, emptyInput());
+      if (Math.abs(feet() - (pad.y + 16)) < 0.5) squashed = true;
+      if (actor.body.velocity.y === -T.springVy && Math.abs(feet() - pad.y) < 0.5) {
+        assert.equal(squashed, true, `${who}: launched without a squash`);
+        assert.equal(actor.grounded, false);
+        break;
+      }
+      if (frame === 89) assert.fail(`${who}: no spring launch`);
+    }
+    s.physics.clear();
+  }
+});
+
+test("an 8x landing bounces and does not smash the spring", () => {
+  const s = world21();
+  const spring = s.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+  give(s, s.player, "mushroom8x");
+  const pad = dropOntoSpring(s, s.player);
+  const feet = () => s.player.body.bounds.max.y;
+  for (let frame = 0; frame < 90; frame++) {
+    s.step(dt, emptyInput());
+    if (s.player.body.velocity.y === -T.springVy && Math.abs(feet() - pad.y) < 0.5) {
+      assert.equal(
+        s.activeRoom.smashedTiles.has(`${spring.column},${spring.row}`),
+        false,
+      );
+      assert.equal(
+        s.activeRoom.smashedTiles.has(`${spring.column},${spring.row + 1}`),
+        false,
+      );
+      assert.equal(s.activeRoom.onSpring(s.player), true);
+      return;
+    }
+  }
+  assert.fail("8x spring landing did not launch");
+});
+
+test("2x and 3x players still bounce from an off-centre spring landing", () => {
+  for (const scale of [T.mushroomScale, T.giantScale]) {
     const s = world21();
     give(s, s.player, mushroomKind(scale));
-    const offset = 32;
-    standOnSpring(s, offset);
-    const vy = launchVy(s);
-    assert.ok(
-      vy < -T.springImpulse + 1,
-      `scale ${scale} offset ${offset}: launch ${vy}`,
-    );
+    const pad = dropOntoSpring(s, s.player, 32);
+    const feet = () => s.player.body.bounds.max.y;
+    let launched = false;
+    for (let frame = 0; frame < 90; frame++) {
+      s.step(dt, emptyInput());
+      if (s.player.body.velocity.y === -T.springVy && Math.abs(feet() - pad.y) < 0.5) {
+        launched = true;
+        break;
+      }
+    }
+    assert.equal(launched, true, `scale ${scale} missed the off-centre pad`);
+    s.physics.clear();
   }
 });
 

@@ -8,6 +8,8 @@ import {
   AXE_HEIGHT,
   AXE_WIDTH,
   flagTextureKey,
+  SPRING_DRAW,
+  SPRING_SHEET,
   stampAxe,
   stampEmblemInCloth,
   stampMushroomFlag,
@@ -272,6 +274,35 @@ test("atlas tiles 103 and 104 hold trampoline art, not empty or brick fills", ()
         );
     }
   }
+});
+
+test("spring frames are the three item-sheet poses, not one stretched tile", () => {
+  const sheet = join(root, "src/assets/smb/items.png");
+  const poses = ["extended", "mid", "compressed"] as const;
+  assert.ok(SPRING_SHEET.extended.height > SPRING_SHEET.mid.height);
+  assert.ok(SPRING_SHEET.mid.height > SPRING_SHEET.compressed.height);
+  assert.equal(SPRING_DRAW.extended.height, 64);
+  assert.equal(SPRING_DRAW.mid.height, 48);
+  assert.equal(SPRING_DRAW.compressed.height, 32);
+  const reds = poses.map((pose) => {
+    const frame = SPRING_SHEET[pose];
+    const raw = atlasRgba(
+      sheet,
+      `${frame.width}x${frame.height}+${frame.x}+${frame.y}`,
+    );
+    let red = 0;
+    let opaque = 0;
+    for (let i = 0; i < raw.length; i += 4) {
+      if (raw[i + 3] < 128) continue;
+      opaque++;
+      if (raw[i] === 181 && raw[i + 1] === 49 && raw[i + 2] === 33) red++;
+    }
+    assert.ok(opaque > 40, `${pose}: empty crop`);
+    assert.ok(red >= 32, `${pose}: missing the red plate`);
+    return Buffer.from(raw).toString("hex");
+  });
+  assert.notEqual(reds[0], reds[1]);
+  assert.notEqual(reds[1], reds[2]);
 });
 
 test("castle-room rescue door is an inverted white door, not a black hole", () => {

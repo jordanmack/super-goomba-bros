@@ -29,7 +29,15 @@ settings unless a rule below explicitly fixes their relationship.
   type 36 / $24) are coupled: weight on one lowers it and raises its partner,
   and removing the weight reverses that motion. A rope and pulley are drawn and
   move with the pair. Ordinary moving platforms keep their independent motion.
-  Original springs give a stronger bounce.
+  A spring squashes when the player, Mario, or an NPC lands on it. Jump is
+  not required. Idle and the bounce use the three original spring frames.
+  Each squash step lasts 4 frames at Y offsets 16, 32, and 16, then the pad
+  returns to 0 and launches. The rider moves with the pad and does not walk
+  or fall until the launch. The default launch is 14 px/frame upward. A new
+  jump press during the mid squash launches at 24. That bounce uses fall
+  gravity, not jump-hold gravity. An emerged walking power-up is collected
+  on overlap in the air. A power-up still rising out of a block is not
+  collected yet.
 - Enterable pipes use world-specific destinations and entrance pages. Side
   entrances work when approached at their opening. Arrival follows the source
   pipe: a side pipe rises from a `null`-direction pipe on the destination page

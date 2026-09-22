@@ -360,6 +360,19 @@ export type Item = {
   ignoreActor?: Actor;
 };
 export type CoinPop = { x: number; y: number; age: number };
+type SpringPose = "extended" | "mid" | "compressed";
+type SpringRider = { id: number; x: number; vx: number; force: number };
+type SpringRide = {
+  areaId: string;
+  column: number;
+  row: number;
+  step: number;
+  tick: number;
+  // Pose placed this frame. step may already point at the next pose.
+  shown: number;
+  riders: SpringRider[];
+};
+const SPRING_POSE: SpringPose[] = ["mid", "compressed", "mid", "extended"];
 const TALLY_LINES: Exclude<TallyPhase, "" | "time" | "ending">[] = [
   "warned",
   "saved",
@@ -973,6 +986,7 @@ export class Simulation {
   bowsers: Bowser[] = [];
   bowserFlames: BowserFlame[] = [];
   items: Item[] = [];
+  private springRides: SpringRide[] = [];
   vines: Vine[] = [];
   particles: Particle[] = [];
   events: GameEvent[] = [];
@@ -1182,6 +1196,7 @@ export class Simulation {
     this.cannonLfsr.fill(0);
     this.cannonLfsr[0] = 0xa5;
     this.items = [];
+    this.springRides = [];
     this.vines = [];
     this.coinPops = [];
     this.particles = [];
@@ -1339,6 +1354,203 @@ export class Simulation {
       );
     a.grounded = (onLid || inVolume) && Math.abs(a.body.velocity.y) < 1;
   }
+  private springActors() {
+    const actors = [this.player, ...this.npcs];
+    if (this.mario?.alive && !this.mario.body.frozen) actors.push(this.mario);
+    return actors;
+  }
+  private actorById(id: number) {
+    if (this.player?.id === id) return this.player;
+    if (this.mario?.id === id) return this.mario;
+    return this.npcs.find((n) => n.id === id);
+  }
+  private springLocked(a: Actor) {
+    return this.springRides.some((ride) =>
+      ride.riders.some((rider) => rider.id === a.id),
+    );
+  }
+  private canStartSpring(a: Actor) {
+    return (
+      !!a &&
+      a.alive &&
+      !a.saved &&
+      !a.body.frozen &&
+      !this.inPipe(a) &&
+      !this.onVine(a) &&
+      a.grounded &&
+      this.roomFor(a).data.type !== "water" &&
+      !this.springLocked(a)
+    );
+  }
+  // Landing starts the squash. Jump is not required. One ride per pad.
+  private beginSprings() {
+    if (this.mode !== "playing" || this.pipeIntro) return;
+    for (const a of this.springActors()) {
+      if (!this.canStartSpring(a)) continue;
+      const spot = this.roomFor(a).springAt(a);
+      if (!spot) continue;
+      let ride = this.springRides.find(
+        (item) => item.areaId === a.areaId && item.column === spot.column,
+      );
+      if (ride && (ride.step > 0 || ride.tick > 0)) continue;
+      if (!ride) {
+        ride = {
+          areaId: a.areaId ?? this.roomFor(a).data.id,
+          column: spot.column,
+          row: spot.row,
+          step: 0,
+          tick: 0,
+          shown: 0,
+          riders: [],
+        };
+        this.springRides.push(ride);
+      }
+      if (ride.riders.some((rider) => rider.id === a.id)) continue;
+      // Landing can zero a walk into the pad. NPCs keep a run toward the goal.
+      const room = this.roomFor(a);
+      const dir = Math.sign(room.goalX - a.body.position.x) || a.facing || 1;
+      const vx =
+        a === this.player
+          ? a.body.velocity.x
+          : dir * this.runSpeedFor(a);
+      ride.riders.push({
+        id: a.id,
+        x: a.body.position.x,
+        vx,
+        force: -T.springVy,
+      });
+    }
+  }
+  private releaseSmashedSprings() {
+    const gone = this.springRides.filter((ride) => {
+      const room = this.rooms.get(ride.areaId);
+      return (
+        !room ||
+        room.smashedTiles.has(`${ride.column},${ride.row}`) ||
+        room.smashedTiles.has(`${ride.column},${ride.row + 1}`)
+      );
+    });
+    if (!gone.length) return;
+    const drop = new Set(gone);
+    this.springRides = this.springRides.filter((ride) => !drop.has(ride));
+    for (const ride of gone) {
+      for (const rider of ride.riders) {
+        const a = this.actorById(rider.id);
+        if (!a) continue;
+        Body.setFrozen(a.body, false);
+        Body.setVelocity(a.body, { x: rider.vx, y: 0 });
+        a.grounded = false;
+        a.jumpHeld = false;
+      }
+    }
+  }
+  private placeSpringRiders() {
+    this.releaseSmashedSprings();
+    for (const ride of this.springRides) {
+      ride.shown = Math.min(ride.step, T.springSquash.length - 1);
+      const offset = T.springSquash[ride.shown]!;
+      const top = MAP_TOP + ride.row * 32;
+      ride.riders = ride.riders.filter((rider) => {
+        const a = this.actorById(rider.id);
+        if (!a?.alive || a.saved) {
+          if (a) Body.setFrozen(a.body, false);
+          return false;
+        }
+        Body.setFrozen(a.body, true);
+        Body.setPosition(a.body, {
+          x: rider.x,
+          y: top + offset - a.body.height / 2,
+        });
+        a.grounded = false;
+        a.body.gravityScale = 0;
+        return true;
+      });
+    }
+    this.springRides = this.springRides.filter((ride) => ride.riders.length > 0);
+  }
+  // A new jump press during the mid squash selects $f4 for that rider.
+  // The first compression and the launch pose (offset 0) stay at -14.
+  private noteSpringJump(a: Actor, edge: boolean) {
+    if (!edge) return;
+    const last = T.springSquash.length - 1;
+    for (const ride of this.springRides) {
+      if (ride.step < 1 || ride.step >= last) continue;
+      const rider = ride.riders.find((item) => item.id === a.id);
+      if (rider) rider.force = -T.springVyJump;
+    }
+  }
+  private advanceSprings() {
+    for (const ride of this.springRides) {
+      if (ride.step >= T.springSquash.length - 1) continue;
+      ride.tick++;
+      if (ride.tick < T.springStepFrames) continue;
+      ride.tick = 0;
+      ride.step++;
+    }
+  }
+  // Launch after physics so this frame still shows vy -14 or -24, unmoved.
+  // Fall gravity ($70) for the whole arc, not jumpArc hold gravity.
+  private launchSprings() {
+    const ready = this.springRides.filter(
+      (ride) => ride.step >= T.springSquash.length - 1,
+    );
+    this.springRides = this.springRides.filter(
+      (ride) => ride.step < T.springSquash.length - 1,
+    );
+    for (const ride of ready) {
+      const top = MAP_TOP + ride.row * 32;
+      for (const rider of ride.riders) {
+        const a = this.actorById(rider.id);
+        if (!a) continue;
+        Body.setFrozen(a.body, false);
+        Body.setPosition(a.body, {
+          x: rider.x,
+          y: top - a.body.height / 2,
+        });
+        Body.setVelocity(a.body, { x: rider.vx, y: rider.force });
+        a.grounded = false;
+        if (a === this.player || a === this.mario) {
+          // SMB1 sets VerticalForce to $70 for the whole spring arc.
+          a.jumpHoldG = T.jumpFallGravity;
+          a.jumpFallG = T.jumpFallGravity;
+        } else {
+          // Launch speed is still -14. NPCs keep their jump hang so the
+          // bounce clears the obstacle after the pad. Not jumpArc.
+          a.jumpHeld = true;
+          a.jumpHoldG = T.jumpHoldGravity;
+          a.jumpFallG = T.npcJumpFallGravity;
+        }
+        if (a !== this.player) {
+          a.navVx = rider.vx;
+          a.navDelay = 0;
+          a.navHoldX = undefined;
+        }
+      }
+    }
+  }
+  springDraw(room: Room) {
+    const poses: { column: number; row: number; pose: SpringPose; offset: number }[] =
+      [];
+    for (const o of room.data.objects) {
+      if (o.opcode !== 33) continue;
+      if (
+        room.smashedTiles.has(`${o.column},${o.row}`) ||
+        room.smashedTiles.has(`${o.column},${o.row + 1}`)
+      )
+        continue;
+      const ride = this.springRides.find(
+        (item) => item.areaId === room.data.id && item.column === o.column,
+      );
+      const shown = ride ? ride.shown : -1;
+      poses.push({
+        column: o.column,
+        row: o.row,
+        pose: shown < 0 ? "extended" : SPRING_POSE[shown]!,
+        offset: shown < 0 ? 0 : T.springSquash[shown]!,
+      });
+    }
+    return poses;
+  }
   private move(a: Actor, vx: number) {
     if (a !== this.player && !a.grounded && a.navVx !== undefined) {
       // Keep the planned launch velocity so a reverse takeoff is not flipped.
@@ -1433,7 +1645,7 @@ export class Simulation {
         ? -1
         : 1;
     const pace = this.runSpeedFor(a);
-    const impulse = room.onSpring(a) ? T.springImpulse : jumpArc(pace).impulse;
+    const impulse = jumpArc(pace).impulse;
     const solids = this.solids.filter(
       (s) =>
         !s.headOnly &&
@@ -1551,9 +1763,7 @@ export class Simulation {
       if (wall) {
         // Collision zeros vx against a flush wall, so a standing hop cannot clear it.
         const pace = this.runSpeedFor(a);
-        const impulse = room.onSpring(a)
-          ? T.springImpulse
-          : T.runJumpSpeed;
+        const impulse = T.runJumpSpeed;
         const arc = jumpArc(pace);
         const gravity = { hold: arc.hold, fall: arc.fall };
         const launch =
@@ -1679,9 +1889,7 @@ export class Simulation {
       return;
     }
     const pace = this.runSpeedFor(a);
-    const impulse = room.onSpring(a)
-      ? T.springImpulse
-      : jumpArc(pace).impulse;
+    const impulse = jumpArc(pace).impulse;
     const launch = planJump(
       a.body,
       solids,
@@ -2392,6 +2600,18 @@ export class Simulation {
         if (
           room.smashedTiles.has(key) ||
           !this.smashableTerrain(room, column, row, feet)
+        )
+          continue;
+        // The rider sinks into the pad. That overlap is not a smash.
+        // Another 8x body on the same column still smashes it.
+        if (
+          isSpringTile(room.data.tiles[row]?.[column] ?? 0) &&
+          this.springRides.some(
+            (ride) =>
+              ride.areaId === room.data.id &&
+              ride.column === column &&
+              ride.riders.some((rider) => rider.id === a.id),
+          )
         )
           continue;
         const x = room.offset + column * 32 + 16;
@@ -3568,6 +3788,8 @@ export class Simulation {
         a.jumpFallG = undefined;
       }
     }
+    this.beginSprings();
+    this.placeSpringRiders();
     this.updatePipeTravel(dt);
     this.updateVines(dt);
     if (this.mode !== "playing" && this.mode !== "finishing") return;
@@ -3580,6 +3802,11 @@ export class Simulation {
         this.player.jumpHeld = play.jump;
         this.jumped = play.jump;
         this.wasUp = play.up;
+      } else if (this.springLocked(this.player)) {
+        this.noteSpringJump(this.player, play.jump && !this.jumped);
+        this.player.jumpHeld = play.jump;
+        this.jumped = play.jump;
+        this.wasUp = play.up;
       } else {
         const dx = Number(play.right) - Number(play.left);
         const p = this.player.body.position;
@@ -3589,12 +3816,7 @@ export class Simulation {
           this.playerPace = play.run ? T.runSpeed : T.walkSpeed;
         this.move(this.player, dx * this.playerPace);
         if (play.jump && !this.jumped)
-          this.jump(
-            this.player,
-            this.roomFor(this.player).onSpring(this.player)
-              ? T.springImpulse
-              : undefined,
-          );
+          this.jump(this.player);
         this.player.jumpHeld = play.jump;
         this.jumped = play.jump;
         this.wasUp = play.up;
@@ -3635,7 +3857,7 @@ export class Simulation {
     }
     if (!scripted) this.updateMario(dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
-      if (this.onVine(a)) {
+      if (this.springLocked(a) || this.onVine(a)) {
         a.body.gravityScale = 0;
         continue;
       }
@@ -3684,6 +3906,10 @@ export class Simulation {
       ...(this.marioActive ? [this.mario] : []),
     ])
       this.smashHuge(a);
+    // Drop a smashed pad before launch, or the rider would still leave at -14.
+    this.releaseSmashedSprings();
+    this.launchSprings();
+    this.advanceSprings();
     for (const room of this.rooms.values())
       for (const coin of room.coins) {
         if (coin.collected) continue;
@@ -3807,7 +4033,7 @@ export class Simulation {
 
   private updateNpcs(dt: number) {
     for (const n of this.npcs) {
-      if (!n.alive || n.saved || this.inPipe(n)) continue;
+      if (!n.alive || n.saved || this.inPipe(n) || this.springLocked(n)) continue;
       if (n.kind === "koopa" && n.shell !== "none") {
         const room = this.roomFor(n);
         if (
@@ -3999,9 +4225,7 @@ export class Simulation {
             n.navBackoff = undefined;
             if (solved) {
               const pace = this.runSpeedFor(n);
-              const impulse = this.roomFor(n).onSpring(n)
-                ? T.springImpulse
-                : jumpArc(pace).impulse;
+              const impulse = jumpArc(pace).impulse;
               this.launchJump(n, solved.vx, impulse, solved.delay);
             } else this.move(n, 0);
           } else {
@@ -4468,7 +4692,7 @@ export class Simulation {
       this.mario.navDelay = undefined;
       this.mario.navHoldX = undefined;
     }
-    if (this.inPipe(this.mario)) return;
+    if (this.inPipe(this.mario) || this.springLocked(this.mario)) return;
     const huntRoom = this.roomFor(this.mario);
     if (huntRoom.data.goal && huntRoom.data.goal.kind !== "pipe") {
       if (huntRoom.atDoor(this.mario)) {

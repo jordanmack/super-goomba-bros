@@ -79,7 +79,13 @@ export const TUNING = {
   vineClimbSpeed: 2,
   vineIgnore: 0.4,
   npcPipeEscapeChance: 0.2,
-  springImpulse: 17,
+  // SMB1 Jumpspring_Y_PosData $08,$10,$08,$00 at 2x, held 4 frames each.
+  // The last offset is the launch pose, not another held squat.
+  springSquash: [16, 32, 16, 0],
+  springStepFrames: 4,
+  // JumpspringForce $f9 and a new A press $f4, at 2x tiles.
+  springVy: 14,
+  springVyJump: 24,
   swimImpulse: 4.5,
   swimGravity: 0.25,
   swimFallSpeed: 3,
