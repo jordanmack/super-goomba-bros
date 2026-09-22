@@ -18,12 +18,6 @@ function finishPipeIntro(sim: Simulation) {
 for (const [index, level] of CAMPAIGN.entries()) {
   test(
     `World ${level.id} loads and its NPC can reach a rescue door`,
-    {
-      skip:
-        level.id === "4-4"
-          ? "leftmost 4-4 NPC loops in the castle maze at run jump height"
-          : false,
-    },
     () => {
     const sim = new Simulation(() => 0.5, physics());
     sim.levelIndex = index;

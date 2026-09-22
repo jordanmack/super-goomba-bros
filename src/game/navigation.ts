@@ -43,6 +43,9 @@ export function planJump(
   // Drop paths that replay with no hold ask for 0. A higher-scored delayed
   // arc must not hide a delay-0 candidate those paths can still fly.
   maxDelay?: number,
+  // A running drop slides across a one-tile hole. Only a detour asks for a
+  // straight fall onto the floor under that hole.
+  vertical = false,
 ) {
   const half = body.width / 2,
     tall = body.height / 2;
@@ -68,9 +71,14 @@ export function planJump(
   const cap = Math.max(0, speed);
   const paces = [
     ...new Set(
-      [cap, Math.min(cap, T.walkSpeed), cap * 0.7].filter(
-        (pace) => pace > 0.4 && pace <= cap + 1e-9,
-      ),
+      [
+        cap,
+        Math.min(cap, T.walkSpeed),
+        cap * 0.7,
+        // A running drop keeps its pace, so it slides off a one-tile hole
+        // onto the next pit. Pace 0 falls onto the floor directly below.
+        vertical && impulse <= 0 ? 0 : -1,
+      ].filter((pace) => pace === 0 || (pace > 0.4 && pace <= cap + 1e-9)),
     ),
   ];
   const holdG = (gravity?.hold ?? T.jumpHoldGravity) / 3600,
@@ -117,8 +125,12 @@ export function planJump(
             continue;
           if (vy > 0 && oldY + tall <= b.min.y + 0.1 && !solid.headOnly) {
             const progress = (x - start.x) * direction;
+            // Pace 0 has no horizontal progress. Count it only for a lower
+            // floor, so a body still standing on its ledge does not "land".
+            const verticalDrop =
+              vertical && lift === 0 && b.min.y - tall > start.y + 16;
             if (
-              progress > 16 &&
+              (progress > 16 || verticalDrop) &&
               b.max.x - b.min.x >= half &&
               // The touchdown cell is part of the arc, so it gets the same
               // hazard probe as every airborne frame before it.

@@ -1696,6 +1696,17 @@ export class Simulation {
             s.bounds.max.y >= feet - 5)),
     );
     const wall = this.wallAhead(a, direction, solids);
+    // The 30px wall probe reaches across a one-tile hole and calls the far
+    // lip a wall. The step just ahead is air, so this is a drop, not a wall.
+    const nearSolid = solids.some(
+      (s) =>
+        !s.headOnly &&
+        ahead > s.bounds.min.x &&
+        ahead < s.bounds.max.x &&
+        (Math.abs(s.bounds.min.y - feet) < 6 ||
+          (feet > s.bounds.min.y + 5 && a.body.bounds.min.y < s.bounds.max.y)),
+    );
+    const acrossHole = !!a.navDetourBelow && wall && !nearSolid;
     // Arcs are checked against each bar's phase at the frame the body is there.
     // step() advances frame before updateNpcs, so flight 1 is the current frame.
     const room = this.roomFor(a);
@@ -1805,7 +1816,7 @@ export class Simulation {
     const dropDown = this.npcCanDrop(a);
     // A halted NPC is standing safely; a drop or walk-off is only worth taking
     // if it clears the bar, and the jump planner below already proves that.
-    if (!firebarHalt && !supported && !wall && dropDown) {
+    if (!firebarHalt && !supported && (!wall || acrossHole) && dropDown) {
       if (support) {
         const x =
           direction > 0
@@ -1823,16 +1834,25 @@ export class Simulation {
           undefined,
           firebarFree,
           0,
+          !!a.navDetourBelow,
         );
         // updateNpcs replays a navDrop without the launch delay, so only a
         // delay-0 arc is the one that was planned. Ask planJump for that arc
         // directly: a higher-scored delayed landing must not discard it. In a
         // firebar room the fall also has to start from here this frame.
+        // A detour compares against the run step, not trait speed: the NPC is
+        // already moving at run speed, and a slower window is stepped over.
+        const reach = a.navDetourBelow ? this.runSpeedFor(a) : a.speed;
         const flyable =
-          drop?.delay === 0 && (!firebarFree || Math.abs(x - p.x) <= a.speed);
-        if (drop && flyable && Math.abs(x - p.x) < a.body.width + 40) {
-          a.navDrop = { x, vx: drop.vx, delay: drop.delay };
-          return;
+          drop?.delay === 0 && (!firebarFree || Math.abs(x - p.x) <= reach);
+        if (drop?.delay === 0 && Math.abs(x - p.x) < a.body.width + 40) {
+          // Not close enough to start the fall this frame. Keep walking to
+          // the lip. A jump here clears the hole and stays in the maze.
+          if (a.navDetourBelow && !flyable) return;
+          if (flyable) {
+            a.navDrop = { x, vx: drop.vx, delay: drop.delay };
+            return;
+          }
         }
       }
     }
@@ -1856,7 +1876,7 @@ export class Simulation {
     if (
       !firebarHalt &&
       (dropDown || a.navDetourBelow) &&
-      !wall &&
+      (!wall || acrossHole) &&
       safeDrop &&
       !supported
     ) {
@@ -1924,7 +1944,7 @@ export class Simulation {
       }
     } else if (a.body.ignoreWalls) return;
     else {
-      if (!wall && (safeDrop || a.navDetourBelow)) {
+      if ((!wall || acrossHole) && (safeDrop || a.navDetourBelow)) {
         const drop = planJump(
           a.body,
           solids,
