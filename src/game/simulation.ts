@@ -1959,26 +1959,24 @@ export class Simulation {
           0,
           !!a.navDetourBelow,
         );
-        // updateNpcs would replay a navDrop on a later frame at trait speed.
-        // Ask planJump for the delay-0 arc: a higher-scored delayed landing
-        // must not discard it. In a firebar room that arc was cleared for a
-        // fall that starts at the lip on this frame, so fly it now. A detour
-        // may still be up to one run step short; that last step is not a walk.
+        // A detour drop is cleared from the lip. updateNpcs must not store it
+        // and walk the gap at trait speed: that starts the fall frames later,
+        // so a firebar arc is stale and a 4-4 hole is missed. Within one run
+        // step, snap to the lip and fly now. Farther away, keep walking.
         const reach = a.navDetourBelow ? this.runSpeedFor(a) : a.speed;
         const dist = Math.abs(x - p.x);
         const flyable = drop?.delay === 0 && (!firebarFree || dist <= reach);
         if (drop?.delay === 0 && dist < a.body.width + 40) {
-          // Not close enough to start the fall this frame. Keep walking to
-          // the lip. A jump here clears the hole and stays in the maze.
           if (a.navDetourBelow && !flyable) return;
+          if (flyable && a.navDetourBelow && dist <= this.runSpeedFor(a)) {
+            if (dist >= 0.5) Body.setPosition(a.body, { x, y: p.y });
+            this.move(a, drop.vx);
+            a.navVx = drop.vx;
+            a.navDelay = 0;
+            return;
+          }
+          if (a.navDetourBelow) return;
           if (flyable) {
-            if (firebarFree && a.navDetourBelow) {
-              if (dist >= 0.5) Body.setPosition(a.body, { x, y: p.y });
-              this.move(a, drop.vx);
-              a.navVx = drop.vx;
-              a.navDelay = 0;
-              return;
-            }
             a.navDrop = { x, vx: drop.vx, delay: drop.delay };
             return;
           }
@@ -4335,13 +4333,16 @@ export class Simulation {
       if (n.navDrop) {
         const drop = n.navDrop,
           dx = drop.x - p.x;
-        if (Math.abs(dx) < 0.5) {
+        // Fall on the frame the remaining gap is within the arm pace.
+        // Waiting until the body is already on the lip adds a late frame.
+        const pace = n.speed;
+        if (Math.abs(dx) <= pace) {
           n.navDrop = undefined;
+          if (Math.abs(dx) >= 0.5) Body.setPosition(n.body, { x: drop.x, y: p.y });
           this.move(n, drop.vx);
           n.navVx = drop.vx;
-          // Only delay-0 arcs are stored, so there is no hold to reproduce.
           n.navDelay = 0;
-        } else this.move(n, Math.sign(dx) * Math.min(n.speed, Math.abs(dx)));
+        } else this.move(n, Math.sign(dx) * pace);
         continue;
       }
       if (

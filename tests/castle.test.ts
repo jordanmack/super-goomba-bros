@@ -913,6 +913,68 @@ test("a firebar detour 4px from the lip falls on the cleared frame, not after a 
   s.physics.clear();
 });
 
+// Same gap with no firebar, which is the World 4-4 detour. Storing navDrop
+// and walking it at trait speed (2.1) starts the fall frames later and misses
+// the floor under the hole.
+test("a detour 4px from the lip falls on that frame when the room has no firebar", () => {
+  const s = castleGame("4-4");
+  s.activeRoom.firebars.length = 0;
+  const n = s.npcs[0]!;
+  for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+  s.npcs = [n];
+  s.player.saved = true;
+  Body.setFrozen(s.player.body, true);
+  s.marioActive = false;
+  const half = n.body.width / 2;
+  const tall = n.body.height / 2;
+  const platformLeft = 400;
+  const lip = platformLeft - half - 0.5;
+  const gap = 4;
+  const feet = 320;
+  const platform = new Body(platformLeft + 80, feet + 16, 160, 32, true);
+  const floor = new Body(lip, feet + 96, 220, 32, true);
+  s.solids = [platform, floor];
+  Body.setPosition(n.body, { x: lip + gap, y: feet - tall });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+  n.speed = 2.1;
+  n.grounded = true;
+  n.navDrop = undefined;
+  n.navBackoff = undefined;
+  n.navVx = undefined;
+  n.navDelay = 0;
+  n.navRetry = 0;
+  n.navDetourBelow = feet + 48;
+  const cleared = planJump(
+    new Body(lip, feet - tall, n.body.width, n.body.height),
+    s.solids,
+    -1,
+    T.runSpeed,
+    0,
+    (landing) => landing.y > feet - tall + 16,
+    true,
+    undefined,
+    undefined,
+    0,
+    true,
+  );
+  assert.ok(cleared && cleared.delay === 0, "the lip has a delay-0 drop");
+  s.step(dt, emptyInput());
+  assert.equal(
+    n.navDrop,
+    undefined,
+    "a 4px gap must not be stored for a trait-speed replay",
+  );
+  assert.ok(
+    Math.abs(n.body.position.x - (lip + cleared.vx)) < 0.51,
+    `flew vx ${cleared.vx} from lip ${lip}, body is at ${n.body.position.x}`,
+  );
+  assert.equal(n.body.velocity.x, cleared.vx);
+  s.physics.clear();
+});
+
 // #156: the crossing replay stepped `pace` per frame and never asked whether
 // a solid occupied that x. A fixture block in the span is enough to prove it.
 test("a firebar crossing that hits a wall does not pass a solid inside the span", () => {
