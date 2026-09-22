@@ -1959,20 +1959,26 @@ export class Simulation {
           0,
           !!a.navDetourBelow,
         );
-        // updateNpcs replays a navDrop without the launch delay, so only a
-        // delay-0 arc is the one that was planned. Ask planJump for that arc
-        // directly: a higher-scored delayed landing must not discard it. In a
-        // firebar room the fall also has to start from here this frame.
-        // A detour compares against the run step, not trait speed: the NPC is
-        // already moving at run speed, and a slower window is stepped over.
+        // updateNpcs would replay a navDrop on a later frame at trait speed.
+        // Ask planJump for the delay-0 arc: a higher-scored delayed landing
+        // must not discard it. In a firebar room that arc was cleared for a
+        // fall that starts at the lip on this frame, so fly it now. A detour
+        // may still be up to one run step short; that last step is not a walk.
         const reach = a.navDetourBelow ? this.runSpeedFor(a) : a.speed;
-        const flyable =
-          drop?.delay === 0 && (!firebarFree || Math.abs(x - p.x) <= reach);
-        if (drop?.delay === 0 && Math.abs(x - p.x) < a.body.width + 40) {
+        const dist = Math.abs(x - p.x);
+        const flyable = drop?.delay === 0 && (!firebarFree || dist <= reach);
+        if (drop?.delay === 0 && dist < a.body.width + 40) {
           // Not close enough to start the fall this frame. Keep walking to
           // the lip. A jump here clears the hole and stays in the maze.
           if (a.navDetourBelow && !flyable) return;
           if (flyable) {
+            if (firebarFree && a.navDetourBelow) {
+              if (dist >= 0.5) Body.setPosition(a.body, { x, y: p.y });
+              this.move(a, drop.vx);
+              a.navVx = drop.vx;
+              a.navDelay = 0;
+              return;
+            }
             a.navDrop = { x, vx: drop.vx, delay: drop.delay };
             return;
           }
