@@ -1,12 +1,13 @@
-// Node-only playtest harness for the Mario hunt order (issue #138). Every run
-// drives the shipped Simulation with the real per-frame step, including the
-// real hunter spawn; nothing here reimplements the priority rules it observes.
+// Node-only playtest harness for the Mario hunt order (issues #138 and #150).
+// Every run drives the shipped Simulation with the real per-frame step,
+// including the real hunter spawn; nothing here reimplements the priority
+// rules it observes.
 import { Simulation, emptyInput } from "../../src/game/simulation.ts";
 import { Body } from "../../src/game/physics.ts";
 import { TUNING as T } from "../../src/game/config.ts";
 import { CAMPAIGN } from "../../src/game/levels.ts";
 import { physics } from "./arcade.ts";
-import type { Actor, MarioGoal } from "../../src/game/simulation.ts";
+import type { Actor, Item, ItemKind, MarioGoal } from "../../src/game/simulation.ts";
 
 const dt = 1 / 60;
 const VIEW = 960;
@@ -163,15 +164,17 @@ function aimCamera(s: Simulation) {
   );
 }
 
-function openStage(id: string, seed: number) {
+function openStage(id: string, seed: number, holdMario = true) {
   const s = new Simulation(seeded(seed), physics());
   s.reset();
-  s.marioReturn = 1e6;
+  // The forced ladder parks the return timer so staging cannot spawn Mario
+  // early. The free-run trace leaves the shipped timer alone.
+  if (holdMario) s.marioReturn = 1e6;
   while (s.level.id !== id) {
     const prev = s.level.id;
     s.nextLevel();
     s.reset("playing");
-    s.marioReturn = 1e6;
+    if (holdMario) s.marioReturn = 1e6;
     if (s.level.id === prev)
       throw new Error(`expected ${id}, stopped at ${s.level.id}`);
   }
@@ -476,6 +479,425 @@ export function stageShoutRetarget(stage: StageSetup, seed: number) {
     afterShout: s.marioGoal,
     targetBefore,
     targetAfter: s.marioTarget,
+    playerId: s.player.id,
+  };
+}
+
+export type FreeSample = {
+  frame: number;
+  goal: MarioGoal;
+  targetId: number | null;
+};
+
+/** Stimuli that were actually in range when a free-run window was read. */
+export type FreeLive = {
+  question: boolean;
+  itemKind: ItemKind | null;
+  itemNear: boolean;
+  runners: number;
+  stompNear: boolean;
+  starNear: boolean;
+};
+
+export type FreeWindow = FreeSample & {
+  name: string;
+  /** True when this read waited for a shipped look after `marioIgnore` hit 0. */
+  looked: boolean;
+  live: FreeLive;
+};
+
+export type FreeHuntTrace = {
+  id: string;
+  seed: number;
+  startX: number;
+  endX: number;
+  areaId: string;
+  mainId: string;
+  /** Frames stepped from the level start before any stimulus was staged. */
+  naturalFrames: number;
+  natural: FreeSample[];
+  /** Every goal-field change in the session, natural prefix included. */
+  trace: FreeSample[];
+  windows: FreeWindow[];
+  runners: number;
+  runnerIds: number[];
+  stompId: number;
+  /** Already-emerged power-up used for the item rung on the blocks scene. */
+  powerId: number;
+  /** Mushroom that stays live under the crowd and stomp windows. */
+  itemId: number;
+  playerId: number;
+};
+
+const NATURAL_FRAMES = 600;
+const LOOK_FRAMES = 150;
+const HUNT_KINDS: ItemKind[] = [
+  "mushroom",
+  "mushroom3x",
+  "mushroom8x",
+  "flower",
+  "star",
+];
+
+/**
+ * One session from the real stage start. The first `NATURAL_FRAMES` steps are
+ * an unstaged walk: the shipped return timer spawns Mario, and `marioGoal` is
+ * only read when it changes. Later windows keep stepping that same simulation.
+ * They do not zero `marioLook`. Positions are held only so a multi-frame look
+ * still sees the same distances the order rules use (question within 160px,
+ * stomp within 8-125px, crowd on screen).
+ */
+export function runFreeHuntTrace(stage: StageSetup, seed: number): FreeHuntTrace {
+  const blocks = stage.scenes.find((scene) => scene.name === "blocks");
+  const hunt = stage.scenes.find((scene) => scene.name === "hunt");
+  if (!blocks?.questionX || !hunt)
+    throw new Error(`${stage.id}: free run needs the blocks and hunt scenes`);
+  const s = openStage(stage.id, seed, false);
+  const trace: FreeSample[] = [];
+  let frame = 0;
+  let prevGoal = s.marioGoal;
+  const note = () => {
+    if (s.marioGoal === prevGoal) return;
+    prevGoal = s.marioGoal;
+    trace.push({
+      frame,
+      goal: s.marioGoal,
+      targetId: s.marioTarget,
+    });
+  };
+  const step = (input = emptyInput()) => {
+    aimCamera(s);
+    s.step(dt, input);
+    frame++;
+    note();
+  };
+  const startX = s.player.body.position.x;
+  const areaId = s.player.areaId;
+  if (!areaId) throw new Error(`${stage.id}: player has no area at the start`);
+  const walking = { ...emptyInput(), right: true };
+  for (let i = 0; i < NATURAL_FRAMES; i++) step(walking);
+  const natural = trace.slice();
+  const endX = s.player.body.position.x;
+  if (s.mode !== "playing" || !s.marioActive)
+    throw new Error(
+      `${stage.id}: free run left playing=${s.mode} mario=${s.marioActive}`,
+    );
+
+  const used = new Set<number>();
+  let item: Item | undefined;
+  let runners: Actor[] = [];
+  let stomp: Actor | undefined;
+  let starHolder: Actor | undefined;
+  let questionX = blocks.questionX;
+
+  const spareGoombas = () =>
+    s.npcs.filter(
+      (n) =>
+        n.alive &&
+        !n.saved &&
+        n.kind === "goomba" &&
+        !n.pipeTravel &&
+        n.scale < T.hugeScale &&
+        n.starLeft <= 0 &&
+        !used.has(n.id),
+    );
+  const take = (role: string) => {
+    const n = spareGoombas()[0];
+    if (!n) throw new Error(`${stage.id}: no spare goomba for ${role}`);
+    used.add(n.id);
+    return n;
+  };
+  const scrubItems = () => {
+    for (const loose of [...s.items]) s.physics.remove(loose.body);
+    s.items = [];
+    item = undefined;
+  };
+  const park = () => {
+    const room = s.activeRoom;
+    for (const n of s.npcs) {
+      n.warned = false;
+      n.state = "idle";
+      n.idleWalking = false;
+      n.wait = 1e6;
+      n.starLeft = 0;
+      n.fear = 0;
+      Body.setPosition(n.body, { x: room.goalX - 120, y: 300 });
+      Body.setVelocity(n.body, { x: 0, y: 0 });
+    }
+    runners = [];
+    stomp = undefined;
+    starHolder = undefined;
+    used.clear();
+  };
+  const holdQuestion = (scene: Scene) => {
+    const kept = s.obstacles.find(
+      (c) =>
+        c.question &&
+        !c.hidden &&
+        !c.used &&
+        scene.questionX !== undefined &&
+        c.x === scene.questionX,
+    );
+    if (scene.questionX !== undefined && !kept)
+      throw new Error(`${stage.id}: question block at ${scene.questionX} is spent`);
+    for (const c of s.obstacles)
+      if (c.question && !c.hidden && c !== kept) c.used = true;
+    questionX = scene.questionX ?? -1;
+  };
+  const spawnLoose = (scene: Scene, kind: ItemKind) => {
+    const box = s.obstacles.find(
+      (c) =>
+        c.question &&
+        !c.used &&
+        !c.hidden &&
+        c.x !== scene.questionX,
+    );
+    if (!box) throw new Error(`${stage.id}: no spare question block`);
+    const roll = s.random;
+    s.random = () => 0.5;
+    s.hitBlock(box, s.player);
+    s.random = roll;
+    const spawned = s.items.at(-1);
+    if (!spawned) throw new Error(`${stage.id}: block gave no item`);
+    spawned.kind = kind;
+    spawned.emerge = 0;
+    spawned.hold = 0;
+    spawned.clip = undefined;
+    Body.setFrozen(spawned.body, false);
+    Body.setPosition(spawned.body, {
+      x: scene.arena - 170,
+      y: T.groundY - 16,
+    });
+    Body.setVelocity(spawned.body, { x: 0, y: 0 });
+    item = spawned;
+    return spawned;
+  };
+  const pin = (scene: Scene) => {
+    stand(s, s.player, scene.arena + scene.playerOffset, "player");
+    stand(s, s.mario, scene.arena, "mario");
+    s.mario.navVx = undefined;
+    s.mario.navDelay = undefined;
+    s.mario.navHoldX = undefined;
+    s.marioJumpWait = 0.8;
+    if (item) {
+      item.emerge = 0;
+      item.hold = 0;
+      item.clip = undefined;
+      Body.setFrozen(item.body, false);
+      Body.setPosition(item.body, {
+        x: scene.arena - 170,
+        y: T.groundY - 16,
+      });
+      Body.setVelocity(item.body, { x: 0, y: 0 });
+    }
+    const gap = runners.length > 6 ? 18 : 28;
+    runners.forEach((n, index) => {
+      stand(s, n, scene.arena + 200 + index * gap, "crowd");
+      n.warned = true;
+      n.fear = 0;
+      n.state = "run";
+      n.wait = -1;
+      n.starLeft = 0;
+      Body.setVelocity(n.body, { x: n.speed, y: 0 });
+    });
+    if (stomp) {
+      stand(s, stomp, scene.arena + 70, "stomp");
+      stomp.starLeft = 0;
+      stomp.warned = false;
+      stomp.state = "idle";
+    }
+    if (starHolder) {
+      stand(s, starHolder, scene.arena + 150, "star");
+      starHolder.warned = false;
+      starHolder.state = "idle";
+    }
+  };
+  const liveNow = (scene: Scene): FreeLive => {
+    const mx = scene.arena;
+    const block = s.obstacles.find(
+      (c) => c.question && !c.hidden && !c.used && c.x === questionX,
+    );
+    const itemX = item?.body.position.x;
+    return {
+      question: !!block && Math.abs(block.x - mx) < 160,
+      itemKind: item?.kind ?? null,
+      itemNear:
+        itemX !== undefined && Math.abs(itemX - mx) < T.marioSight,
+      runners: runners.filter(
+        (n) =>
+          n.warned &&
+          n.state === "run" &&
+          n.starLeft <= 0 &&
+          Math.abs(n.body.position.x - mx) < T.marioSight,
+      ).length,
+      stompNear: !!stomp &&
+        Math.abs(stomp.body.position.x - mx) > 8 &&
+        Math.abs(stomp.body.position.x - mx) < 125,
+      starNear: !!starHolder &&
+        starHolder.starLeft > 0 &&
+        Math.abs(starHolder.body.position.x - mx) < 220,
+    };
+  };
+  const windows: FreeWindow[] = [];
+  const afterLook = (scene: Scene, name: string, accept?: (goal: MarioGoal) => boolean) => {
+    let looked = false;
+    let live = liveNow(scene);
+    const limit = accept ? 300 : LOOK_FRAMES;
+    for (let i = 0; i < limit; i++) {
+      pin(scene);
+      live = liveNow(scene);
+      const prevLook = s.marioLook;
+      step();
+      // Ignore is spent down before the look, so a look on the clearing step
+      // already saw zero. Item and question are skipped while it is above zero.
+      const sawLook = s.marioLook > prevLook + 0.05 && s.marioIgnore === 0;
+      if (!sawLook) continue;
+      looked = true;
+      if (!accept || accept(s.marioGoal)) break;
+    }
+    const sample: FreeWindow = {
+      name,
+      frame,
+      goal: s.marioGoal,
+      targetId: s.marioTarget,
+      looked,
+      live,
+    };
+    windows.push(sample);
+    return sample;
+  };
+  const parkActor = (actor: Actor) => {
+    actor.warned = false;
+    actor.state = "idle";
+    actor.wait = 1e6;
+    actor.starLeft = 0;
+    Body.setPosition(actor.body, { x: s.activeRoom.goalX - 120, y: 300 });
+    Body.setVelocity(actor.body, { x: 0, y: 0 });
+  };
+
+  const enter = (scene: Scene) => {
+    park();
+    scrubItems();
+    stand(s, s.player, scene.arena + scene.playerOffset, "player");
+    stand(s, s.mario, scene.arena, "mario");
+    aimCamera(s);
+  };
+
+  enter(blocks);
+  // random 0 rolls a coin. That pop must not become a loose hunt item.
+  const coinBox = s.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && c.x !== blocks.questionX,
+  );
+  if (!coinBox) throw new Error(`${stage.id}: no spare block for a coin`);
+  const coinRoll = s.random;
+  s.random = () => 0;
+  s.hitBlock(coinBox, s.player);
+  s.random = coinRoll;
+  if (s.items.length)
+    throw new Error(`${stage.id}: coin prize left a hunt item`);
+  afterLook(blocks, "question-over-coin");
+  const power = spawnLoose(blocks, "oneUp");
+  holdQuestion(blocks);
+  afterLook(blocks, "question-over-one-up");
+  if (!item) throw new Error(`${stage.id}: one-up item missing`);
+  for (const kind of HUNT_KINDS) {
+    item.kind = kind;
+    afterLook(blocks, kind === "star" ? "item-star" : kind);
+  }
+  item.kind = "oneUp";
+  afterLook(blocks, "question-over-one-up-again");
+
+  enter(hunt);
+  const huntItem = spawnLoose(hunt, "mushroom");
+  holdQuestion(hunt);
+  const size = hunt.crowdSize ?? 6;
+  runners = [];
+  for (let i = 0; i < size; i++) runners.push(take("crowd"));
+  const runnerIds = runners.map((n) => n.id);
+  // Stomp outranks the crowd, so it stays absent until that window.
+  afterLook(hunt, "crowd");
+  stomp = take("stomp");
+  const stompId = stomp.id;
+  afterLook(hunt, "stomp");
+  starHolder = take("star");
+  starHolder.starLeft = T.starSeconds;
+  // Flee is checked every frame, ahead of the look, so one step is the read.
+  pin(hunt);
+  step();
+  windows.push({
+    name: "flee",
+    frame,
+    goal: s.marioGoal,
+    targetId: s.marioTarget,
+    looked: false,
+    live: liveNow(hunt),
+  });
+  starHolder.starLeft = 0;
+  afterLook(hunt, "stomp-after-star");
+  // Drop each higher rung and read the next goal. The question block for this
+  // stage sits on the blocks scene, so the lower rungs move back there. The
+  // hunt pass only marked it used; it was not hit.
+  if (stomp) parkActor(stomp);
+  stomp = undefined;
+  afterLook(hunt, "crowd-after-stomp");
+  for (const runner of runners) parkActor(runner);
+  runners = [];
+  afterLook(hunt, "item-after-crowd");
+  const question = s.obstacles.find(
+    (c) => c.question && !c.hidden && c.x === blocks.questionX,
+  );
+  if (!question) throw new Error(`${stage.id}: question block disappeared`);
+  question.used = false;
+  questionX = blocks.questionX;
+  if (!item) throw new Error(`${stage.id}: hunt item missing after the crowd`);
+  for (const kind of HUNT_KINDS) {
+    item.kind = kind;
+    afterLook(blocks, kind === "star" ? "after-star-item-star" : `after-star-${kind}`);
+  }
+  item.kind = "oneUp";
+  afterLook(blocks, "question-after-item");
+  question.used = true;
+  questionX = -1;
+  scrubItems();
+  if (starHolder) parkActor(starHolder);
+  starHolder = undefined;
+  afterLook(blocks, "patrol", (goal) => goal === "chase" || goal === "notice");
+  pin(hunt);
+  const roll = s.random;
+  s.random = () => 0;
+  s.warn();
+  s.random = roll;
+  note();
+  windows.push({
+    name: "shout",
+    frame,
+    goal: s.marioGoal,
+    targetId: s.marioTarget,
+    looked: false,
+    live: liveNow(hunt),
+  });
+  // Keep stepping after the warning so the shout is not the final snapshot.
+  for (let i = 0; i < 30; i++) {
+    pin(hunt);
+    step();
+  }
+
+  return {
+    id: stage.id,
+    seed,
+    startX,
+    endX,
+    areaId,
+    mainId: s.level.main,
+    naturalFrames: NATURAL_FRAMES,
+    natural,
+    trace,
+    windows,
+    runners: size,
+    runnerIds,
+    stompId,
+    powerId: power.id,
+    itemId: huntItem.id,
     playerId: s.player.id,
   };
 }

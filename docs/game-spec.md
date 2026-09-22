@@ -632,8 +632,14 @@ each run drives the real simulation and adds one higher-priority stimulus at a
 time, then reads back `marioGoal` and the locked actor, item, or block identity.
 Because a non-small Mario only takes a question block within 160px, each stage
 splits that ladder across two arenas. 1-3 has one question block, so its block
-arena checks that rung alone. These checks do not prove that every random
-attempt wins, or replace physical phone testing.
+arena checks that rung alone. That ladder is a forced observation. A separate
+session steps World 1-1 and crowded World 1-2 from their real starts for many
+frames and records `marioGoal` each time it changes. The goal field has to
+change more than once on each stage. The same session then keeps stepping,
+without forcing a look. After the star ends, each higher stimulus drops, and
+the recorded goals have to follow the priority order down to chase or notice.
+Coins and 1-up mushrooms stay off the item rung. These checks do not prove that every random attempt wins, or replace
+physical phone testing.
 
 Run the commands in [README](../README.md). Builds must remain one standalone
 HTML file, with no external runtime assets. Report failed or skipped checks and
