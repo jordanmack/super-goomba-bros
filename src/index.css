@@ -864,26 +864,30 @@ p {
   color: #faf0b0;
 }
 .tally {
+  --play-h: max(100dvh, 340px);
+  --tally-edge: round(nearest, calc(var(--play-h) * 2 / 540), 1px);
   position: absolute;
   top: 22%;
   left: 50%;
   transform: translateX(-50%);
   z-index: 4;
   color: #fff;
-  font-size: 10px;
+  font-size: round(nearest, calc(var(--play-h) * 10 / 540), 1px);
   line-height: 2;
   text-align: left;
   pointer-events: none;
   white-space: nowrap;
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
   text-shadow:
-    -2px -2px 0 #000,
-    2px -2px 0 #000,
-    -2px 2px 0 #000,
-    2px 2px 0 #000,
-    -2px 0 0 #000,
-    2px 0 0 #000,
-    0 -2px 0 #000,
-    0 2px 0 #000;
+    calc(var(--tally-edge) * -1) calc(var(--tally-edge) * -1) 0 #000,
+    var(--tally-edge) calc(var(--tally-edge) * -1) 0 #000,
+    calc(var(--tally-edge) * -1) var(--tally-edge) 0 #000,
+    var(--tally-edge) var(--tally-edge) 0 #000,
+    calc(var(--tally-edge) * -1) 0 0 #000,
+    var(--tally-edge) 0 0 #000,
+    0 calc(var(--tally-edge) * -1) 0 #000,
+    0 var(--tally-edge) 0 #000;
 }
 .error {
   position: absolute;

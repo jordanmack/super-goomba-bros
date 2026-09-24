@@ -355,11 +355,37 @@ export function itemDrawY(item: { kind: ItemKind; body: Body }) {
 export function itemHoldHidden(item: { hold: number; age: number }) {
   return item.hold > 0 && Math.floor(item.age * T.transformBlinkHz) % 2 === 1;
 }
-/** Walk-cycle pace: fish swim on both axes, everyone else only along x. */
-export function walkPace(actor: { kind: Actor["kind"]; body: Body }) {
-  return actor.kind === "fish"
+/** Walk-cycle pace. Fish always use both axes. Goombas and koopas do too in water. */
+export function walkPace(
+  actor: { kind: Actor["kind"]; body: { velocity: { x: number; y: number } } },
+  inWater = false,
+) {
+  const vertical =
+    actor.kind === "fish" ||
+    (inWater && (actor.kind === "goomba" || actor.kind === "koopa"));
+  return vertical
     ? Math.hypot(actor.body.velocity.x, actor.body.velocity.y)
     : Math.abs(actor.body.velocity.x);
+}
+
+/** True when Play should advance the walk cycle. Shells stay on shell frames. */
+export function actorWalkMoving(
+  actor: {
+    kind: Actor["kind"];
+    grounded: boolean;
+    shell: Actor["shell"];
+    body: { velocity: { x: number; y: number } };
+  },
+  inWater: boolean,
+) {
+  if (actor.kind === "koopa" && actor.shell !== "none") return false;
+  const pace = walkPace(actor, inWater);
+  if (
+    actor.kind === "fish" ||
+    (inWater && (actor.kind === "goomba" || actor.kind === "koopa"))
+  )
+    return pace > 0.1;
+  return actor.grounded && pace > 0.1;
 }
 export type Item = {
   id: number;
@@ -1476,6 +1502,10 @@ export class Simulation {
           s.bounds.max.y >= bottom - 6,
       );
     a.grounded = (onLid || inVolume) && Math.abs(a.body.velocity.y) < 1;
+    if (a.grounded) {
+      a.body.wallRiseArmed = false;
+      a.body.wallRiseFaceX = undefined;
+    }
   }
   private springActors() {
     const actors = [this.player, ...this.npcs];
@@ -1730,6 +1760,12 @@ export class Simulation {
       a.jumpHoldG = T.jumpHoldGravity;
       a.jumpFallG = T.npcJumpFallGravity;
     }
+    if (!water && a !== this.player) {
+      const face = this.flushFaceAt(a);
+      a.body.wallRiseArmed = face !== undefined;
+      a.body.wallRiseFaceX = face?.x;
+      a.body.wallRiseFromLeft = face?.fromLeft ?? false;
+    }
     Body.setVelocity(a.body, {
       x: a.body.velocity.x,
       y: -(water
@@ -1738,7 +1774,39 @@ export class Simulation {
     });
     a.grounded = false;
     if (!water) a.jumpHeld = true;
-    if (a === this.player) this.events.push("jump");
+    if (a === this.player) this.events.push(water ? "splat" : "jump");
+  }
+  // The wall face already within 1px, including a slight overlap.
+  // A floor under the feet is not a face. fromLeft means the face is to the right.
+  private flushFaceAt(a: Actor) {
+    const limit = 1;
+    const b = a.body.bounds;
+    let best: { x: number; fromLeft: boolean; gap: number } | undefined;
+    for (const solid of this.solids) {
+      if (solid.headOnly) continue;
+      const s = solid.bounds;
+      const overlapY =
+        Math.min(b.max.y, s.max.y) - Math.max(b.min.y, s.min.y);
+      const gapLeft = b.min.x - s.max.x;
+      const gapRight = s.min.x - b.max.x;
+      const overhead =
+        overlapY <= 1 &&
+        s.max.y < b.min.y &&
+        ((gapRight <= limit && gapRight >= -limit) ||
+          (gapLeft <= limit && gapLeft >= -limit));
+      if (overlapY <= 1 && !overhead) continue;
+      if (gapRight <= limit && gapRight >= -limit) {
+        const gap = Math.abs(gapRight);
+        if (!best || gap < best.gap)
+          best = { x: s.min.x, fromLeft: true, gap };
+      }
+      if (gapLeft <= limit && gapLeft >= -limit) {
+        const gap = Math.abs(gapLeft);
+        if (!best || gap < best.gap)
+          best = { x: s.max.x, fromLeft: false, gap };
+      }
+    }
+    return best;
   }
   // Bar clearance at the frame the body occupies that cell. Undefined when
   // this actor does not have to dodge bars.
@@ -5128,6 +5196,29 @@ export class Simulation {
     );
   }
 
+  private fireballPastCamera(f: Fireball) {
+    const left = this.cameraX;
+    const right = this.cameraX + this.viewWidth;
+    const top = this.cameraY;
+    const bottom = this.cameraY + VIEW_HEIGHT;
+    return (
+      f.x < left - this.viewWidth ||
+      f.x > right + this.viewWidth ||
+      f.y < top - VIEW_HEIGHT ||
+      f.y > bottom + VIEW_HEIGHT
+    );
+  }
+  private fireballHitAlreadyVoiced(before: number) {
+    return this.events.slice(before).some(
+      (event) =>
+        event === "bump" ||
+        event === "break" ||
+        event === "shrink" ||
+        event === "death" ||
+        event === "marioDeath" ||
+        event === "splat",
+    );
+  }
   private updateFireballs(dt: number) {
     for (const f of this.fireballs) {
       f.age += dt;
@@ -5137,6 +5228,13 @@ export class Simulation {
       f.x += f.vx * dt * 60;
       f.vy = (f.vy ?? 0) + 0.28 * dt * 60;
       f.y += f.vy * dt * 60;
+      // One full screen past the camera frees the slot. Not a hit, so no bump.
+      if (this.fireballPastCamera(f)) {
+        f.age = 6;
+        continue;
+      }
+      let removedBySolid = false;
+      const voicedAt = this.events.length;
       for (const s of this.solids) {
         if (
           f.x + radius <= s.bounds.min.x ||
@@ -5167,8 +5265,11 @@ export class Simulation {
               this.breakBrick(brick);
           }
           f.age = 6;
+          removedBySolid = true;
         }
       }
+      if (removedBySolid && !this.fireballHitAlreadyVoiced(voicedAt))
+        this.events.push("bump");
       if (f.age >= 5) continue;
       if (
         this.bulletBills.some(

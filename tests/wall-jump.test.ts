@@ -431,3 +431,321 @@ test("the World 4-2 overhang still bonks a head that meets it", () => {
     `head passed the overhang: ${jumped.top}`,
   );
 });
+
+test("a mid-air rise into a World 4-2 wall does not release Mario", () => {
+  const openSim = stage();
+  parkOthers(openSim, "mario");
+  openSim.viewWidth = 8000;
+  const openMario = openSim.mario;
+  Body.setFrozen(openMario.body, false);
+  const openX = openSim.activeRoom.offset + 69 * 32 + 16;
+  settle(openSim, openMario, openX);
+  const openBrick = openSim.obstacles.find(
+    (block) => block.kind === "brick" && Math.abs(block.x - openX) < 1,
+  );
+  assert.ok(openBrick, "column 69 has a brick to aim at");
+  openSim.marioActive = true;
+  openSim.brickTarget = openBrick.id;
+  openSim.marioJumpWait = 0;
+  openSim.marioReaction = 0;
+  openSim.marioDecision = 30;
+  openSim.marioLook = 30;
+  openSim.marioChase = 0;
+  const open = apex(openSim, openMario);
+  assert.ok(open.rise > 80, `open Mario hop ${open.rise}`);
+
+  const s = stage();
+  parkOthers(s, "mario");
+  s.viewWidth = 8000;
+  const mario = s.mario;
+  const wall = s.activeRoom.offset + 30 * 32;
+  Body.setFrozen(mario.body, false);
+  // Outside the 1px face. The jump starts on the ground, but not flush.
+  settle(s, mario, wall - mario.body.width / 2 - 4);
+  assert.equal(mario.grounded, true, "Mario is standing before the jump");
+  const gap0 = wall - mario.body.bounds.max.x;
+  assert.ok(gap0 > 1 && gap0 < 6, `start gap ${gap0} is not a flush face`);
+  const near = s.solids.flatMap((solid) => {
+    const b = mario.body.bounds;
+    const sb = solid.bounds;
+    const overlapY = Math.min(b.max.y, sb.max.y) - Math.max(b.min.y, sb.min.y);
+    const gapLeft = b.min.x - sb.max.x;
+    const gapRight = sb.min.x - b.max.x;
+    if (overlapY <= 1) return [];
+    if (
+      (gapLeft <= 1 && gapLeft >= -1) ||
+      (gapRight <= 1 && gapRight >= -1)
+    )
+      return [`L${gapLeft.toFixed(2)} R${gapRight.toFixed(2)} y${overlapY.toFixed(1)}`];
+    return [];
+  });
+  assert.equal(near.length, 0, `flush faces at takeoff: ${near.join(" | ")}`);
+  const brick = s.obstacles.find(
+    (block) => block.kind === "brick" && Math.abs(block.x - (wall + 16)) < 1,
+  );
+  assert.ok(brick, "column 30 has a wall brick");
+  s.marioActive = true;
+  s.brickTarget = brick.id;
+  s.marioJumpWait = 0;
+  s.marioReaction = 0;
+  s.marioDecision = 30;
+  s.marioLook = 30;
+  s.marioChase = 0;
+  Body.setVelocity(mario.body, { x: 4, y: 0 });
+  let minGap = gap0;
+  let enteredBand = false;
+  let stuck = 0;
+  let armed = false;
+  const startY = mario.body.position.y;
+  let peakY = startY;
+  for (let frame = 0; frame < 100; frame++) {
+    if (!mario.grounded) mario.navVx = 5;
+    s.step(dt, emptyInput());
+    armed ||= mario.body.wallRiseArmed;
+    const gap = wall - mario.body.bounds.max.x;
+    const vy = mario.body.velocity.y;
+    const risen = startY - mario.body.position.y;
+    if (vy < -0.2) {
+      minGap = Math.min(minGap, gap);
+      if (gap <= 1 && gap > -1) enteredBand = true;
+    }
+    if (vy < -0.2 && risen > 24 && Math.abs(gap) <= 0.75) stuck++;
+    if (mario.body.position.y < peakY) peakY = mario.body.position.y;
+    if (frame > 6 && mario.grounded && peakY < startY) break;
+    if (vy >= 0 && peakY < startY - 4) break;
+  }
+  const rise = startY - peakY;
+  assert.equal(armed, false, "a non-flush takeoff must not arm the wall release");
+  assert.ok(
+    rise < open.rise * 0.55,
+    `mid-air Mario rise ${rise} band ${enteredBand} minGap ${minGap} stuck ${stuck} (open ${open.rise})`,
+  );
+});
+
+test("a mid-air rise into a World 4-2 wall does not release an NPC", () => {
+  const openSim = stage();
+  parkOthers(openSim, "npc");
+  const openNpc = openSim.npcs[0];
+  openNpc.warned = true;
+  openNpc.state = "run";
+  openNpc.wait = 99;
+  settle(openSim, openNpc, openSim.activeRoom.offset + 17 * 32 + 20);
+  openNpc.wait = 0;
+  const open = apex(openSim, openNpc);
+  assert.ok(open.rise > 80, `open NPC hop ${open.rise}`);
+
+  const s = stage();
+  parkOthers(s, "npc");
+  const npc = s.npcs[0];
+  const wall = s.activeRoom.offset + 30 * 32;
+  npc.warned = true;
+  npc.state = "run";
+  npc.wait = 99;
+  // Run speed crosses into the 1px band only after the feet have left the ground.
+  settle(s, npc, wall - npc.body.width / 2 - 6);
+  assert.equal(npc.grounded, true, "NPC is standing before the jump");
+  const gap0 = wall - npc.body.bounds.max.x;
+  assert.ok(gap0 > 1, `NPC start gap ${gap0} is already flush`);
+  npc.wait = 0;
+  let minGap = gap0;
+  let enteredBand = false;
+  let stuck = 0;
+  let armed = false;
+  const startY = npc.body.position.y;
+  let peakY = startY;
+  let leftGround = false;
+  for (let frame = 0; frame < 100; frame++) {
+    s.step(dt, emptyInput());
+    armed = npc.body.wallRiseArmed;
+    const gap = wall - npc.body.bounds.max.x;
+    const vy = npc.body.velocity.y;
+    const risen = startY - npc.body.position.y;
+    if (!npc.grounded) leftGround = true;
+    if (leftGround && vy < -0.2 && gap > 0.02) {
+      minGap = Math.min(minGap, gap);
+      if (gap <= 1) enteredBand = true;
+    }
+    if (leftGround && vy < -0.2 && risen > 24 && Math.abs(gap) <= 0.75) stuck++;
+    if (npc.body.position.y < peakY) peakY = npc.body.position.y;
+    if (leftGround && vy >= 0) break;
+    if (frame > 6 && npc.grounded && leftGround) break;
+  }
+  assert.ok(leftGround, "NPC never left the ground");
+  assert.equal(armed, false, "a non-flush takeoff must not arm the wall release");
+  assert.ok(
+    enteredBand,
+    `NPC rise never entered the 1px band (min gap ${minGap})`,
+  );
+  assert.ok(
+    stuck < 3,
+    `mid-air NPC stayed on the face for ${stuck} frames (open rise ${open.rise})`,
+  );
+});
+
+test("a Mario or NPC head within 1px of a wall face stops on that ceiling", () => {
+  const marioSim = stage();
+  parkOthers(marioSim, "mario");
+  marioSim.viewWidth = 8000;
+  const mario = marioSim.mario;
+  Body.setFrozen(mario.body, false);
+  const room = marioSim.activeRoom;
+  // 0.2px under the column 50 question block, with a crawl toward that face.
+  // A faster crawl leaves the 1px band before the head arrives, and the old
+  // deep-overlap stop would pass even if this release let the corner through.
+  const face = room.offset + 50 * 32;
+  settle(marioSim, mario, face + 0.2 - mario.body.width / 2);
+  assert.equal(mario.grounded, true, "Mario is standing");
+  const marioGap = mario.body.bounds.max.x - face;
+  assert.ok(
+    marioGap > 0 && marioGap <= 1,
+    `Mario overlap ${marioGap} is not within 1px of the face`,
+  );
+  assert.ok(mario.body.bounds.min.y > QUESTION, "head starts below the blocks");
+  const block = marioSim.obstacles.find(
+    (item) => item.question && Math.abs(item.x - (face + 16)) < 1,
+  );
+  assert.ok(block, "column 50 question block");
+  marioSim.marioActive = true;
+  marioSim.brickTarget = block.id;
+  marioSim.marioJumpWait = 0;
+  marioSim.marioReaction = 0;
+  marioSim.marioDecision = 30;
+  marioSim.marioLook = 30;
+  marioSim.marioChase = 0;
+  Body.setVelocity(mario.body, { x: 0.05, y: 0 });
+  let marioArmed = false;
+  let marioFace = 0;
+  const marioStart = mario.body.position.y;
+  let marioPeak = marioStart;
+  let marioTop = mario.body.bounds.min.y;
+  for (let frame = 0; frame < 100; frame++) {
+    marioSim.step(dt, emptyInput());
+    if (mario.body.wallRiseArmed) {
+      marioArmed = true;
+      marioFace = mario.body.wallRiseFaceX ?? marioFace;
+    }
+    if (mario.body.position.y < marioPeak) {
+      marioPeak = mario.body.position.y;
+      marioTop = mario.body.bounds.min.y;
+    }
+    if (frame > 6 && mario.grounded && marioPeak < marioStart) break;
+    if (mario.body.velocity.y >= 0 && marioPeak < marioStart - 4) break;
+  }
+  const marioHop = { rise: marioStart - marioPeak, top: marioTop };
+  assert.equal(marioArmed, true, "Mario jump started flush, so the release is armed");
+  assert.ok(
+    Math.abs(marioFace - face) <= 1,
+    `Mario armed a different face ${marioFace}`,
+  );
+  assert.ok(marioHop.rise < 70, `Mario corner rise ${marioHop.rise}`);
+  assert.ok(
+    marioHop.top <= QUESTION + 2 && marioHop.top >= QUESTION - 1,
+    `Mario head did not stop on the corner underside: ${marioHop.top}`,
+  );
+
+  const s = stage();
+  parkOthers(s, "npc");
+  s.viewWidth = 8000;
+  const npc = s.npcs[0];
+  // Column 22's left face is the lip of the row 11 overhang. The head is a
+  // few pixels under that underside and 0.2px into the lip, so this frame is
+  // the 1px release, not a body already buried under the slab.
+  const npcFace = s.activeRoom.offset + 22 * 32;
+  npc.warned = true;
+  npc.state = "run";
+  npc.wait = 99;
+  settle(s, npc, npcFace + 0.2 - npc.body.width / 2);
+  assert.equal(npc.grounded, true, "NPC is standing");
+  const gap = npc.body.bounds.max.x - npcFace;
+  assert.ok(gap > 0 && gap <= 1, `NPC overlap ${gap} is not within 1px of the face`);
+  assert.ok(
+    npc.body.bounds.min.y > OVERHANG && npc.body.bounds.min.y - OVERHANG < 8,
+    `NPC head is not in the lip band: ${npc.body.bounds.min.y}`,
+  );
+  npc.wait = 0;
+  npc.scale = 2;
+  npc.lastX = npc.body.position.x;
+  npc.blockedFor = 1;
+  let npcArmed = false;
+  let npcFaceX = 0;
+  const npcStart = npc.body.position.y;
+  let npcPeak = npcStart;
+  let npcTop = npc.body.bounds.min.y;
+  for (let frame = 0; frame < 100; frame++) {
+    s.step(dt, emptyInput());
+    if (npc.body.wallRiseArmed) {
+      npcArmed = true;
+      npcFaceX = npc.body.wallRiseFaceX ?? npcFaceX;
+    }
+    if (npc.body.position.y < npcPeak) {
+      npcPeak = npc.body.position.y;
+      npcTop = npc.body.bounds.min.y;
+    }
+    if (frame > 6 && npc.grounded && npcPeak < npcStart) break;
+    if (npc.body.velocity.y >= 0 && npcPeak < npcStart - 2) break;
+  }
+  const jumped = { rise: npcStart - npcPeak, top: npcTop };
+  assert.equal(npcArmed, true, "NPC jump started flush, so the release is armed");
+  assert.ok(
+    Math.abs(npcFaceX - npcFace) <= 1,
+    `NPC armed a different face ${npcFaceX}`,
+  );
+  assert.ok(jumped.rise < 20, `NPC corner rise ${jumped.rise}`);
+  assert.ok(
+    jumped.top <= OVERHANG + 2 && jumped.top >= OVERHANG - 1,
+    `NPC head did not stop on the lip: ${jumped.top}`,
+  );
+});
+
+test("a jump that starts flush with one face does not release a different face", () => {
+  const s = stage();
+  parkOthers(s, "mario");
+  s.viewWidth = 8000;
+  const mario = s.mario;
+  const rear = s.activeRoom.offset + 27 * 32;
+  const ahead = s.activeRoom.offset + 30 * 32;
+  Body.setFrozen(mario.body, false);
+  settle(s, mario, rear + mario.body.width / 2);
+  const rearGap = mario.body.bounds.min.x - rear;
+  assert.ok(Math.abs(rearGap) <= 1, `not flush with the rear face ${rearGap}`);
+  const aheadGap = ahead - mario.body.bounds.max.x;
+  assert.ok(aheadGap > 20, `already on the far wall ${aheadGap}`);
+  const brick = s.obstacles.find(
+    (block) => block.kind === "brick" && Math.abs(block.x - (ahead + 16)) < 1,
+  );
+  assert.ok(brick, "column 30 wall brick");
+  s.marioActive = true;
+  s.brickTarget = brick.id;
+  s.marioJumpWait = 0;
+  s.marioReaction = 0;
+  s.marioDecision = 30;
+  s.marioLook = 30;
+  s.marioChase = 0;
+  Body.setVelocity(mario.body, { x: 5, y: 0 });
+  let armed = false;
+  let faceX = 0;
+  let stuck = 0;
+  const startY = mario.body.position.y;
+  let peakY = startY;
+  for (let frame = 0; frame < 80; frame++) {
+    if (!mario.grounded) mario.navVx = 5;
+    s.step(dt, emptyInput());
+    if (mario.body.wallRiseArmed) {
+      armed = true;
+      faceX = mario.body.wallRiseFaceX ?? faceX;
+    }
+    const gap = ahead - mario.body.bounds.max.x;
+    const risen = startY - mario.body.position.y;
+    if (mario.body.velocity.y < -0.2 && risen > 16 && Math.abs(gap) <= 0.75)
+      stuck++;
+    if (mario.body.position.y < peakY) peakY = mario.body.position.y;
+    if (frame > 6 && mario.grounded && peakY < startY) break;
+    if (mario.body.velocity.y >= 0 && peakY < startY - 4) break;
+  }
+  assert.equal(armed, true, "the takeoff was flush");
+  assert.ok(Math.abs(faceX - rear) <= 1, `armed the far face ${faceX} not ${rear}`);
+  assert.ok(
+    stuck < 3,
+    `released the other face for ${stuck} frames, rise ${startY - peakY}`,
+  );
+});

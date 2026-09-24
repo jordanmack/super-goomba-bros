@@ -32,6 +32,12 @@ export class Body {
   // Player keeps any non-overlapping approach. Mario and NPCs use 1:
   // a wider gap lets a ceiling corner count as a wall.
   wallRiseGap = Number.POSITIVE_INFINITY;
+  // Mario and NPCs arm this only for a land jump that left the ground while
+  // already within wallRiseGap of one face. Later contact with another face
+  // does not get the release.
+  wallRiseArmed = false;
+  wallRiseFaceX?: number;
+  wallRiseFromLeft = false;
   // Feet Y, stood-on floor, and bound volume of an 8x volume-hold. Keeps
   // that merged wall+floor after the floor AABB overlap ends. Frozen spans
   // keep rebuild rematch on the original pair, not another column.
@@ -408,7 +414,9 @@ function asArcadeBox(value: object): ArcadeBox | undefined {
   return box as ArcadeBox;
 }
 
-function headMeetsCeiling(mover: ArcadeMover, solid: ArcadeBox) {
+// Body is already under a ceiling this hop can still reach, or the head meets
+// it this frame. Releasing the 1px face band would shove that head out.
+function blocksLowCeiling(mover: ArcadeMover, solid: ArcadeBox) {
   if (!solid.checkCollision.up || !solid.checkCollision.down) return false;
   const prevTop = mover.prev.y;
   const prevBottom = prevTop + mover.height;
@@ -418,11 +426,21 @@ function headMeetsCeiling(mover: ArcadeMover, solid: ArcadeBox) {
     Math.min(prevRight, solid.x + solid.width) - Math.max(prevLeft, solid.x);
   if (overlapX <= SIDE_FACE) return false;
   const underside = solid.y + solid.height;
-  // A floor or tall volume reaches the feet. That underside is not a ceiling.
   if (underside >= prevBottom - 1) return false;
-  const rise = prevTop - mover.y;
-  if (prevTop > underside + Math.max(rise, 0) + SIDE_FACE) return false;
+  // NPC run hops clear about 200px. Farther roofs, such as row 2, stay out.
+  if (prevTop > underside + 240) return false;
   return prevBottom > solid.y;
+}
+
+function sameTakeoffFace(
+  wrapper: { wallRiseFaceX?: number; wallRiseFromLeft: boolean },
+  solidValue: object,
+) {
+  if (wrapper.wallRiseFaceX === undefined) return false;
+  const box = asArcadeBox(solidValue);
+  if (!box) return false;
+  const face = wrapper.wallRiseFromLeft ? box.x : box.x + box.width;
+  return Math.abs(face - wrapper.wallRiseFaceX) <= 1;
 }
 
 function releaseRisingSide(
@@ -443,9 +461,10 @@ function releaseRisingSide(
   const solidRight = solid.x + solid.width;
   const prevOverlap =
     Math.min(prevRight, solidRight) - Math.max(prevLeft, solidLeft);
-  if (prevOverlap > SIDE_FACE) return false;
-  const fromLeft = dx > 0 && prevRight <= solidLeft + SIDE_FACE;
-  const fromRight = dx < 0 && prevLeft >= solidRight - SIDE_FACE;
+  const band = Number.isFinite(maxGap) ? maxGap : SIDE_FACE;
+  if (prevOverlap > band) return false;
+  const fromLeft = dx > 0 && prevRight <= solidLeft + band;
+  const fromRight = dx < 0 && prevLeft >= solidRight - band;
   if (fromLeft && !solid.checkCollision.left) return false;
   if (fromRight && !solid.checkCollision.right) return false;
   if (!fromLeft && !fromRight) return false;
@@ -457,10 +476,11 @@ function releaseRisingSide(
   const center = mover.x + mover.width / 2;
   if (fromLeft && center >= solidLeft) return false;
   if (fromRight && center <= solidRight) return false;
+  if (blocksLowCeiling(mover, solid)) return false;
   if (
     nearby.some((other) => {
       const box = asArcadeBox(other);
-      return !!box && box !== solid && headMeetsCeiling(mover, box);
+      return !!box && box !== solid && blocksLowCeiling(mover, box);
     })
   )
     return false;
@@ -602,11 +622,34 @@ export class PhysicsWorld {
         })
         .sort((a, b) => this.order.get(a)! - this.order.get(b)!);
       if (nearby.length) {
+        const ceilings =
+          Number.isFinite(wrapper.wallRiseGap) && wrapper.wallRiseArmed
+            ? this.world!.staticTree.search({
+                minX: Math.min(native.position.x, native.prev.x),
+                minY: Math.min(native.position.y, native.prev.y) - 240,
+                maxX:
+                  Math.max(native.position.x, native.prev.x) + native.width,
+                maxY:
+                  Math.max(native.position.y, native.prev.y) + native.height,
+              })
+            : nearby;
         this.world.collide(native, nearby, undefined, (_actor, solid) => {
           if (!wrapper.ignoreWalls) {
+            // Unlimited gap is the player approach. Mario and NPCs also need
+            // the jump to have started on the ground, flush with this face.
+            const armed =
+              wrapper.wallRiseGap === Number.POSITIVE_INFINITY ||
+              (wrapper.wallRiseArmed &&
+                sameTakeoffFace(wrapper, solid));
             if (
               wrapper.riseAlongWall &&
-              releaseRisingSide(native, solid, nearby, wrapper.wallRiseGap)
+              armed &&
+              releaseRisingSide(
+                native,
+                solid,
+                ceilings,
+                wrapper.wallRiseGap,
+              )
             )
               return false;
             return true;

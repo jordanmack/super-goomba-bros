@@ -37,6 +37,11 @@ changes. The loop markers in `../../game/audio.ts` are the source of timing data
 Rescue and coin collection use the coin sound; bloody impacts use the stomp
 sound; kicked shells use the original kick sound. Block bumps, breaks, pipe
 travel, shrinking, and power-up pickups use the corresponding original effects.
+A player or Mario fireball that disappears on a solid hit plays the bump cue
+once. A floor bounce stays silent. A fireball removed past the screen plays
+nothing. The throw still uses the fireball cue. In water, each new player jump
+press plays the stomp cue instead of the land jump. NPCs and Mario do not gain
+a swim sound.
 Pause and resume play the original pause cue while music is held. A
 question-block item uses the original appear effect with the bump. A 1-up uses
 `smb_1-up.wav`. Game over uses `smb_gameover.wav`. TIME 100 uses

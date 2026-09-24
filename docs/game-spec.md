@@ -92,7 +92,9 @@ pace. Releasing direction stops horizontal motion. Player and NPCs both walk,
 run, and running-jump. An NPC does not jump faster than its current ground
 speed.
 
-In water, each Jump press is an upward swim stroke. Gravity is reduced and the
+In water, each Jump press is an upward swim stroke and plays the stomp cue,
+not the land jump cue. NPCs and Mario do not gain a swim sound from that press.
+Gravity is reduced and the
 player stays below the top of the playfield. Pipes have a short re-entry delay.
 
 On-screen layouts switch from a header button: Compact, NES, or hidden.
@@ -267,9 +269,13 @@ Saved NPCs stay safe and cannot return to danger.
 The in-play header is one non-wrapping SMB1 status block: `GOOMBA`, SCORE, `COINS`,
 WORLD, and TIME. Icon tools stay on the right and must not wrap over the
 playfield. Lives appear only on the WORLD n-n intro (`× 03`), not the in-play
-bar. WORLD intro text, the life portrait, and GAME OVER scale with the
+bar. WORLD intro text, the life portrait, GAME OVER, and the stage
+breakdown lines (WARNED, SAVED, DIED, FLAG, MARIO) scale with the
 playfield so they stay in proportion at phone and desktop widths, stay
-pixelated, and do not clip or overflow. There is no in-world elapsed WORLD
+pixelated, and do not clip or overflow. The breakdown uses the same
+screen-height scale as the WORLD intro (`--play-h` against a 540 reference)
+and grows its outline with that scale. The 8-4 ending card keeps its own
+scale. There is no in-world elapsed WORLD
 overlay.
 
 TIME counts down from the original per-stage timer (`header.timer`: 0=400, 1=300,
@@ -303,7 +309,8 @@ The castle door is always open. Reaching it completes the stage:
    TIME unit with a quieter tally beep on one voice.
 4. Then outlined white-on-black lines, no box: WARNED, SAVED, DIED, FLAG, MARIO.
    Each line is count × points, then SCORE updates. Saves, deaths, and Mario
-   finishes during the tally still count.
+   finishes during the tally still count. The five lines scale with the
+   playfield, stay pixelated, and keep that text.
 5. On castle-door (flagpole) stages, fireworks start when leftover TIME hits 0
    and overlap those lines. They do not wait for the lines to finish, and they
    do not hold auto-advance. castle-room and pipe-goal stages produce none.
@@ -535,7 +542,12 @@ Mario and a fire-powered player each keep at most two of their own fireballs
 in play. Either may throw again when a slot is free. Size does not change that
 rate. Player fireballs match the shooter's scale. Existing shots keep their
 launch size. Fireballs bounce
-on surfaces and stop at walls. Only a 3x or 8x player's fireball breaks an ordinary
+on surfaces and stop at walls. A ball about one view width past the left or
+right camera edge, or one view height past the top or bottom, is removed and
+frees that owner's slot. That removal plays no sound. A solid hit that removes
+the ball plays the bump cue once. A floor bounce stays silent. A hit that
+already plays brick-break, shrink, death, or the stomp cue does not also play
+bump. Only a 3x or 8x player's fireball breaks an ordinary
 breakable brick on side or bottom contact. Top contact bounces and does not
 break. Question blocks, used blocks, and unbreakable tiles are not broken this
 way. Player fireballs do not harm NPCs. A Mario fireball is a normal hit: it

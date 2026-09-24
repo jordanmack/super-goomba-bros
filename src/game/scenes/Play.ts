@@ -10,6 +10,7 @@ import type { Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
 import {
   actorSpriteBox,
+  actorWalkMoving,
   itemDrawY,
   itemHoldHidden,
   itemSpriteSize,
@@ -480,9 +481,9 @@ export class Play extends Phaser.Scene {
               ? "fireSpike"
               : "fireFish"
         : actor.kind;
-    const pace = walkPace(actor);
-    const moving =
-      actor.kind === "fish" ? pace > 0.1 : actor.grounded && pace > 0.1;
+    const inWater = sim.roomFor(actor).data.type === "water";
+    const pace = walkPace(actor, inWater);
+    const moving = actorWalkMoving(actor, inWater);
     const skid =
       mario &&
       sim.marioChase > 0 &&

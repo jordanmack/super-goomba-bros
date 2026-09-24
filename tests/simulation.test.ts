@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   Body,
   holdSpanOf,
@@ -37,6 +38,7 @@ import {
   itemDrawY,
   itemHoldHidden,
   itemSpriteSize,
+  actorWalkMoving,
   walkPace,
 } from "../src/game/simulation.ts";
 import { flagTextureKey } from "../src/game/smb-sprites.ts";
@@ -619,6 +621,8 @@ test("giant player fireballs break ordinary bricks from the side or bottom", () 
   const s = game();
   at(s, 80);
   const side = openBrick(s);
+  s.viewWidth = 800;
+  s.cameraX = side.x - 200;
   const n = s.npcs[0];
   Body.setPosition(n.body, { x: side.x, y: side.y - T.brickSize / 2 - 14 });
   n.idleWalking = false;
@@ -643,6 +647,7 @@ test("giant player fireballs break ordinary bricks from the side or bottom", () 
   );
 
   const bottom = openBrick(s);
+  s.cameraX = bottom.x - 200;
   shoot(
     s,
     bottom.x,
@@ -660,6 +665,8 @@ test("giant player fireballs bounce on brick tops and do not break them", () => 
   const s = game();
   at(s, 80);
   const brick = openBrick(s);
+  s.viewWidth = 800;
+  s.cameraX = brick.x - 200;
   const radius = 6 * T.playerFireballScale;
   const fireball = shoot(
     s,
@@ -681,6 +688,8 @@ test("small fireballs, question blocks, used blocks, and unbreakable tiles survi
   const s = game();
   at(s, 80);
   const brick = openBrick(s);
+  s.viewWidth = 800;
+  s.cameraX = brick.x - 200;
   const radius = 6 * T.playerFireballScale;
   shoot(s, brick.body!.bounds.min.x - 6 - 8, brick.y, 6, 1);
   tick(s, 8 * dt);
@@ -706,6 +715,7 @@ test("small fireballs, question blocks, used blocks, and unbreakable tiles survi
   s.hitBlock(used, s.player);
   const pipe = s.obstacles.find((c) => c.kind === "pipe" && c.body)!;
   for (const tile of [question, used, pipe]) {
+    s.cameraX = tile.x - 200;
     shoot(
       s,
       tile.body!.bounds.min.x - radius - 8,
@@ -10523,6 +10533,8 @@ test("a vine block sprouts instead of breaking when hit by a large body", () => 
 
   const fire = vineStage();
   const fireBrick = fire.obstacles.find((c) => c.content === "vine")!;
+  fire.viewWidth = 800;
+  fire.cameraX = fireBrick.x - 200;
   isolateSolid(fire, fireBrick.body!);
   fire.obstacles = [fireBrick];
   const radius = 6 * T.playerFireballScale;
@@ -10654,4 +10666,283 @@ test("walkPace uses whole-velocity speed for fish and x-speed for the rest", () 
   assert.equal(walkPace(walker), 0);
   Body.setVelocity(walker.body, { x: -2, y: 4 });
   assert.equal(walkPace(walker), 2);
+});
+
+test("water goombas and koopas walk off the floor, including straight up or down", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-2");
+  s.reset();
+  const goomba = s.npcs.find((n) => n.kind === "goomba");
+  const koopa = s.npcs.find((n) => n.kind === "koopa" && n.shell === "none");
+  const fish = s.npcs.find((n) => n.kind === "fish");
+  assert.ok(goomba && koopa && fish, "2-2 has a goomba, a koopa, and a fish");
+  assert.equal(s.roomFor(goomba).data.type, "water");
+  assert.equal(s.roomFor(koopa).data.type, "water");
+  const inWater = true;
+  for (const actor of [goomba, koopa]) {
+    actor.grounded = false;
+    actor.shell = "none";
+    Body.setVelocity(actor.body, { x: 0, y: -1.6 });
+    assert.equal(actorWalkMoving(actor, inWater), true, `${actor.kind} up`);
+    assert.ok(walkPace(actor, inWater) > 0.1);
+    Body.setVelocity(actor.body, { x: 0, y: 1.6 });
+    assert.equal(actorWalkMoving(actor, inWater), true, `${actor.kind} down`);
+    Body.setVelocity(actor.body, { x: 0, y: 0 });
+    assert.equal(actorWalkMoving(actor, inWater), false, `${actor.kind} still`);
+  }
+  koopa.shell = "moving";
+  koopa.grounded = false;
+  Body.setVelocity(koopa.body, { x: 2, y: -1 });
+  assert.equal(actorWalkMoving(koopa, inWater), false, "shell stays a shell");
+  koopa.shell = "none";
+  fish.grounded = false;
+  Body.setVelocity(fish.body, { x: 0, y: -1.5 });
+  assert.equal(actorWalkMoving(fish, inWater), true);
+  goomba.grounded = false;
+  Body.setVelocity(goomba.body, { x: 2, y: 0 });
+  assert.equal(actorWalkMoving(goomba, false), false, "land walk needs the floor");
+  goomba.grounded = true;
+  assert.equal(actorWalkMoving(goomba, false), true, "land walk on the floor");
+  s.mario.grounded = false;
+  Body.setVelocity(s.mario.body, { x: 0, y: -2 });
+  assert.equal(actorWalkMoving(s.mario, true), false, "Mario keeps his jump pose");
+  s.player.grounded = false;
+  Body.setVelocity(s.player.body, { x: 0, y: -1.4 });
+  assert.equal(s.player.kind, "goomba");
+  assert.equal(actorWalkMoving(s.player, true), true, "the player uses the goomba water cycle");
+  s.physics.clear();
+});
+
+test("a water jump press emits the stomp cue and a land jump still emits jump", () => {
+  const audio = readFileSync(
+    new URL("../src/game/audio.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(audio, /jump:\s*"jump"/);
+  assert.match(audio, /splat:\s*"stomp"/);
+  assert.match(audio, /jumpsmall\.wav/);
+  assert.match(audio, /stomp\.wav/);
+
+  const land = game();
+  at(land, 180);
+  tick(land, 0.1);
+  assert.notEqual(land.activeRoom.data.type, "water");
+  land.events = [];
+  tick(land, dt, { jump: true });
+  tick(land, dt, { jump: true });
+  assert.deepEqual(
+    land.events.filter((event) => event === "jump" || event === "splat"),
+    ["jump"],
+  );
+  land.physics.clear();
+
+  const water = game();
+  water.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-2");
+  water.reset();
+  water.marioReturn = 1e6;
+  finishPipeIntro(water);
+  assert.equal(water.activeRoom.data.type, "water");
+  for (const npc of water.npcs) {
+    Body.setFrozen(npc.body, true);
+    Body.setPosition(npc.body, { x: -4000, y: 0 });
+  }
+  Body.setFrozen(water.mario.body, true);
+  water.events = [];
+  tick(water, 0.2);
+  assert.deepEqual(
+    water.events.filter((event) => event === "jump" || event === "splat"),
+    [],
+    "NPCs and Mario do not gain a swim sound",
+  );
+  water.events = [];
+  tick(water, dt, { jump: true });
+  tick(water, dt, { jump: true });
+  assert.deepEqual(
+    water.events.filter((event) => event === "jump" || event === "splat"),
+    ["splat"],
+  );
+  tick(water, dt, {});
+  water.events = [];
+  tick(water, dt, { jump: true });
+  assert.deepEqual(
+    water.events.filter((event) => event === "jump" || event === "splat"),
+    ["splat"],
+  );
+  water.physics.clear();
+});
+
+test("a fireball one screen past the camera frees its slot and plays no sound", () => {
+  const s = game();
+  s.player.flower = true;
+  s.viewWidth = 320;
+  s.cameraX = 0;
+  s.cameraY = 0;
+  const right = s.cameraX + s.viewWidth;
+  const margin = s.viewWidth;
+  const onScreen = shoot(s, s.cameraX + 40, 220, 0, 1);
+  const inside = shoot(s, right + margin - 2, 220, 0, 1, 0, "mario");
+  assert.equal(owned(s, "player").length, 1);
+  assert.equal(owned(s, "mario").length, 1);
+  s.events = [];
+  tick(s, dt, { fire: true });
+  assert.ok(s.fireballs.includes(onScreen), "on-screen ball stays");
+  assert.ok(s.fireballs.includes(inside), "ball inside the margin stays");
+  assert.equal(s.events.includes("bump"), false);
+  assert.equal(owned(s, "player").length, T.fireballSlots, "player still has a free slot");
+
+  const past = [
+    { x: s.cameraX - margin - 2, y: 220, owner: "player" as const },
+    { x: right + margin + 2, y: 220, owner: "player" as const },
+    { x: 80, y: s.cameraY - VIEW_HEIGHT - 2, owner: "mario" as const },
+    { x: 80, y: s.cameraY + VIEW_HEIGHT * 2 + 2, owner: "mario" as const },
+  ];
+  for (const spot of past) {
+    s.fireballs = [
+      { id: 1, x: 80, y: 220, vx: 0, vy: 0, age: 0, owner: spot.owner, scale: 1 },
+      {
+        id: 2,
+        x: spot.x,
+        y: spot.y,
+        vx: 0,
+        vy: 0,
+        age: 0,
+        owner: spot.owner,
+        scale: 1,
+      },
+    ];
+    s.events = [];
+    tick(s, dt);
+    assert.equal(
+      owned(s, spot.owner).length,
+      1,
+      `past camera at ${spot.x},${spot.y} still holds a ${spot.owner} slot`,
+    );
+    assert.equal(s.fireballs.some((ball) => ball.id === 2), false);
+    assert.equal(s.events.includes("bump"), false, "off-screen removal stays silent");
+    assert.equal(
+      owned(s, spot.owner === "player" ? "mario" : "player").length,
+      0,
+      "the other owner keeps a separate pair of slots",
+    );
+  }
+
+  s.fireballs = [
+    { id: 3, x: 80, y: 220, vx: 0, vy: 0, age: 0, owner: "player", scale: 1 },
+  ];
+  s.events = [];
+  tick(s, dt, { fire: true });
+  assert.equal(owned(s, "player").length, T.fireballSlots);
+  assert.ok(s.events.includes("fire"));
+
+  s.marioActive = true;
+  s.setMarioStage(2);
+  s.marioTarget = s.player.id;
+  s.marioAim = s.mario.body.position.x + 80;
+  s.marioChase = 2;
+  s.marioJumpWait = 10;
+  s.marioLook = 1;
+  s.marioSeenAgo = 0;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: 80, y: 411 });
+  s.fireballs = [
+    { id: 4, x: 90, y: 220, vx: 0, vy: 0, age: 0, owner: "mario", scale: 1 },
+    {
+      id: 5,
+      x: right + margin + 8,
+      y: 220,
+      vx: 0,
+      vy: 0,
+      age: 0,
+      owner: "mario",
+      scale: 1,
+    },
+  ];
+  tick(s, dt);
+  assert.equal(owned(s, "mario").length, 1);
+  s.marioSeenAgo = 0;
+  s.marioChase = 2;
+  tick(s, dt);
+  assert.equal(owned(s, "mario").length, T.fireballSlots);
+  assert.ok(owned(s, "mario").some((ball) => ball.age < dt * 2));
+
+  s.marioChase = 0;
+  s.player.flower = false;
+  s.fireballs = [
+    { id: 6, x: 80, y: 220, vx: 0, vy: 0, age: 4.99, owner: "player", scale: 1 },
+  ];
+  s.events = [];
+  tick(s, dt);
+  assert.equal(s.fireballs.length, 0, "the 5 second limit still removes an on-screen ball");
+  assert.equal(s.events.includes("bump"), false);
+  s.physics.clear();
+});
+
+test("a fireball solid hit plays bump once and a floor bounce stays silent", () => {
+  const s = game();
+  stillMario(s);
+  parkNpcs(s, []);
+  const brick = openBrick(s);
+  s.viewWidth = 4000;
+  s.cameraX = brick.x - 400;
+  const radius = 6;
+  s.events = [];
+  const bounced = shoot(s, brick.x, brick.body!.bounds.min.y - radius - 4, 1, 1, 2);
+  tick(s, 6 * dt);
+  assert.ok(s.fireballs.includes(bounced), "floor bounce keeps the ball");
+  assert.ok((bounced.vy ?? 0) < 0);
+  assert.equal(s.events.includes("bump"), false, "floor bounce stays silent");
+  assert.equal(brick.broken, false);
+
+  s.fireballs = [];
+  s.events = [];
+  shoot(s, brick.body!.bounds.min.x - radius - 4, brick.y, 6, 1);
+  tick(s, 6 * dt);
+  assert.equal(s.fireballs.length, 0, "side hit removes the ball");
+  assert.equal(brick.broken, false);
+  assert.equal(s.events.filter((event) => event === "bump").length, 1);
+
+  s.fireballs = [];
+  s.events = [];
+  const giant = 6 * T.playerFireballScale;
+  shoot(
+    s,
+    brick.body!.bounds.min.x - giant - 4,
+    brick.y,
+    6,
+    T.playerFireballScale,
+  );
+  tick(s, 6 * dt);
+  assert.equal(brick.broken, true);
+  assert.equal(s.events.includes("break"), true);
+  assert.equal(
+    s.events.filter((event) => event === "bump").length,
+    0,
+    "brick-break does not also play bump",
+  );
+
+  const victim = game();
+  give(victim, victim.player, "mushroom");
+  stillMario(victim);
+  parkNpcs(victim, []);
+  victim.events = [];
+  shoot(victim, victim.player.body.position.x, victim.player.body.position.y, 0, 1, 0, "mario");
+  tick(victim, dt);
+  assert.equal(victim.player.scale, 1);
+  assert.equal(victim.events.includes("shrink"), true);
+  assert.equal(victim.events.includes("bump"), false, "shrink does not also play bump");
+  victim.physics.clear();
+
+  const doomed = game();
+  stillMario(doomed);
+  const npc = doomed.npcs[0];
+  parkNpcs(doomed, [npc]);
+  Body.setPosition(npc.body, { x: 200, y: 411 });
+  doomed.events = [];
+  shoot(doomed, npc.body.position.x, npc.body.position.y, 0, 1, 0, "mario");
+  tick(doomed, dt);
+  assert.equal(npc.alive, false);
+  assert.equal(doomed.events.includes("splat"), true);
+  assert.equal(doomed.events.includes("bump"), false, "stomp does not also play bump");
+  doomed.physics.clear();
+  s.physics.clear();
 });
