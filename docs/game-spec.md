@@ -225,9 +225,14 @@ tally uses the actual NPC count rather than the land population alone.
 
 4-1, 6-1, and 8-2 spawn one Lakitu from original type-17 placements. Those
 records are spawn points along the stage, not three Lakitus at once. He rides
-a cloud and uses Lakitu art from the enemy sheet. He is an ally. He does not
-harm the player, and he is not a ground rescue NPC, so he is not in WARNED,
-SAVED, or DIED. He throws spike characters. Each one starts as a Spiny egg,
+a cloud and uses Lakitu art from the enemy sheet. While he moves, he shows the
+ride frame at (0, 90) with his head up. For the last 16 frames before each
+throw he shows SMB1's drop frame instead: a blank head row, both hands, and the
+cloud, cropped from (30, 86) so its cloud lines up with the ride frame. With 4
+spikes alive he keeps the ride frame, and his throw countdown waits at the
+start of that 16-frame window. He is an ally. He does not harm the player,
+and he is not a ground rescue NPC, so he is not in WARNED, SAVED, or DIED. He
+throws spike characters. Each one starts as a Spiny egg,
 drawn with the two egg frames at (210, 154) and (240, 154), alternating every 8
 frames. As in SMB1, the egg appears 16 px above Lakitu's top and is tossed
 straight up at 6 px/frame with no sideways speed. It falls at 0.25 px/frame^2

@@ -9,6 +9,7 @@ import {
   AXE_WIDTH,
   FIREWORK_SHEET,
   flagTextureKey,
+  LAKITU_SHEET,
   SPRING_DRAW,
   SPINY_SHEET,
   SPRING_SHEET,
@@ -502,6 +503,33 @@ test("Bowser walk uses the first two packed 32x32 frames so the snout is visible
   assert.equal(opaqueLeft(42), 0, "second packed frame snout sits on the left edge");
   assert.ok(opaqueLeft(0) > 0, "x=0 crop is left of the packed frame");
   assert.ok(snout(2) > 8 && snout(42) > 8, "walk frames keep the yellow snout");
+});
+
+test("Lakitu's drop pose is the SMB1 hands-up frame with its cloud on the ride cloud", () => {
+  assert.deepEqual(LAKITU_SHEET, {
+    ride: { x: 0, y: 90 },
+    drop: { x: 30, y: 86 },
+  });
+  const enemies = join(root, "src/assets/smb/enemies.png");
+  const frame = ({ x, y }: { x: number; y: number }) =>
+    new Uint8ClampedArray(atlasRgba(enemies, `16x24+${x}+${y}`));
+  const ride = frame(LAKITU_SHEET.ride);
+  const drop = frame(LAKITU_SHEET.drop);
+  const opaque = (data: Uint8ClampedArray, y0: number, y1: number) => {
+    let n = 0;
+    for (let y = y0; y <= y1; y++)
+      for (let x = 0; x < W; x++) if (px(data, x, y)[3]) n++;
+    return n;
+  };
+  assert.ok(opaque(ride, 0, 7) >= 40, "ride frame has his head up");
+  assert.equal(opaque(drop, 0, 7), 0, "drop frame has a blank head row");
+  assert.ok(opaque(drop, 8, 11) >= 20, "drop frame shows his hands");
+  for (let y = 16; y < 24; y++)
+    for (let x = 0; x < W; x++)
+      assert.equal(px(drop, x, y)[3] > 0, px(ride, x, y)[3] > 0, `(${x}, ${y})`);
+  for (let x = 0; x < W; x++)
+    for (let y = 8; y < 16; y++)
+      assert.deepEqual(px(drop, x, y), px(drop, W - 1 - x, y), "mirrored hands");
 });
 
 test("spike NPCs use the flipped Spiny walk frames, not the red Cheep Cheep", () => {

@@ -42,6 +42,14 @@ export const HAMMER_BRO_SHEET = {
   hammer: { x: 282, y: 86, width: 16, height: 16 },
 } as const;
 
+// SMB1 Lakitu frame 1 rides with his head up and faces left. (60, 90) is its
+// mirror. Frame 2 ($96) is the drop pose: a blank head row, both hands, and
+// the cloud. The sheet draws it 4px higher, so y=86 lines the clouds up.
+export const LAKITU_SHEET = {
+  ride: { x: 0, y: 90 },
+  drop: { x: 30, y: 86 },
+} as const;
+
 // Spiny walk frames face left, so they are flipped. (150, 154) and (180, 154)
 // are the right-facing mirrors. y=184 is the red Cheep Cheep. The two egg
 // frames follow them. (60, 154) is a Podoboo.
@@ -57,10 +65,20 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
   const fish = crop(enemies, 0, 32, 16, 16, true);
   const fishWalk = crop(enemies, 32, 32, 16, 16, true);
-  // Both Lakitu frames face left. (60, 90) is the right-facing mirror, so flipX
-  // would reverse him every other frame. (30, 90) is the cloud pose.
-  const lakitu = crop(enemies, 0, 90, 16, 24);
-  const lakituWalk = crop(enemies, 30, 90, 16, 24);
+  const lakitu = crop(
+    enemies,
+    LAKITU_SHEET.ride.x,
+    LAKITU_SHEET.ride.y,
+    16,
+    24,
+  );
+  const lakituDrop = crop(
+    enemies,
+    LAKITU_SHEET.drop.x,
+    LAKITU_SHEET.drop.y,
+    16,
+    24,
+  );
   // Overworld frames, not the teal row at y=120. The hammer is not a shot.
   const hammerBro = crop(
     enemies,
@@ -129,7 +147,7 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     fish,
     fishWalk,
     lakitu,
-    lakituWalk,
+    lakituDrop,
     hammerBro,
     hammerBroWalk,
     hammer,

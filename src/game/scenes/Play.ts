@@ -301,7 +301,7 @@ export class Play extends Phaser.Scene {
         lakitu.y,
         T.lakituWidth,
         T.lakituHeight,
-        Math.floor(sim.elapsed * 6) % 2 ? "lakituWalk" : "lakitu",
+        sim.lakituDropping(lakitu) ? "lakituDrop" : "lakitu",
         7,
       ).setFlipX(lakitu.facing > 0);
     }

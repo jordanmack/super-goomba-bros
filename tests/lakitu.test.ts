@@ -534,6 +534,49 @@ test("a Spiny egg does not hurt the player or NPCs and defeats Mario, even from 
   s.physics.clear();
 });
 
+test("Lakitu shows the drop pose only for the 16 frames before each throw", () => {
+  const s = start(4, 1);
+  const cloud = revealLakitu(s);
+  const drops: boolean[] = [];
+  const throws: number[] = [];
+  for (let frame = 0; frame < 300; frame++) {
+    const count = s.npcs.length;
+    step(s);
+    if (s.npcs.length > count) throws.push(frame);
+    drops.push(s.lakituDropping(cloud));
+  }
+  assert.equal(throws.length, 2);
+  // Float steps can land 2.2 s on frame 133.
+  const gap = throws[1]! - throws[0]!;
+  assert.ok(Math.abs(gap - T.lakituThrow * 60) <= 1, `${gap}`);
+  for (let frame = 0; frame < drops.length; frame++) {
+    const before = throws.some(
+      (t) => frame < t && frame >= t - T.lakituDropFrames,
+    );
+    assert.equal(drops[frame], before, `frame ${frame}`);
+  }
+
+  // At the spike cap he rides. A freed slot gets a full drop pose first.
+  for (let i = 0; i < T.lakituSpikeCap - 2; i++) throwEgg(s);
+  const spikes = s.npcs.filter((n) => n.kind === "spike");
+  assert.equal(spikes.length, T.lakituSpikeCap);
+  for (let frame = 0; frame < 200; frame++) {
+    step(s);
+    assert.equal(s.lakituDropping(cloud), false, `capped ${frame}`);
+    assert.equal(s.npcs.length, T.population + T.lakituSpikeCap);
+  }
+  for (const n of spikes) if (n.alive) stand(n, 5200);
+  spikes.find((n) => n.alive)!.alive = false;
+  let posed = 0;
+  for (let frame = 0; frame < 30 && s.npcs.length === T.population + 4; frame++) {
+    step(s);
+    if (s.lakituDropping(cloud)) posed++;
+  }
+  assert.equal(s.npcs.length, T.population + T.lakituSpikeCap + 1);
+  assert.equal(posed, T.lakituDropFrames);
+  s.physics.clear();
+});
+
 test("Lakitu stages return Fire Mario and other stages keep the timer", () => {
   for (const [world, stage] of [
     [4, 1],

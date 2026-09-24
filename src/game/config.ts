@@ -181,6 +181,9 @@ export const TUNING = {
   lakituSpeed: 1.6,
   lakituThrow: 2.2,
   lakituSpikeCap: 4,
+  // CheckForLakitu shows the drop frame while FrenzyEnemyTimer is below $10:
+  // the last 16 frames before the throw.
+  lakituDropFrames: 16,
   // SMB1 CreateSpiny: the egg starts 8px above Lakitu with Enemy_Y_Speed $fd
   // and no X speed. MoveD_EnemyVertically uses force $20 and SetHiMax $03 for
   // it. At 2x: -6 px/frame, 0.25 px/frame^2 (900 px/s^2), and a 6 px/frame cap.

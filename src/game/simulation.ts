@@ -1777,18 +1777,37 @@ export class Simulation {
       const maxX = edges.right - T.lakituWidth / 2;
       if (maxX > minX) live.x = Math.max(minX, Math.min(maxX, live.x));
       live.facing = Math.sign(aim - live.x) || live.facing || 1;
-      live.throwWait -= dt;
-      if (live.throwWait > 0) continue;
-      const spikes = this.npcs.filter(
-        (n) => n.kind === "spike" && n.alive && !n.saved,
-      ).length;
-      if (spikes >= T.lakituSpikeCap) {
-        live.throwWait = 0;
+      // At the spike cap he rides, held where the drop pose would start, so a
+      // freed slot still gets the whole pose before the throw.
+      const hold = T.lakituDropFrames / 60;
+      if (live.throwWait <= hold && this.spikesCapped()) {
+        live.throwWait = hold;
         continue;
       }
+      live.throwWait -= dt;
+      if (live.throwWait > 0) continue;
       live.throwWait = T.lakituThrow;
       this.throwSpike(live);
     }
+  }
+
+  private spikesCapped() {
+    return (
+      this.npcs.filter((n) => n.kind === "spike" && n.alive && !n.saved)
+        .length >= T.lakituSpikeCap
+    );
+  }
+
+  /** SMB1 drop pose: the last 16 frames before a throw that will happen. */
+  lakituDropping(lakitu: Lakitu) {
+    if (!lakitu.alive || this.spikesCapped()) return false;
+    // Replay the 1/60 countdown, so float drift cannot add a 17th frame.
+    let wait = lakitu.throwWait;
+    for (let frame = 0; frame < T.lakituDropFrames; frame++) {
+      wait -= 1 / 60;
+      if (wait <= 0) return true;
+    }
+    return false;
   }
 
   private throwSpike(lakitu: Lakitu) {

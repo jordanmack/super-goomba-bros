@@ -58,3 +58,46 @@ test("a Spiny egg draws the two unflipped egg frames, then hatches to the walk f
   expect(drawn.hatched.anim).toBe("spike-walk");
   expect(drawn.hatched.flipX).toBe(true);
 });
+
+test("Lakitu rides with his head up and draws the drop frame only before a throw", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  const stage = campaign.levels.findIndex((level) => level.id === "4-1");
+  const keys = await page.evaluate((stage) => {
+    const g = (window as any).__game;
+    const s = g.sim;
+    g.paused = true;
+    s.levelIndex = stage;
+    s.reset();
+    const p = s.player.body.position;
+    const cloud = {
+      id: 9002,
+      areaId: s.level.main,
+      x: p.x + 96,
+      y: p.y - 200,
+      facing: -1,
+      alive: true,
+      throwWait: 2,
+    };
+    s.lakitus.push(cloud);
+    const drawn = (wait: number, elapsed: number) => {
+      cloud.throwWait = wait;
+      s.elapsed = elapsed;
+      g.renderer.render(s, 0);
+      return g.renderer.play.effects
+        .filter(
+          (e: any) => e.visible && String(e.texture.key).startsWith("lakitu"),
+        )
+        .map((e: any) => e.texture.key);
+    };
+    return {
+      riding: [0, 1, 2, 3, 4, 5].map((i) => drawn(2 - i / 60, i / 6)),
+      dropping: drawn(10 / 60, 1),
+    };
+  }, stage);
+  for (const key of keys.riding) expect(key).toEqual(["lakitu"]);
+  expect(keys.dropping).toEqual(["lakituDrop"]);
+});
