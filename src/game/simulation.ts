@@ -6016,6 +6016,8 @@ export class Simulation {
           age: 0,
           owner: "mario",
           vy: 0,
+          // Matches his body like the player's shot: 8x throws scale 8.
+          scale: fireballScaleFor(this.mario.scale),
         });
         this.events.push("fire");
       }

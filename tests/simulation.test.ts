@@ -36,7 +36,12 @@ const FIRST_AREA = areaData("25");
 const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
 const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
-import type { ItemKind, Actor, Obstacle } from "../src/game/simulation.ts";
+import type {
+  ItemKind,
+  Actor,
+  Fireball,
+  Obstacle,
+} from "../src/game/simulation.ts";
 import {
   actorSpriteBox,
   itemDrawY,
@@ -12898,4 +12903,145 @@ test("an 8x player's thrown fireball is scale 8 and smashes a brick", () => {
   assert.ok(s.events.includes("break"));
   assert.equal(s.events.filter((event) => event === "bump").length, 0);
   s.physics.clear();
+});
+
+// One chase frame with a free slot. Returns only the shots thrown on it.
+function marioThrow(s: Simulation, x: number) {
+  armChase(s, x, x + 400);
+  seeShot(s, x);
+  const before = owned(s, "mario");
+  s.step(dt, emptyInput());
+  return owned(s, "mario").filter((ball) => !before.includes(ball));
+}
+
+function fireHugeMarioRunway(hugePlayer = false) {
+  const s = game();
+  s.marioActive = true;
+  s.setMarioStage(2);
+  if (hugePlayer) give(s, s.player, "mushroom8x");
+  give(s, s.mario, "mushroom8x");
+  assert.equal(s.marioStage, 2);
+  assert.equal(s.mario.flower, true);
+  assert.equal(s.mario.scale, T.hugeScale);
+  openRunway(s);
+  for (const n of s.npcs) standAt(n, 2500);
+  standAt(s.player, 1400);
+  return s;
+}
+
+// Park a ball in open air so it stays in play while Mario's size changes.
+function holdBall(ball: Fireball) {
+  Object.assign(ball, { x: 700, y: T.groundY - 300, vx: 0, vy: 0 });
+}
+
+test("an 8x Fire Mario's thrown fireball is scale 8 and smashes a brick", () => {
+  const s = game();
+  parkNpcs(s, []);
+  s.pipeIntro = false;
+  const brick = openBrick(s);
+  at(s, 1100);
+  s.marioActive = true;
+  s.setMarioStage(2);
+  standOnGround(s.mario, 180);
+  give(s, s.mario, "mushroom8x");
+  assert.equal(s.marioStage, 2);
+  assert.equal(s.mario.flower, true);
+  assert.equal(s.mario.scale, T.hugeScale);
+  const [shot] = marioThrow(s, 180);
+  assert.ok(shot, "Fire 8x Mario did not throw");
+  assert.equal(shot.scale, T.hugeScale);
+  assert.equal(brick.broken, false);
+  stillMario(s);
+  shot.x = brick.body!.bounds.min.x - 6 * T.hugeScale - 2;
+  shot.y = brick.y;
+  shot.vx = 6;
+  shot.vy = 0;
+  shot.age = 0;
+  seeShot(s, brick.x);
+  s.events = [];
+  tick(s, 8 * dt);
+  assert.equal(brick.broken, true);
+  assert.equal(s.fireballs.includes(shot), false);
+  assert.ok(s.events.includes("break"));
+  s.physics.clear();
+});
+
+test("Fire Mario below 8x throws a normal shot, and 8x alone does not shoot", () => {
+  const fire = game();
+  openRunway(fire);
+  for (const n of fire.npcs) standAt(n, 2500);
+  standAt(fire.player, 1400);
+  fire.setMarioStage(2);
+  const [shot] = marioThrow(fire, 400);
+  assert.ok(shot, "Fire Mario did not throw");
+  assert.equal(fire.mario.scale, 1);
+  assert.equal(shot.scale, 1, "a normal shot matches the player's normal shot");
+  fire.physics.clear();
+
+  for (const stage of [0, 1] as const) {
+    const s = game();
+    s.marioActive = true;
+    s.setMarioStage(stage);
+    give(s, s.mario, "mushroom8x");
+    assert.equal(s.mario.scale, T.hugeScale);
+    assert.equal(s.marioStage, 1);
+    assert.equal(s.mario.flower, false);
+    openRunway(s);
+    for (const n of s.npcs) standAt(n, 2500);
+    standAt(s.player, 1400);
+    assert.deepEqual(
+      marioThrow(s, 400),
+      [],
+      `8x Mario from stage ${stage} threw without fire`,
+    );
+    s.physics.clear();
+  }
+});
+
+test("Mario's scale-8 shot keeps its size after his 8x ends", () => {
+  // A demotion keeps fire, so later shots are normal and share the two slots.
+  const s = fireHugeMarioRunway(true);
+  assert.equal(s.player.scale, T.hugeScale);
+  const [big] = marioThrow(s, 400);
+  assert.equal(big?.scale, T.hugeScale);
+  stillMario(s);
+  holdBall(big);
+  s.fireballs.push({
+    id: 900,
+    x: s.mario.body.position.x,
+    y: s.mario.body.position.y,
+    vx: 0,
+    vy: 0,
+    age: 0,
+    owner: "player",
+  });
+  tick(s, dt);
+  assert.equal(s.mario.scale, 1);
+  assert.equal(s.marioStage, 2);
+  assert.equal(s.mario.flower, true);
+  assert.ok(s.fireballs.includes(big));
+  assert.equal(big.scale, T.hugeScale, "the shot in flight kept its size");
+  const [normal] = marioThrow(s, 400);
+  assert.equal(normal?.scale, 1, "a later shot is normal again");
+  assert.equal(big.scale, T.hugeScale);
+  assert.equal(owned(s, "mario").length, T.fireballSlots);
+  holdBall(big);
+  assert.deepEqual(marioThrow(s, 400), [], "a third Mario shot appeared");
+  s.physics.clear();
+
+  // Running out on its own still leaves Super Mario, who does not shoot.
+  const expiry = fireHugeMarioRunway();
+  const [kept] = marioThrow(expiry, 400);
+  assert.equal(kept?.scale, T.hugeScale);
+  stillMario(expiry);
+  holdBall(kept);
+  expiry.mario.hugeLeft = dt / 2;
+  tick(expiry, dt);
+  assert.equal(expiry.mario.scale, 1);
+  assert.equal(expiry.marioStage, 1);
+  assert.equal(expiry.mario.flower, false);
+  assert.ok(expiry.fireballs.includes(kept));
+  assert.equal(kept.scale, T.hugeScale);
+  assert.deepEqual(marioThrow(expiry, 400), []);
+  expiry.physics.clear();
 });

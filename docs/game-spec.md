@@ -542,8 +542,10 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   2x or 3x form shrinks to small instead of killing, and also removes a
   flower. A lone 8x ignores those hits. Collecting a flower never changes Goomba
   or NPC size.
-- Player fireballs match the shooter's scale at every size. Existing shots
-  keep their launch size.
+- Player fireballs match the shooter's scale at every size. A Fire Mario
+  shot matches his body scale: normal size while big and scale 8 while 8x.
+  8x alone does not make him Fire, so a small or Super Mario who turns 8x
+  still does not shoot. Existing shots keep their launch size.
 - 8x lasts 15 seconds, independent of the star, then the player and NPCs
   become 3x. A same-size or smaller mushroom does not reset that timer.
   While 8x, overlap destroys breakable bricks, question and content blocks,
@@ -588,8 +590,9 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
 
 Mario and a fire-powered player each keep at most two of their own fireballs
 in play. Either may throw again when a slot is free. Size does not change that
-rate. Player fireballs match the shooter's scale. Existing shots keep their
-launch size. Fireballs bounce
+rate. Player and Fire Mario fireballs match the shooter's body scale, so Fire
+Mario at 8x throws scale-8 balls. Existing shots keep their launch size, and
+shots thrown after 8x ends are normal size. Fireballs bounce
 on surfaces and stop at walls. A ball about one view width past the left or
 right camera edge, or one view height past the top or bottom, is removed and
 frees that owner's slot. That removal plays no sound. A solid hit that removes
@@ -610,8 +613,8 @@ pedestal, and shaft and stops that cannon. A spring hit clears both tiles of
 that pad. Floors, moving platforms, the flagpole, the goal door, a goal pipe,
 castle bridges, and the axe stay. Hidden blocks stay hidden. The shot is not
 standing, so a pipe lid and a stair or wall surface do not block that smash.
-A shot with no scale stays a normal hit and does not use this list. Player
-fireballs do not harm NPCs. A Mario fireball with no scale is a normal hit: it
+A normal-size shot stays a normal hit and does not use this list. Player
+fireballs do not harm NPCs. A normal-size Mario fireball is a normal hit: it
 shrinks 2x or 3x to 1x and kills only 1x, matching a stomp or moving shell.
 Stars ignore that fireball. A lone 8x ignores a smaller Mario fireball. An 8x
 Mario fireball demotes another 8x to 3x and does not also shrink that body to
