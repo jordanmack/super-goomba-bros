@@ -3243,6 +3243,11 @@ export class Simulation {
         this.burst(x, y, false);
       }
     }
+    this.commitSmashedTiles(room, smashed);
+  }
+
+  // Cannon and spring hits clear the paired tiles, then the room rebuilds once.
+  private commitSmashedTiles(room: Room, smashed: string[]) {
     if (!smashed.length) return;
     const expanded = new Set(smashed);
     for (const key of smashed) {
@@ -3260,6 +3265,89 @@ export class Simulation {
     );
     this.rebuildTerrain(room);
     this.events.push("break");
+  }
+
+  private fireballHits(
+    f: Fireball,
+    radius: number,
+    bounds: { min: { x: number; y: number }; max: { x: number; y: number } },
+  ) {
+    return !(
+      f.x + radius <= bounds.min.x ||
+      f.x - radius >= bounds.max.x ||
+      f.y + radius <= bounds.min.y ||
+      f.y - radius >= bounds.max.y
+    );
+  }
+
+  // Scale 8 shares the body smash list. Any overlap counts, including a top.
+  // Feet on a pipe lid are a body stand, not this hit.
+  private smashFireball(f: Fireball, radius: number) {
+    const hitter = f.owner === "mario" ? this.mario : this.player;
+    let smashed = false;
+    for (const c of [...this.obstacles]) {
+      if (c.broken || !c.body) continue;
+      if (c.hidden && !c.used) continue;
+      const room = this.hostRoom(c);
+      if (room && this.isGoalPipe(room, c)) continue;
+      if (!this.fireballHits(f, radius, c.body.bounds)) continue;
+      this.yieldSmashPrize(c, hitter);
+      if (c.content === "vine") {
+        smashed = true;
+        continue;
+      }
+      if (c.kind !== "brick" && c.kind !== "pipe") continue;
+      this.breakSolid(c);
+      smashed = true;
+    }
+    if (this.smashFireballTerrain(f, radius)) smashed = true;
+    if (smashed) this.releaseSmashedSprings();
+    return smashed;
+  }
+
+  // A shot has no feet, so the stand-on-surface exemption does not apply.
+  private smashFireballTerrain(f: Fireball, radius: number) {
+    const minX = f.x - radius;
+    const maxX = f.x + radius;
+    const minY = f.y - radius;
+    const maxY = f.y + radius;
+    let smashedAny = false;
+    for (const room of this.rooms.values()) {
+      const roomRight = room.offset + room.data.width * 32;
+      if (maxX <= room.offset || minX >= roomRight) continue;
+      const smashed: string[] = [];
+      const col0 = Math.floor((minX - room.offset) / 32);
+      const col1 = Math.floor((maxX - room.offset - 0.01) / 32);
+      const row0 = Math.floor((minY - MAP_TOP) / 32);
+      const row1 = Math.floor((maxY - MAP_TOP - 0.01) / 32);
+      for (let column = col0; column <= col1; column++) {
+        if (column < 0 || column >= room.data.width) continue;
+        for (let row = row0; row <= row1; row++) {
+          if (row < 2 || row > 14) continue;
+          const key = `${column},${row}`;
+          if (
+            room.smashedTiles.has(key) ||
+            !this.smashableTerrain(room, column, row, Number.POSITIVE_INFINITY)
+          )
+            continue;
+          const x = room.offset + column * 32 + 16;
+          const y = MAP_TOP + row * 32 + 16;
+          if (
+            maxX <= x - 16 + 0.1 ||
+            minX >= x + 16 - 0.1 ||
+            maxY <= y - 16 + 0.1 ||
+            minY >= y + 16 - 0.1
+          )
+            continue;
+          smashed.push(key);
+          this.burst(x, y, false);
+        }
+      }
+      if (!smashed.length) continue;
+      this.commitSmashedTiles(room, smashed);
+      smashedAny = true;
+    }
+    return smashedAny;
   }
 
   // Hitting one cannon or spring tile destroys that column's paired tiles.
@@ -5714,37 +5802,47 @@ export class Simulation {
       }
       let removedBySolid = false;
       const voicedAt = this.events.length;
-      for (const s of this.solids) {
-        if (
-          f.x + radius <= s.bounds.min.x ||
-          f.x - radius >= s.bounds.max.x ||
-          f.y + radius <= s.bounds.min.y ||
-          f.y - radius >= s.bounds.max.y
-        )
-          continue;
-        if (f.vy > 0 && oldY + radius <= s.bounds.min.y + 2) {
-          f.y = s.bounds.min.y - radius;
-          f.vy = -3.8;
-        } else if (oldX !== f.x) {
-          if (f.owner === "player" && (f.scale ?? 1) >= T.playerFireballScale) {
-            const brick = this.obstacles.find(
-              (c) =>
-                c.body === s &&
-                c.kind === "brick" &&
-                !c.broken &&
-                !c.question &&
-                !c.used,
-            );
-            if (brick?.content === "vine") {
-              this.sproutVine(brick);
-              this.reveal(brick);
-              brick.bounce = T.blockBounceSeconds;
-              this.events.push("bump");
-            } else if (brick && brick.content !== "coins")
-              this.breakBrick(brick);
+      const hugeShot = (f.scale ?? 1) >= T.hugeScale;
+      if (hugeShot && this.smashFireball(f, radius)) {
+        f.age = 6;
+        removedBySolid = true;
+      } else {
+        for (const s of this.solids) {
+          if (
+            f.x + radius <= s.bounds.min.x ||
+            f.x - radius >= s.bounds.max.x ||
+            f.y + radius <= s.bounds.min.y ||
+            f.y - radius >= s.bounds.max.y
+          )
+            continue;
+          if (f.vy > 0 && oldY + radius <= s.bounds.min.y + 2) {
+            f.y = s.bounds.min.y - radius;
+            f.vy = -3.8;
+          } else if (oldX !== f.x) {
+            if (
+              !hugeShot &&
+              f.owner === "player" &&
+              (f.scale ?? 1) >= T.playerFireballScale
+            ) {
+              const brick = this.obstacles.find(
+                (c) =>
+                  c.body === s &&
+                  c.kind === "brick" &&
+                  !c.broken &&
+                  !c.question &&
+                  !c.used,
+              );
+              if (brick?.content === "vine") {
+                this.sproutVine(brick);
+                this.reveal(brick);
+                brick.bounce = T.blockBounceSeconds;
+                this.events.push("bump");
+              } else if (brick && brick.content !== "coins")
+                this.breakBrick(brick);
+            }
+            f.age = 6;
+            removedBySolid = true;
           }
-          f.age = 6;
-          removedBySolid = true;
         }
       }
       if (removedBySolid && !this.fireballHitAlreadyVoiced(voicedAt))

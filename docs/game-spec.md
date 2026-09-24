@@ -578,13 +578,29 @@ right camera edge, or one view height past the top or bottom, is removed and
 frees that owner's slot. That removal plays no sound. A solid hit that removes
 the ball plays the bump cue once. A floor bounce stays silent. A hit that
 already plays brick-break, shrink, death, or the stomp cue does not also play
-bump. Only a 3x or 8x player's fireball breaks an ordinary
-breakable brick on side or bottom contact. Top contact bounces and does not
-break. Question blocks, used blocks, and unbreakable tiles are not broken this
-way. Player fireballs do not harm NPCs. A Mario fireball is a normal hit: it
+bump. A 3x player's fireball breaks an ordinary unused brick on side or bottom
+contact. Top contact bounces and does not break. Question blocks, used blocks,
+pipes, and unbreakable tiles are not broken this way. A scale-8 fireball, from
+the player or from Mario, smashes the same tiles as an 8x body. Contact from
+any direction counts, including from above, and the ball is removed. That
+includes breakable bricks, question and content blocks, used blocks, non-goal
+pipes, cannons, springs, and wall tiles that are not floors. A question or
+content block yields its prize first, then breaks. Player coin contents add to
+the coin count. Mario coin contents pop and play sound only. A multi-coin brick
+pays the remaining coins at once. An item spawns already free and does not use
+the emerge rise or the appear cue. A cannon hit clears that column's barrel,
+pedestal, and shaft and stops that cannon. A spring hit clears both tiles of
+that pad. Floors, moving platforms, the flagpole, the goal door, a goal pipe,
+castle bridges, and the axe stay. Hidden blocks stay hidden. The shot is not
+standing, so a pipe lid and a stair or wall surface do not block that smash.
+A shot with no scale stays a normal hit and does not use this list. Player
+fireballs do not harm NPCs. A Mario fireball with no scale is a normal hit: it
 shrinks 2x or 3x to 1x and kills only 1x, matching a stomp or moving shell.
 Stars ignore that fireball. A lone 8x ignores a smaller Mario fireball. An 8x
-Mario fireball demotes another 8x to 3x and does not also shrink that body to 1x.
+Mario fireball demotes another 8x to 3x and does not also shrink that body to
+1x. A scale-8 shot that hits tiles smashes those tiles. A shot that hits an 8x
+character still demotes that character by one level and does not smash the
+character.
 
 ## Vines
 

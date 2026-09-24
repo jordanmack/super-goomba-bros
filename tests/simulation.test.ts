@@ -11675,6 +11675,37 @@ test("a fireball one screen past the camera frees its slot and plays no sound", 
   tick(s, dt);
   assert.equal(s.fireballs.length, 0, "the 5 second limit still removes an on-screen ball");
   assert.equal(s.events.includes("bump"), false);
+
+  const hugeQuiet = game();
+  hugeQuiet.viewWidth = 320;
+  hugeQuiet.cameraX = 0;
+  hugeQuiet.cameraY = 0;
+  hugeQuiet.fireballs = [
+    {
+      id: 7,
+      x: hugeQuiet.viewWidth * 2 + 4,
+      y: 220,
+      vx: 0,
+      vy: 0,
+      age: 0,
+      owner: "mario",
+      scale: T.hugeScale,
+    },
+  ];
+  hugeQuiet.events = [];
+  tick(hugeQuiet, dt);
+  assert.equal(hugeQuiet.fireballs.length, 0, "scale-8 off-screen ball is removed");
+  assert.equal(
+    hugeQuiet.events.includes("bump"),
+    false,
+    "scale-8 off-screen removal stays silent",
+  );
+  assert.equal(
+    hugeQuiet.events.includes("break"),
+    false,
+    "scale-8 off-screen removal does not smash",
+  );
+  hugeQuiet.physics.clear();
   s.physics.clear();
 });
 
@@ -11745,5 +11776,730 @@ test("a fireball solid hit plays bump once and a floor bounce stays silent", () 
   assert.equal(doomed.events.includes("splat"), true);
   assert.equal(doomed.events.includes("bump"), false, "stomp does not also play bump");
   doomed.physics.clear();
+  s.physics.clear();
+});
+
+function seeShot(s: Simulation, x: number) {
+  s.viewWidth = 900;
+  s.cameraX = x - 300;
+  s.cameraY = 0;
+}
+
+test("a scale-8 shot breaks the pipe an 8x body stands on", () => {
+  const s = game();
+  castlePipeRoom(s);
+  const actor = smashActors(s).player;
+  const { pipe, top } = findPipe(s, 152, 6);
+  growClear(s, "player", actor, 180);
+  placeFeet(actor, pipe.x, top);
+  holdLid(s, "player", actor);
+  tick(s, 0.2, { down: true });
+  assert.equal(pipe.broken, false, "standing on the lid is not a smash");
+  assert.ok(s.solids.includes(pipe.body!));
+  assert.equal(actor.pipeTravel, undefined);
+  placeFeet(actor, pipe.x - 500, T.groundY);
+  tick(s, dt);
+  assert.equal(pipe.broken, false, "leaving the lid still leaves the pipe");
+
+  s.events = [];
+  seeShot(s, pipe.x);
+  const radius = 6 * T.hugeScale;
+  shoot(
+    s,
+    pipe.x,
+    pipe.body!.bounds.min.y - radius - 2,
+    0,
+    T.hugeScale,
+    6,
+  );
+  tick(s, 8 * dt);
+  assert.equal(pipe.broken, true, "scale-8 shot smashes that pipe");
+  assert.ok(!s.solids.includes(pipe.body!));
+  assert.equal(s.fireballs.length, 0, "the shot is removed");
+  assert.ok(s.events.includes("break"));
+  assert.equal(s.events.includes("bump"), false, "break does not also bump");
+  s.physics.clear();
+});
+
+test("a scale-8 fireball smashes a non-goal pipe from any side and either shooter", () => {
+  const dirs = ["top", "side", "bottom"] as const;
+  let index = 0;
+  for (const owner of ["player", "mario"] as const) {
+    for (const dir of dirs) {
+      const s = game();
+      parkNpcs(s, []);
+      const pipe = s.obstacles.filter((c) => c.kind === "pipe" && c.body)[index++]!;
+      const body = pipe.body!;
+      const radius = 6 * T.hugeScale;
+      seeShot(s, pipe.x);
+      let x = pipe.x;
+      let y = (body.bounds.min.y + body.bounds.max.y) / 2;
+      let vx = 0;
+      let vy = 0;
+      if (dir === "top") {
+        y = body.bounds.min.y - radius - 2;
+        vy = 6;
+      } else if (dir === "side") {
+        x = body.bounds.min.x - radius - 2;
+        vx = 6;
+      } else {
+        y = body.bounds.max.y + radius + 2;
+        vy = -8;
+      }
+      s.events = [];
+      shoot(s, x, y, vx, T.hugeScale, vy, owner);
+      tick(s, 8 * dt);
+      assert.equal(pipe.broken, true, `${owner} ${dir}`);
+      assert.ok(!s.solids.includes(body), `${owner} ${dir} solid`);
+      assert.equal(s.fireballs.length, 0, `${owner} ${dir} removed`);
+      assert.ok(s.events.includes("break"), `${owner} ${dir} break`);
+      assert.equal(s.events.includes("bump"), false, `${owner} ${dir} no bump`);
+      s.physics.clear();
+    }
+  }
+});
+
+test("a scale-8 fireball smashes bricks, questions, and used blocks from any side", () => {
+  for (const owner of ["player", "mario"] as const) {
+    for (const dir of ["top", "side", "bottom"] as const) {
+      const s = game();
+      parkNpcs(s, []);
+      const brick = openBrick(s);
+      const radius = 6 * T.hugeScale;
+      seeShot(s, brick.x);
+      const body = brick.body!;
+      let x = brick.x;
+      let y = brick.y;
+      let vx = 0;
+      let vy = 0;
+      if (dir === "top") {
+        y = body.bounds.min.y - radius - 2;
+        vy = 6;
+      } else if (dir === "side") {
+        x = body.bounds.min.x - radius - 2;
+        vx = 6;
+      } else {
+        y = body.bounds.max.y + radius + 2;
+        vy = -8;
+      }
+      s.events = [];
+      shoot(s, x, y, vx, T.hugeScale, vy, owner);
+      tick(s, 8 * dt);
+      assert.equal(brick.broken, true, `${owner} ${dir}`);
+      assert.ok(!s.solids.includes(body), `${owner} ${dir} solid`);
+      assert.equal(s.fireballs.length, 0, `${owner} ${dir} removed`);
+      assert.ok(s.events.includes("break"), `${owner} ${dir} break`);
+      assert.equal(s.events.includes("bump"), false, `${owner} ${dir} no bump`);
+      s.physics.clear();
+    }
+  }
+
+  const usedSim = game();
+  parkNpcs(usedSim, []);
+  const used = usedSim.obstacles.find((c) => c.question && !c.used && c.body)!;
+  usedSim.hitBlock(used, usedSim.player);
+  assert.equal(used.used, true);
+  assert.equal(used.broken, false);
+  seeShot(usedSim, used.x);
+  usedSim.events = [];
+  const usedRadius = 6 * T.hugeScale;
+  shoot(
+    usedSim,
+    used.x,
+    used.body!.bounds.min.y - usedRadius - 2,
+    0,
+    T.hugeScale,
+    6,
+    "mario",
+  );
+  tick(usedSim, 8 * dt);
+  assert.equal(used.broken, true, "used block breaks from above");
+  assert.equal(usedSim.fireballs.length, 0);
+  assert.ok(usedSim.events.includes("break"));
+  usedSim.physics.clear();
+});
+
+test("a scale-8 fireball pays prizes, then breaks the block", () => {
+  const coins = game();
+  parkNpcs(coins, []);
+  const multi = coins.obstacles.find((c) => c.content === "coins")!;
+  coins.coins = 0;
+  coins.score = 0;
+  seeShot(coins, multi.x);
+  coins.events = [];
+  shoot(coins, multi.x, multi.y, 0, T.hugeScale, 0);
+  tick(coins, dt);
+  assert.equal(multi.broken, true);
+  assert.equal(coins.coins, T.multiCoinCount);
+  assert.equal(coins.score, T.coinScore * T.multiCoinCount);
+  assert.equal(coins.fireballs.length, 0);
+  assert.ok(coins.events.includes("break"));
+  coins.physics.clear();
+
+  const marioCoins = game();
+  parkNpcs(marioCoins, []);
+  const marioMulti = marioCoins.obstacles.find((c) => c.content === "coins")!;
+  marioCoins.coins = 0;
+  marioCoins.score = 0;
+  seeShot(marioCoins, marioMulti.x);
+  marioCoins.events = [];
+  shoot(marioCoins, marioMulti.x, marioMulti.y, 0, T.hugeScale, 0, "mario");
+  tick(marioCoins, dt);
+  assert.equal(marioMulti.broken, true);
+  assert.equal(marioCoins.coins, 0, "Mario coins do not score");
+  assert.equal(marioCoins.score, 0);
+  assert.ok(marioCoins.events.includes("coin"));
+  assert.ok(marioCoins.coinPops.length >= T.multiCoinCount);
+  marioCoins.physics.clear();
+
+  const question = game();
+  parkNpcs(question, []);
+  question.random = () => 0;
+  const box = question.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && c.body && c.y > 300,
+  )!;
+  const before = question.coins;
+  seeShot(question, box.x);
+  at(question, box.x - 400, T.groundY - 14);
+  shoot(question, box.x, box.y, 0, T.hugeScale, 0);
+  tick(question, dt);
+  assert.equal(box.broken, true);
+  assert.equal(question.coins, before + 1);
+  assert.equal(question.events.includes("appear"), false);
+  question.physics.clear();
+
+  const item = game();
+  parkNpcs(item, []);
+  item.random = () => 0.99;
+  const prizeBox = item.obstacles.find(
+    (c) => c.question && !c.used && !c.hidden && c.content === "power-up" && c.body,
+  )!;
+  seeShot(item, prizeBox.x);
+  at(item, prizeBox.x - 400, T.groundY - 14);
+  shoot(item, prizeBox.x, prizeBox.y, 0, T.hugeScale, 0, "mario");
+  tick(item, dt);
+  const flower = item.items.find((entry) => entry.kind === "flower");
+  assert.ok(flower, "flower spawns");
+  assert.equal(flower.emerge, 0);
+  assert.equal(flower.smash, true);
+  assert.equal(flower.body.frozen, false);
+  assert.equal(prizeBox.broken, true);
+  const origin = { x: flower.body.position.x, y: flower.body.position.y };
+  tick(item, 0.15);
+  const flown = item.items.find((entry) => entry.id === flower.id);
+  assert.ok(flown, "item stays free");
+  assert.ok(
+    Math.abs(flown.body.position.x - origin.x) > 1 ||
+      Math.abs(flown.body.position.y - origin.y) > 1,
+  );
+  item.physics.clear();
+
+  const starSim = game();
+  parkNpcs(starSim, []);
+  const starBox = starSim.obstacles.find((c) => c.content === "star")!;
+  seeShot(starSim, starBox.x);
+  at(starSim, starBox.x - 400, T.groundY - 14);
+  shoot(starSim, starBox.x, starBox.y, 0, T.hugeScale, 0);
+  tick(starSim, dt);
+  const star = starSim.items.find((entry) => entry.kind === "star");
+  assert.ok(star);
+  assert.equal(star.emerge, 0);
+  assert.equal(star.body.frozen, false);
+  assert.equal(starBox.broken, true);
+  starSim.physics.clear();
+});
+
+test("a scale-8 fireball smashes walls, cannons, and springs, and keeps exempt tiles", () => {
+  const wall = game();
+  parkNpcs(wall, []);
+  const room = wall.activeRoom;
+  let column = -1;
+  let row = -1;
+  for (let x = 0; x < room.data.width && column < 0; x++) {
+    for (let y = 8; y <= 12; y++) {
+      if ((room.data.tiles[y]?.[x] ?? 0) !== 97) continue;
+      if ((room.data.tiles[y - 1]?.[x] ?? 0) !== 0) continue;
+      column = x;
+      row = y;
+      break;
+    }
+  }
+  assert.ok(column >= 0, "1-1 has a standable stair");
+  const radius = 6 * T.hugeScale;
+  const stairX = room.offset + column * 32 + 16;
+  const stairTop = MAP_TOP + row * 32;
+  seeShot(wall, stairX);
+  wall.events = [];
+  shoot(wall, stairX, stairTop - radius - 2, 0, T.hugeScale, 6);
+  tick(wall, 8 * dt);
+  assert.equal(room.smashedTiles.has(`${column},${row}`), true, "top of a stair smashes");
+  assert.equal(cellSolid(wall, column, 13), true, "floor under the stair stays");
+  assert.equal(wall.fireballs.length, 0);
+  assert.ok(wall.events.includes("break"));
+  wall.physics.clear();
+
+  const small = game();
+  parkNpcs(small, []);
+  const smallRoom = small.activeRoom;
+  seeShot(small, stairX);
+  const smallRadius = 6 * T.playerFireballScale;
+  shoot(
+    small,
+    stairX - 16 - smallRadius - 2,
+    stairTop + 16,
+    6,
+    T.playerFireballScale,
+  );
+  tick(small, 8 * dt);
+  assert.equal(
+    smallRoom.smashedTiles.has(`${column},${row}`),
+    false,
+    "scale-3 does not smash a wall",
+  );
+  assert.equal(cellSolid(small, column, row), true);
+  small.physics.clear();
+
+  const floor = game();
+  parkNpcs(floor, []);
+  const floorX = floor.activeRoom.offset + 2 * 32 + 16;
+  const floorTop = MAP_TOP + 13 * 32;
+  seeShot(floor, floorX);
+  floor.events = [];
+  const bounced = shoot(floor, floorX, floorTop - radius - 2, 0, T.hugeScale, 4);
+  tick(floor, 8 * dt);
+  assert.equal(floor.activeRoom.smashedTiles.has("2,13"), false);
+  assert.equal(cellSolid(floor, 2, 13), true);
+  assert.ok(floor.fireballs.includes(bounced), "floor top still bounces");
+  assert.ok((bounced.vy ?? 0) < 0);
+  assert.equal(floor.events.includes("break"), false);
+  assert.equal(floor.events.includes("bump"), false);
+  floor.physics.clear();
+
+  const hiddenSim = game();
+  parkNpcs(hiddenSim, []);
+  const hidden = hiddenSim.obstacles.find((c) => c.hidden && !c.used && c.body)!;
+  seeShot(hiddenSim, hidden.x);
+  shoot(
+    hiddenSim,
+    hidden.body!.bounds.min.x - radius - 2,
+    hidden.y,
+    6,
+    T.hugeScale,
+  );
+  tick(hiddenSim, 8 * dt);
+  assert.equal(hidden.broken, false);
+  assert.equal(hidden.used, false);
+  assert.equal(hidden.body!.headOnly, true);
+  hiddenSim.physics.clear();
+
+  const cannonSim = new Simulation(() => 0.5);
+  cannonSim.levelIndex = CAMPAIGN.findIndex((level) => level.id === "8-2");
+  cannonSim.reset();
+  cannonSim.marioReturn = 1e6;
+  parkNpcs(cannonSim, []);
+  const cannonRoom = cannonSim.activeRoom;
+  const cannons = [...cannonRoom.cannons].sort((a, b) => a.column - b.column);
+  const cannon = cannons[0]!;
+  const neighbor = cannons.find((c) => Math.abs(c.column - cannon.column) > 10)!;
+  const flying = cannonSim.spawnBulletBill(
+    cannon.x + 400,
+    cannon.y,
+    -T.bulletSpeed,
+    cannonRoom.data.id,
+    cannon.x,
+  );
+  seeShot(cannonSim, cannon.x);
+  at(cannonSim, cannon.x, T.groundY - 14);
+  cannonSim.events = [];
+  shoot(cannonSim, cannon.x, cannon.y, 0, T.hugeScale, 0, "mario");
+  tick(cannonSim, dt);
+  const stack = cannonRoom.data.tiles
+    .map((tiles, r) =>
+      r >= 2 && r <= 12 && isCannonTile(tiles[cannon.column] ?? 0) ? r : -1,
+    )
+    .filter((r) => r >= 0);
+  for (const r of stack) {
+    assert.equal(cannonRoom.smashedTiles.has(`${cannon.column},${r}`), true, `cannon ${r}`);
+    assert.equal(cellSolid(cannonSim, cannon.column, r), false);
+  }
+  assert.equal(
+    cannonRoom.cannons.some((c) => c.column === cannon.column),
+    false,
+  );
+  assert.ok(cannonRoom.cannons.some((c) => c.column === neighbor.column));
+  assert.ok(cannonSim.bulletBills.some((b) => b.id === flying.id));
+  assert.ok(cannonSim.events.includes("break"));
+  cannonSim.physics.clear();
+
+  const dual = new Simulation(() => 0.5);
+  dual.levelIndex = CAMPAIGN.findIndex((level) => level.id === "8-2");
+  dual.reset();
+  dual.marioReturn = 1e6;
+  parkNpcs(dual, []);
+  const upper = dual.activeRoom.cannons.find((c) => c.column === 93 && c.row === 10)!;
+  seeShot(dual, upper.x);
+  // Stay in the upper barrel. A centered scale-8 ball also reaches the lower one.
+  shoot(dual, upper.x, MAP_TOP + upper.row * 32 + 8, 0, T.hugeScale, 0);
+  tick(dual, dt);
+  assert.equal(dual.activeRoom.smashedTiles.has("93,10"), true);
+  assert.equal(dual.activeRoom.smashedTiles.has("93,11"), true);
+  assert.equal(dual.activeRoom.smashedTiles.has("93,12"), false);
+  assert.ok(dual.activeRoom.cannons.some((c) => c.column === 93 && c.row === 12));
+  dual.physics.clear();
+
+  const springSim = world21();
+  const spring = springSim.activeRoom.data.objects.find((o) => o.opcode === 33)!;
+  const springX = springSim.activeRoom.offset + spring.column * 32 + 16;
+  const springY = MAP_TOP + spring.row * 32 + 16;
+  seeShot(springSim, springX);
+  springSim.events = [];
+  shoot(springSim, springX, springY, 0, T.hugeScale, 0);
+  tick(springSim, dt);
+  assert.equal(
+    springSim.activeRoom.smashedTiles.has(`${spring.column},${spring.row}`),
+    true,
+  );
+  assert.equal(
+    springSim.activeRoom.smashedTiles.has(`${spring.column},${spring.row + 1}`),
+    true,
+  );
+  assert.equal(cellSolid(springSim, spring.column, spring.row), false);
+  assert.equal(cellSolid(springSim, spring.column, spring.row + 1), false);
+  assert.ok(springSim.events.includes("break"));
+  overlapAt(springSim.player, springX, springY);
+  tick(springSim, dt);
+  assert.notEqual(springSim.player.body.velocity.y, -T.springVy);
+  assert.notEqual(springSim.player.body.velocity.y, -T.springVyJump);
+  springSim.physics.clear();
+
+  const goal = new Simulation(() => 0.5);
+  goal.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  goal.reset();
+  goal.marioReturn = 1e6;
+  goal.player.areaId = "40";
+  parkNpcs(goal, []);
+  const sub = goal.roomFor(goal.player);
+  const goalData = sub.data.pipes.find(
+    (p) => p.column === sub.data.goal!.column && p.row === sub.data.goal!.row,
+  )!;
+  const goalPipe = goal.obstacles.find((c) => {
+    const x = sub.offset + (goalData.column + goalData.width / 2) * 32;
+    return c.kind === "pipe" && Math.abs(c.x - x) < 1;
+  })!;
+  seeShot(goal, goalPipe.x);
+  goal.events = [];
+  shoot(
+    goal,
+    goalPipe.body!.bounds.min.x - radius - 2,
+    (goalPipe.body!.bounds.min.y + goalPipe.body!.bounds.max.y) / 2,
+    6,
+    T.hugeScale,
+    0,
+    "mario",
+  );
+  tick(goal, 8 * dt);
+  assert.equal(goalPipe.broken, false, "goal pipe stays");
+  assert.ok(goal.solids.includes(goalPipe.body!));
+  goal.physics.clear();
+
+  const castle = new Simulation(() => 0.5);
+  castle.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+  castle.reset();
+  castle.marioReturn = 1e6;
+  parkNpcs(castle, []);
+  const castleRoom = castle.activeRoom;
+  let bridgeCol = -1;
+  let bridgeRow = -1;
+  for (let x = 0; x < castleRoom.data.width; x++) {
+    for (let y = 0; y < castleRoom.data.height; y++) {
+      if (castleRoom.data.tiles[y][x] !== 137) continue;
+      bridgeCol = x;
+      bridgeRow = y;
+      x = castleRoom.data.width;
+      break;
+    }
+  }
+  assert.ok(bridgeCol >= 0);
+  const bridgeX = castleRoom.offset + bridgeCol * 32 + 16;
+  const bridgeY = MAP_TOP + bridgeRow * 32 + 16;
+  seeShot(castle, bridgeX);
+  shoot(castle, bridgeX, bridgeY, 0, T.hugeScale, 0);
+  tick(castle, dt);
+  assert.equal(castleRoom.smashedTiles.has(`${bridgeCol},${bridgeRow}`), false);
+  assert.equal(cellSolid(castle, bridgeCol, bridgeRow), true);
+  const axe = castleRoom.axe!;
+  const axeCol = Math.floor((axe.x - castleRoom.offset) / 32);
+  const axeRow = Math.floor((axe.y - MAP_TOP) / 32);
+  seeShot(castle, axe.x);
+  shoot(castle, axe.x, axe.y, 0, T.hugeScale, 0);
+  tick(castle, dt);
+  assert.equal(castleRoom.smashedTiles.has(`${axeCol},${axeRow}`), false);
+  assert.equal(castleRoom.bridgeDropped, false);
+  castle.physics.clear();
+
+  const poleSim = game();
+  parkNpcs(poleSim, []);
+  const pole = poleOf(poleSim);
+  const poleCol = Math.floor((pole.x - poleSim.activeRoom.offset) / 32);
+  seeShot(poleSim, pole.x);
+  shoot(poleSim, pole.x, (pole.top + pole.bottom) / 2, 0, T.hugeScale, 0);
+  tick(poleSim, dt);
+  assert.equal(
+    [...poleSim.activeRoom.smashedTiles].some((key) => key.startsWith(`${poleCol},`)),
+    false,
+  );
+  poleSim.physics.clear();
+
+  const liftSim = new Simulation(() => 0.5);
+  liftSim.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-3");
+  liftSim.reset();
+  liftSim.marioReturn = 1e6;
+  parkNpcs(liftSim, []);
+  const platform = liftSim.activeRoom.platforms[0]!;
+  seeShot(liftSim, platform.body.position.x);
+  const pad = shoot(
+    liftSim,
+    platform.body.position.x,
+    platform.body.bounds.min.y - radius - 2,
+    0,
+    T.hugeScale,
+    4,
+  );
+  tick(liftSim, 8 * dt);
+  assert.ok(liftSim.solids.includes(platform.body), "moving platform stays");
+  assert.ok(liftSim.fireballs.includes(pad), "platform top bounces");
+  liftSim.physics.clear();
+
+  const vine = vineStage();
+  parkNpcs(vine, []);
+  const vineBrick = vine.obstacles.find((c) => c.content === "vine")!;
+  seeShot(vine, vineBrick.x);
+  shoot(vine, vineBrick.x, vineBrick.y, 0, T.hugeScale, 0, "mario");
+  tick(vine, dt);
+  assert.equal(vineBrick.broken, false, "vine brick stays");
+  assert.equal(vineBrick.used, true);
+  assert.equal(vine.vines.length, 1);
+  assert.equal(vine.fireballs.length, 0);
+  vine.physics.clear();
+});
+
+test("a scale-3 shot still breaks only an ordinary brick from the side or bottom", () => {
+  const s = game();
+  parkNpcs(s, []);
+  const brick = openBrick(s);
+  const radius = 6 * T.playerFireballScale;
+  seeShot(s, brick.x);
+  const top = shoot(
+    s,
+    brick.x,
+    brick.body!.bounds.min.y - radius - 2,
+    0,
+    T.playerFireballScale,
+    4,
+  );
+  tick(s, 8 * dt);
+  assert.equal(brick.broken, false, "scale-3 top bounces");
+  assert.ok(s.fireballs.includes(top));
+  assert.ok((top.vy ?? 0) < 0);
+  s.fireballs = [];
+  shoot(
+    s,
+    brick.body!.bounds.min.x - radius - 2,
+    brick.y,
+    6,
+    T.playerFireballScale,
+  );
+  tick(s, 8 * dt);
+  assert.equal(brick.broken, true, "scale-3 side still breaks an ordinary brick");
+  s.physics.clear();
+
+  const plain = game();
+  parkNpcs(plain, []);
+  const pipe = plain.obstacles.find((c) => c.kind === "pipe" && c.body)!;
+  const question = plain.obstacles.find((c) => c.question && !c.used && c.body)!;
+  seeShot(plain, pipe.x);
+  shoot(
+    plain,
+    pipe.body!.bounds.min.x - radius - 2,
+    pipe.y,
+    6,
+    T.playerFireballScale,
+  );
+  tick(plain, 8 * dt);
+  assert.equal(pipe.broken, false);
+  seeShot(plain, question.x);
+  shoot(
+    plain,
+    question.x,
+    question.body!.bounds.min.y - radius - 2,
+    0,
+    T.playerFireballScale,
+    4,
+  );
+  tick(plain, 8 * dt);
+  assert.equal(question.broken, false);
+  assert.equal(question.used, false);
+  plain.physics.clear();
+});
+
+test("an unscaled shot does not break a brick or a pipe", () => {
+  const s = game();
+  parkNpcs(s, []);
+  const brick = openBrick(s);
+  const pipe = s.obstacles.find((c) => c.kind === "pipe" && c.body && c !== brick)!;
+  seeShot(s, brick.x);
+  s.events = [];
+  s.fireballs.push({
+    id: 41,
+    x: brick.body!.bounds.min.x - 8,
+    y: brick.y,
+    vx: 6,
+    vy: 0,
+    age: 0,
+    owner: "mario",
+  });
+  tick(s, 8 * dt);
+  assert.equal(brick.broken, false);
+  assert.equal(s.fireballs.length, 0);
+  assert.ok(s.events.includes("bump"));
+  assert.equal(s.events.includes("break"), false);
+  seeShot(s, pipe.x);
+  s.events = [];
+  s.fireballs.push({
+    id: 42,
+    x: pipe.x,
+    y: pipe.body!.bounds.min.y - 8,
+    vx: 0,
+    vy: 4,
+    age: 0,
+    owner: "player",
+  });
+  tick(s, 8 * dt);
+  assert.equal(pipe.broken, false, "unscaled top does not smash a pipe");
+  assert.ok(s.solids.includes(pipe.body!));
+  s.physics.clear();
+});
+
+test("a scale-8 shot demotes another 8x once and does not smash that body", () => {
+  const s = game();
+  s.marioActive = true;
+  parkNpcs(s, []);
+  stillMario(s);
+  give(s, s.player, "mushroom8x");
+  give(s, s.mario, "mushroom8x");
+  standOnGround(s.player, 180);
+  standOnGround(s.mario, 520);
+  seeShot(s, 180);
+  s.events = [];
+  shoot(
+    s,
+    s.player.body.position.x,
+    s.player.body.position.y,
+    0,
+    T.hugeScale,
+    0,
+    "mario",
+  );
+  tick(s, dt);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.scale, T.giantScale);
+  assert.equal(s.player.hugeLeft, 0);
+  assert.equal(s.mario.scale, T.hugeScale);
+  assert.equal(shrinkCount(s), 1);
+  tick(s, 8 * dt);
+  assert.equal(s.player.scale, T.giantScale);
+  assert.equal(shrinkCount(s), 1);
+  s.physics.clear();
+
+  const back = game();
+  back.marioActive = true;
+  parkNpcs(back, []);
+  stillMario(back);
+  give(back, back.player, "mushroom8x");
+  give(back, back.mario, "mushroom8x");
+  standOnGround(back.player, 180);
+  standOnGround(back.mario, 520);
+  seeShot(back, 520);
+  back.events = [];
+  shoot(
+    back,
+    back.mario.body.position.x,
+    back.mario.body.position.y,
+    0,
+    T.hugeScale,
+    0,
+    "player",
+  );
+  tick(back, dt);
+  assert.equal(back.mario.alive, true);
+  assert.equal(back.mario.scale, 1);
+  assert.equal(back.mario.hugeLeft, 0);
+  assert.equal(back.marioStage, 1);
+  assert.equal(back.player.scale, T.hugeScale);
+  assert.equal(shrinkCount(back), 1);
+  tick(back, 8 * dt);
+  assert.equal(back.mario.scale, 1);
+  assert.equal(shrinkCount(back), 1);
+  back.physics.clear();
+
+  const lone = game();
+  lone.marioActive = true;
+  parkNpcs(lone, []);
+  stillMario(lone);
+  give(lone, lone.player, "mushroom8x");
+  standOnGround(lone.player, 180);
+  seeShot(lone, 180);
+  lone.events = [];
+  shoot(
+    lone,
+    lone.player.body.position.x,
+    lone.player.body.position.y,
+    0,
+    T.hugeScale,
+    0,
+    "mario",
+  );
+  tick(lone, dt);
+  assert.equal(lone.player.alive, true);
+  assert.equal(
+    lone.player.scale,
+    T.hugeScale,
+    "a small shooter's scale-8 shot is still a smaller hit",
+  );
+  assert.equal(shrinkCount(lone), 0);
+  lone.physics.clear();
+});
+
+test("an 8x player's thrown fireball is scale 8 and smashes a brick", () => {
+  const s = game();
+  parkNpcs(s, []);
+  s.pipeIntro = false;
+  const brick = openBrick(s);
+  s.player.flower = true;
+  s.player.facing = 1;
+  at(s, 120, 220);
+  give(s, s.player, "mushroom8x");
+  Body.setPosition(s.player.body, { x: 120, y: 220 });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  seeShot(s, 120);
+  s.events = [];
+  tick(s, dt, { fire: true });
+  assert.equal(s.fireballs.length, 1);
+  const shot = s.fireballs[0]!;
+  assert.equal(shot.scale, T.hugeScale);
+  assert.equal(shot.owner, "player");
+  assert.equal(brick.broken, false);
+  shot.x = brick.body!.bounds.min.x - 6 * T.hugeScale - 2;
+  shot.y = brick.y;
+  shot.vx = 6;
+  shot.vy = 0;
+  shot.age = 0;
+  seeShot(s, brick.x);
+  s.events = [];
+  tick(s, 8 * dt);
+  assert.equal(brick.broken, true);
+  assert.equal(s.fireballs.includes(shot), false);
+  assert.ok(s.events.includes("break"));
+  assert.equal(s.events.filter((event) => event === "bump").length, 0);
   s.physics.clear();
 });
