@@ -289,6 +289,37 @@ test("unlocked title buttons and the stage picker fit short landscape", async ({
   }
 });
 
+test("unlocked title buttons drop 48px under Start Game where they fit", async ({
+  page,
+}) => {
+  for (const { width, height, gap, pair } of [
+    { width: 1280, height: 720, gap: 48, pair: 10 },
+    { width: 1600, height: 900, gap: 48, pair: 10 },
+    { width: 1280, height: 560, gap: 16, pair: 10 },
+    { width: 1600, height: 640, gap: 16, pair: 10 },
+    { width: 320, height: 568, gap: 8, pair: 6 },
+  ]) {
+    const size = `${width}x${height}`;
+    await page.setViewportSize({ width, height });
+    await waitGame(page);
+    const start = page.getByRole("button", { name: "START GAME" });
+    const choose = page.getByRole("button", { name: "Choose stage" });
+    const before = (await start.boundingBox())!;
+    await unlockTitle(page);
+    await expect(unlimitedButton(page), size).toBeInViewport({ ratio: 1 });
+    await expect(choose, size).toBeInViewport({ ratio: 1 });
+    const after = (await start.boundingBox())!;
+    const unlimitedBox = (await unlimitedButton(page).boundingBox())!;
+    const chooseBox = (await choose.boundingBox())!;
+    expect(after.y, size).toBeCloseTo(before.y, 0);
+    expect(unlimitedBox.y - (after.y + after.height), size).toBeCloseTo(gap, 0);
+    expect(chooseBox.y - (unlimitedBox.y + unlimitedBox.height), size).toBeCloseTo(
+      pair,
+      0,
+    );
+  }
+});
+
 test("picking a pipe-intro stage still plays the overworld strip", async ({
   page,
 }) => {
