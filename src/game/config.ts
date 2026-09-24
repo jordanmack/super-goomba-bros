@@ -118,6 +118,10 @@ export const TUNING = {
   mushroomScale: 2,
   giantScale: 3,
   hugeScale: 8,
+  // 3x hitbox is 24*3 = 72. Standing uses this narrower foot so a two-tile
+  // gap (64) does not hold the body. Wider than one tile (32). Walls,
+  // ceilings, and overlap keep the full 72.
+  giantFooting: 60,
   hugeSeconds: 15,
   mushroom3xChance: 0.25,
   mushroom8xChance: 0.1,

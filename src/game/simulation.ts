@@ -9,6 +9,7 @@ import {
   hugeHoldAt,
   hugeHoldFloor,
   hugeHoldVolume,
+  footingWidth,
   overlaps,
   rayBlocked,
 } from "./physics.ts";
@@ -1452,11 +1453,14 @@ export class Simulation {
   }
   private ground(a: Actor) {
     const bottom = a.body.bounds.max.y;
+    const foot = footingWidth(a.body.width);
+    const footMin = a.body.position.x - foot / 2;
+    const footMax = a.body.position.x + foot / 2;
     const onLid = this.solids.some(
       (s) =>
         !s.headOnly &&
-        a.body.bounds.max.x > s.bounds.min.x + 0.01 &&
-        a.body.bounds.min.x < s.bounds.max.x - 0.01 &&
+        footMax > s.bounds.min.x + 0.01 &&
+        footMin < s.bounds.max.x - 0.01 &&
         Math.abs(bottom - s.bounds.min.y) < 12,
     );
     const holdFloor = hugeHoldFloor(
