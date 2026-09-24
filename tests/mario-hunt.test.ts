@@ -88,6 +88,13 @@ test("Mario hunt coverage includes 1-3 and its question block", () => {
   assertLockedIdentity(r, "1-3 question");
 });
 
+test("the 1-2 blocks scene stays at arena 250 and question x 336", () => {
+  const stage = HUNT_STAGES.find((s) => s.id === "1-2")!;
+  const blocks = stage.scenes.find((sc) => sc.name === "blocks")!;
+  assert.equal(blocks.arena, 250, "1-2 blocks arena moved");
+  assert.equal(blocks.questionX, 336, "1-2 question block moved");
+});
+
 test("the 1-2 playtest really is the crowded stage", () => {
   const crowdOf = (id: string) => {
     const stage = HUNT_STAGES.find((s) => s.id === id)!;

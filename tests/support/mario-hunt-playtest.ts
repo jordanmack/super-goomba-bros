@@ -74,7 +74,8 @@ export const HUNT_STAGES: StageSetup[] = [
       // 1-2 keeps all five question blocks in the opening room, so the block
       // ordering has to be read there rather than in the wide arena. A
       // non-small Mario only takes a block within 160px, which bounds how far
-      // this arena can sit from it.
+      // this arena can sit from it. Both facts keep this pursuit-direction
+      // margin narrower than the other rungs.
       {
         name: "blocks",
         arena: 250,
