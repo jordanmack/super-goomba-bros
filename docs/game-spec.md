@@ -341,9 +341,12 @@ The castle door is always open. Reaching it completes the stage:
 3. Leftover TIME ticks to 0 at one unit per frame. SCORE rises +50 per remaining
    TIME unit with a quieter tally beep on one voice.
 4. Then outlined white-on-black lines, no box: WARNED, SAVED, DIED, FLAG, MARIO.
-   Each line is count × points, then SCORE updates. Saves, deaths, and Mario
-   finishes during the tally still count. The five lines scale with the
-   playfield, stay pixelated, and keep that text.
+   Each line is the label, `×` and a two-digit count, then the signed total
+   that line adds to SCORE, such as `DIED × 02 -4000` or `FLAG × 00 +0`. SCORE
+   changes by that total when the line appears. Saves, deaths, and Mario
+   finishes during the tally still count and update their line. The five lines
+   scale with the playfield in whole 8px font steps, keep a one-glyph-pixel
+   black edge, sit on whole pixels, and keep that text.
 5. On castle-door (flagpole) stages, fireworks start when leftover TIME hits 0
    and overlap those lines. They do not wait for the lines to finish, and they
    do not hold auto-advance. castle-room and pipe-goal stages produce none.

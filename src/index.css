@@ -863,16 +863,22 @@ p {
   font-weight: 400;
   color: #faf0b0;
 }
+/* Whole 8px multiples of the Press Start 2P face and a one-glyph-pixel edge
+   keep glyphs and outline on the pixel grid. The width is a multiple of 8px,
+   so the centering shift stays whole once left and top are whole. Its own
+   transparent layer keeps LCD subpixel fringes off the glyphs. */
 .tally {
   --play-h: max(100dvh, 340px);
-  --tally-edge: round(nearest, calc(var(--play-h) * 2 / 540), 1px);
+  --tally-font: max(8px, round(nearest, calc(var(--play-h) * 10 / 540), 8px));
+  --tally-edge: calc(var(--tally-font) / 8);
   position: absolute;
-  top: 22%;
-  left: 50%;
+  top: round(down, 22%, 1px);
+  left: round(down, 50%, 1px);
   transform: translateX(-50%);
+  will-change: transform;
   z-index: 4;
   color: #fff;
-  font-size: round(nearest, calc(var(--play-h) * 10 / 540), 1px);
+  font-size: var(--tally-font);
   line-height: 2;
   text-align: left;
   pointer-events: none;

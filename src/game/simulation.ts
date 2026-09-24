@@ -459,13 +459,19 @@ type SpringRide = {
   riders: SpringRider[];
 };
 const SPRING_POSE: SpringPose[] = ["mid", "compressed", "mid", "extended"];
-const TALLY_LINES: Exclude<TallyPhase, "" | "time" | "ending">[] = [
-  "warned",
-  "saved",
-  "died",
-  "flag",
-  "mario",
-];
+export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
+const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
+/** SCORE change for one tally line: count times that line's points. */
+export function tallyLineScore(line: TallyLine, count: number) {
+  const points = {
+    warned: T.warnedScore,
+    saved: T.savedScore,
+    died: T.diedScore,
+    flag: T.flagScore,
+    mario: T.marioScore,
+  }[line];
+  return count * points;
+}
 
 export class Simulation {
   physics: PhysicsWorld;
@@ -4738,32 +4744,32 @@ export class Simulation {
     if (this.tallyReached("warned")) {
       const extra = this.warned - this.awarded.warned;
       if (extra) {
-        this.score += extra * T.warnedScore;
+        this.score += tallyLineScore("warned", extra);
         this.awarded.warned = this.warned;
       }
     }
     if (this.tallyReached("saved")) {
       const extra = this.saved - this.awarded.saved;
       if (extra) {
-        this.score += extra * T.savedScore;
+        this.score += tallyLineScore("saved", extra);
         this.awarded.saved = this.saved;
       }
     }
     if (this.tallyReached("died")) {
       const extra = this.died() - this.awarded.died;
       if (extra) {
-        this.score += extra * T.diedScore;
+        this.score += tallyLineScore("died", extra);
         this.awarded.died = this.died();
       }
     }
     if (this.tallyReached("flag") && !this.awarded.flag) {
       this.awarded.flag = true;
-      if (this.playerClaimedFlag()) this.score += T.flagScore;
+      if (this.playerClaimedFlag()) this.score += tallyLineScore("flag", 1);
     }
     if (this.tallyReached("mario")) {
       const extra = this.marioKills - this.awarded.mario;
       if (extra) {
-        this.score += extra * T.marioScore;
+        this.score += tallyLineScore("mario", extra);
         this.awarded.mario = this.marioKills;
       }
     }

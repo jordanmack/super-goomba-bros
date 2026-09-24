@@ -15,8 +15,19 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { ENDING_LINE, Simulation, emptyInput } from "./game/simulation";
-import type { Input, ItemKind, Mode, TallyPhase } from "./game/simulation";
+import {
+  ENDING_LINE,
+  Simulation,
+  emptyInput,
+  tallyLineScore,
+} from "./game/simulation";
+import type {
+  Input,
+  ItemKind,
+  Mode,
+  TallyLine,
+  TallyPhase,
+} from "./game/simulation";
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
@@ -121,6 +132,13 @@ const TALLY_LINES = ["warned", "saved", "died", "flag", "mario"] as const;
 function formatScore(n: number) {
   const body = String(Math.abs(n)).padStart(6, "0");
   return n < 0 ? `-${body}` : body;
+}
+/** Label, two-digit count, then the signed total the line adds to SCORE. */
+function tallyText(line: TallyLine, count: number) {
+  const total = tallyLineScore(line, count);
+  const count2 = String(count).padStart(2, "0");
+  const signed = `${total < 0 ? "-" : "+"}${Math.abs(total)}`;
+  return `${line.toUpperCase()} × ${count2} ${signed}`;
 }
 function tallyVisible(phase: TallyPhase, line: (typeof TALLY_LINES)[number]) {
   if (phase === "ending") return true;
@@ -777,27 +795,27 @@ export default function App() {
             <div className="tally" aria-label="Stage tally">
               {tallyVisible(state.tallyPhase, "warned") && (
                 <div data-testid="tally-warned">
-                  WARNED {String(state.warned).padStart(2, "0")} × {T.warnedScore}
+                  {tallyText("warned", state.warned)}
                 </div>
               )}
               {tallyVisible(state.tallyPhase, "saved") && (
                 <div data-testid="tally-saved">
-                  SAVED {String(state.saved).padStart(2, "0")} × {T.savedScore}
+                  {tallyText("saved", state.saved)}
                 </div>
               )}
               {tallyVisible(state.tallyPhase, "died") && (
                 <div data-testid="tally-died">
-                  DIED {String(state.died).padStart(2, "0")} × {T.diedScore}
+                  {tallyText("died", state.died)}
                 </div>
               )}
               {tallyVisible(state.tallyPhase, "flag") && (
                 <div data-testid="tally-flag">
-                  FLAG {state.flagClaim ? 1 : 0} × {T.flagScore}
+                  {tallyText("flag", state.flagClaim ? 1 : 0)}
                 </div>
               )}
               {tallyVisible(state.tallyPhase, "mario") && (
                 <div data-testid="tally-mario">
-                  MARIO {state.marioKills} × {T.marioScore}
+                  {tallyText("mario", state.marioKills)}
                 </div>
               )}
             </div>
