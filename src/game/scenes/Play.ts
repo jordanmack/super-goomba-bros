@@ -19,6 +19,7 @@ import {
   type Simulation,
 } from "../simulation";
 import {
+  BULLET_BILL_DRAW_Y,
   flagTextureKey,
   SPRING_DRAW,
   SWEAT_DROP_HEIGHT,
@@ -349,7 +350,9 @@ export class Play extends Phaser.Scene {
         10,
       ).setRotation(((Math.floor(f.age * 12) % 4) * Math.PI) / 2);
     for (const b of sim.bulletBills)
-      image(b.x, b.y, 32, 32, "bulletBill", 9).setFlipX(b.vx < 0);
+      image(b.x, b.y + BULLET_BILL_DRAW_Y, 32, 32, "bulletBill", 9).setFlipX(
+        b.vx < 0,
+      );
     for (const p of sim.particles)
       image(
         p.x,

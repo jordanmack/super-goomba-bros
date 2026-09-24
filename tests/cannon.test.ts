@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,10 @@ import {
   emptyInput,
 } from "../src/game/simulation.ts";
 import { CANNON_BLAST, TUNING as T } from "../src/game/config.ts";
-import { BULLET_BILL_CROP } from "../src/game/smb-sprites.ts";
+import {
+  BULLET_BILL_CROP,
+  BULLET_BILL_DRAW_Y,
+} from "../src/game/smb-sprites.ts";
 import { CAMPAIGN } from "../src/game/levels.ts";
 import type { Input } from "../src/game/simulation.ts";
 
@@ -180,10 +184,10 @@ test("a cannon withholds fire when the player is too close or in line", () => {
   );
 });
 
-test("Bullet Bill crop is the 16x16 at (300, 94), drawn 32x32 facing travel", () => {
+test("Bullet Bill crop is the 16x16 at (60, 125), drawn 32x32 facing travel", () => {
   assert.deepEqual(BULLET_BILL_CROP, {
-    x: 300,
-    y: 94,
+    x: 60,
+    y: 125,
     width: 16,
     height: 16,
   });
@@ -193,8 +197,38 @@ test("Bullet Bill crop is the 16x16 at (300, 94), drawn 32x32 facing travel", ()
   assert.match(sprites, /bulletBill: crop\(\s*enemies,\s*BULLET_BILL_CROP\.x/);
   assert.match(
     play,
-    /image\(b\.x, b\.y, 32, 32, "bulletBill", 9\)\.setFlipX\(b\.vx < 0\)/,
+    /image\(b\.x, b\.y \+ BULLET_BILL_DRAW_Y, 32, 32, "bulletBill", 9\)\.setFlipX\(\s*b\.vx < 0,?\s*\)/,
   );
+
+  // Play flips only when vx < 0, so the source must point its nose right:
+  // the square back band fills the left column and the round nose tapers
+  // to a few pixels in the right column.
+  const { x, y, width: w, height: h } = BULLET_BILL_CROP;
+  const rgba = execFileSync(
+    "convert",
+    [
+      join(root, "src/assets/smb/enemies.png"),
+      "-crop",
+      `${w}x${h}+${x}+${y}`,
+      "-depth",
+      "8",
+      "rgba:-",
+    ],
+    { maxBuffer: 1e6 },
+  );
+  const opaque = (px: number, py: number) => rgba[(py * w + px) * 4 + 3]! >= 128;
+  const count = (n: number, hit: (i: number) => boolean) => {
+    let total = 0;
+    for (let i = 0; i < n; i++) if (hit(i)) total++;
+    return total;
+  };
+  const column = (px: number) => count(h, (py) => opaque(px, py));
+  const row = (py: number) => count(w, (px) => opaque(px, py));
+  assert.equal(column(0), 14, "back band on the left");
+  assert.ok(column(w - 1) <= 4, "nose tip on the right");
+  assert.ok(row(0) > 0 && row(13) > 0, "14 rows of art");
+  assert.equal(row(14) + row(15), 0, "2 clear rows under the art");
+  assert.equal(BULLET_BILL_DRAW_Y, 2, "one clear source row down centers it");
 });
 
 test("a cannon shot plays the fireworks blast only when the bill leaves", () => {

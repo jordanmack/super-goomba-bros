@@ -438,8 +438,11 @@ function pixelPulley() {
   return canvas;
 }
 
-// (304, 96) starts 4px right and 2px down, so the left fins are missing.
-export const BULLET_BILL_CROP = { x: 300, y: 94, width: 16, height: 16 };
+// The bill at (60, 125) faces right. (0, 125) is its left-facing mirror, so
+// Play flips this crop only when the bill flies left. The art is 14px tall
+// over 2 clear rows. Drawn 2x, it moves 2px down to center on the barrel.
+export const BULLET_BILL_CROP = { x: 60, y: 125, width: 16, height: 16 };
+export const BULLET_BILL_DRAW_Y = 2;
 
 // Three JumpspringObject poses on the overworld strip of items.png.
 // Extended is idle and the launch pose. Mid and compressed are the squash.
