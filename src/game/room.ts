@@ -39,6 +39,7 @@ export type Cannon = {
 };
 
 /** SMB1 enemy IDs from the bundled disassembly InitEnemyRoutines table. */
+export const ENEMY_HAMMER_BRO = 5;
 export const ENEMY_FISH = 7;
 export const ENEMY_LAKITU = 17;
 export const ENEMY_BALANCE_LIFT = 36;
@@ -47,6 +48,7 @@ export const ENEMY_PLATFORM_MIN = 36;
 export const ENEMY_PLATFORM_MAX = 44;
 
 export type EnemyRole =
+  | "hammer-bro"
   | "fish"
   | "lakitu"
   | "balance-lift"
@@ -56,6 +58,7 @@ export type EnemyRole =
   | "other";
 
 export function enemyRole(type: number): EnemyRole {
+  if (type === ENEMY_HAMMER_BRO) return "hammer-bro";
   if (type === ENEMY_FISH) return "fish";
   if (type === ENEMY_LAKITU) return "lakitu";
   if (isFirebarType(type)) return "firebar";

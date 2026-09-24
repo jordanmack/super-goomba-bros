@@ -275,6 +275,22 @@ export class Play extends Phaser.Scene {
     for (const flame of sim.bowserFlames)
       if (flame.areaId === room.data.id)
         image(flame.x, flame.y, 48, 16, "bowserFlame", 10).setFlipX(flame.vx < 0);
+    for (const bro of sim.hammerBros) {
+      if (!bro.alive || bro.areaId !== room.data.id) continue;
+      image(
+        bro.body.position.x,
+        bro.body.bounds.max.y - 24,
+        32,
+        48,
+        Math.floor(sim.elapsed * 6) % 2 ? "hammerBroWalk" : "hammerBro",
+        8,
+      ).setFlipX(bro.facing > 0);
+    }
+    for (const hammer of sim.hammers)
+      if (hammer.areaId === room.data.id)
+        image(hammer.x, hammer.y, 32, 32, "hammer", 10).setFlipX(
+          hammer.vx < 0 || (hammer.vx === 0 && hammer.facing < 0),
+        );
     for (const lakitu of sim.lakitus) {
       if (!lakitu.alive || lakitu.areaId !== room.data.id) continue;
       image(

@@ -179,6 +179,28 @@ export const TUNING = {
   lakituThrow: 2.2,
   lakituSpikeCap: 4,
   spikeThrowVy: 1.5,
+  // Hammer Bro. NES speeds are 2x, matching shellSpeed and bulletSpeed.
+  // Shimmy Enemy_X_Speed is $04/$fc (0.25 px/frame). Chase after the walk
+  // timer is $f8. Jump Y is $fa or $fd. Throw timer is HammerThrowTmrData $30.
+  hammerBroWidth: 24,
+  hammerBroHeight: 40,
+  hammerBroShimmy: 0.5,
+  hammerBroChase: 1,
+  hammerBroWalkFrames: 0x80,
+  hammerBroJumpHigh: 12,
+  hammerBroJumpLow: 6,
+  hammerBroJumpMin: 0xc0,
+  hammerThrowFrames: 0x30,
+  // Misc_State counts from $10 down to $02 before the hammer leaves the hand.
+  hammerWindupFrames: 14,
+  // HammerXSpdData $10 and launch Y $fe.
+  hammerSpeed: 2,
+  hammerThrowVy: -4,
+  // ImposeGravity adds $10 to the fraction byte: 1 px / 16 frames.
+  // 2x tiles use 0.125, the same scale as the -4 launch and the max of 8.
+  hammerGravity: 0.125,
+  hammerMaxVy: 8,
+  hammerSlots: 9,
 } as const;
 
 export function blockDrawY(y: number, bounce: number) {

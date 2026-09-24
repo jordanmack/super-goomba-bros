@@ -2,7 +2,7 @@
 // simulation and ordinary Input actions. It never changes production controls.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { Simulation, emptyInput } from "../../src/game/simulation.ts";
-import type { BulletBill } from "../../src/game/simulation.ts";
+import type { BulletBill, Hammer } from "../../src/game/simulation.ts";
 import { Body } from "../../src/game/physics.ts";
 import { CAMPAIGN, areaData } from "../../src/game/levels.ts";
 import { TUNING as T } from "../../src/game/config.ts";
@@ -28,6 +28,21 @@ type State = {
   cannonTimers: Record<string, number[]>;
   cannonTurn: Record<string, number[]>;
   cannonLfsr: number[];
+  frame: number;
+  bros: {
+    id: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    facing: number;
+    alive: boolean;
+    grounded: boolean;
+    jumpTimer: number;
+    throwTimer: number;
+    walkTimer: number;
+  }[];
+  hammers: Hammer[];
 };
 type Node = {
   state: State;
@@ -121,6 +136,21 @@ function capture(sim: Simulation): State {
     cannonTurn: Object.fromEntries(
       [...sim.rooms].map(([id, room]) => [id, [...room.cannonTurn]]),
     ),
+    frame: sim.frame,
+    bros: sim.hammerBros.map((bro) => ({
+      id: bro.id,
+      x: bro.body.position.x,
+      y: bro.body.position.y,
+      vx: bro.body.velocity.x,
+      vy: bro.body.velocity.y,
+      facing: bro.facing,
+      alive: bro.alive,
+      grounded: bro.grounded,
+      jumpTimer: bro.jumpTimer,
+      throwTimer: bro.throwTimer,
+      walkTimer: bro.walkTimer,
+    })),
+    hammers: sim.hammers.map((hammer) => ({ ...hammer })),
   };
 }
 function restore(sim: Simulation, state: State) {
@@ -160,11 +190,42 @@ function restore(sim: Simulation, state: State) {
   Object.assign(sim, {
     mode: "playing",
     elapsed: state.time,
+    frame: state.frame,
     jumped: state.jumpHeld,
     playerPace: state.pace,
     marioReturn: 1e6,
     marioActive: false,
   });
+  // Hammer Bros are not in the player snapshot. Rewind them with the branch,
+  // or a later candidate dodges a hammer that only existed on another path.
+  for (const snap of state.bros) {
+    const bro = sim.hammerBros.find((item) => item.id === snap.id);
+    if (!bro) continue;
+    const inWorld = sim.physics.bodies.has(bro.body);
+    if (snap.alive && !inWorld) {
+      bro.body = sim.physics.rectangle(
+        snap.x,
+        snap.y,
+        T.hammerBroWidth,
+        T.hammerBroHeight,
+      );
+      Body.setVelocity(bro.body, { x: snap.vx, y: snap.vy });
+    } else if (!snap.alive && inWorld) sim.physics.remove(bro.body);
+    else if (snap.alive) {
+      Body.setPosition(bro.body, { x: snap.x, y: snap.y });
+      Body.setVelocity(bro.body, { x: snap.vx, y: snap.vy });
+    }
+    bro.facing = snap.facing;
+    bro.alive = snap.alive;
+    bro.grounded = snap.grounded;
+    bro.jumpTimer = snap.jumpTimer;
+    bro.throwTimer = snap.throwTimer;
+    bro.walkTimer = snap.walkTimer;
+  }
+  sim.hammers = state.hammers.map((hammer) => ({ ...hammer }));
+  (
+    sim as unknown as { hammerHugeHold: Map<unknown, unknown> }
+  ).hammerHugeHold.clear();
   sim.player.jumpHeld = state.jumpHeld;
   sim.player.jumpHoldG = state.jumpHoldG;
   sim.player.jumpFallG = state.jumpFallG;
@@ -206,6 +267,20 @@ function macros(sim: Simulation, state: State): Macro[] {
     if (sim.activeRoom.platforms.length || sim.activeRoom.firebars.length) {
       add("wait", 0, 20);
       add("wait", 0, 40);
+    }
+    // A Hammer Bro on the ground fills the corridor until he jumps. Waiting
+    // is how the recorded route slips under that jump.
+    if (
+      sim.hammerBros.some(
+        (bro) =>
+          bro.alive &&
+          bro.areaId === sim.player.areaId &&
+          Math.abs(bro.body.position.x - state.x) < 420,
+      )
+    ) {
+      for (const frames of [15, 30, 45, 70, 100]) add("wait", 0, frames);
+      add("walk", 1, 24, 0, 1, true);
+      add("walk", 1, 40, 0, 1, true);
     }
   } else {
     for (const direction of [1, 0, -1]) {
@@ -400,7 +475,26 @@ function search(index: number) {
         )
         .sort()
         .join("|");
-      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${billPhase}:${state.hidden.join(",")}`;
+      // Hammers move on their own. A cell the player already visited is not
+      // the same cell when a hammer now crosses it.
+      const hammerPhase = [
+        ...state.bros
+          .filter((bro) => bro.alive && Math.abs(bro.x - state.x) < 280)
+          .map(
+            (bro) =>
+              `b${Math.round((bro.x - state.x) / 24)},${Math.round((bro.y - state.y) / 24)}`,
+          ),
+        ...state.hammers
+          .filter(
+            (hammer) =>
+              hammer.areaId === state.area && Math.abs(hammer.x - state.x) < 280,
+          )
+          .map(
+            (hammer) =>
+              `h${Math.round((hammer.x - state.x) / 24)},${Math.round((hammer.y - state.y) / 24)}v${Math.sign(hammer.vx)}`,
+          ),
+      ].join("|");
+      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${billPhase}:${hammerPhase}:${state.hidden.join(",")}`;
       if ((visited.get(key) ?? Infinity) <= cost) continue;
       visited.set(key, cost);
       const dx =

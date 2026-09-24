@@ -34,6 +34,14 @@ function crop(
   return canvas;
 }
 
+// Overworld Hammer Bro frames face left. (180, 90) and (210, 90) are the
+// right-facing mirrors. The hammer is the vertical frame beside that row.
+export const HAMMER_BRO_SHEET = {
+  stand: { x: 120, y: 90, width: 16, height: 24 },
+  walk: { x: 150, y: 90, width: 16, height: 24 },
+  hammer: { x: 282, y: 86, width: 16, height: 16 },
+} as const;
+
 export function characterSprites({ mario, enemies }: SpriteSources) {
   const goomba = crop(enemies, 0, 4, 16, 16);
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
@@ -43,6 +51,28 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
   // would reverse him every other frame. (30, 90) is the cloud pose.
   const lakitu = crop(enemies, 0, 90, 16, 24);
   const lakituWalk = crop(enemies, 30, 90, 16, 24);
+  // Overworld frames, not the teal row at y=120. The hammer is not a shot.
+  const hammerBro = crop(
+    enemies,
+    HAMMER_BRO_SHEET.stand.x,
+    HAMMER_BRO_SHEET.stand.y,
+    HAMMER_BRO_SHEET.stand.width,
+    HAMMER_BRO_SHEET.stand.height,
+  );
+  const hammerBroWalk = crop(
+    enemies,
+    HAMMER_BRO_SHEET.walk.x,
+    HAMMER_BRO_SHEET.walk.y,
+    HAMMER_BRO_SHEET.walk.width,
+    HAMMER_BRO_SHEET.walk.height,
+  );
+  const hammer = crop(
+    enemies,
+    HAMMER_BRO_SHEET.hammer.x,
+    HAMMER_BRO_SHEET.hammer.y,
+    HAMMER_BRO_SHEET.hammer.width,
+    HAMMER_BRO_SHEET.hammer.height,
+  );
   // y=180 is four blank rows. The feet sit on y=199, so the 16px frame starts at 184.
   const spike = crop(enemies, 0, 184, 16, 16, true);
   const spikeWalk = crop(enemies, 30, 184, 16, 16, true);
@@ -69,6 +99,9 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     fishWalk,
     lakitu,
     lakituWalk,
+    hammerBro,
+    hammerBroWalk,
+    hammer,
     spike,
     spikeWalk,
     koopa,

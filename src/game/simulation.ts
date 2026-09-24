@@ -330,6 +330,32 @@ export type Lakitu = {
   alive: boolean;
   throwWait: number;
 };
+export type HammerBro = {
+  id: number;
+  areaId: string;
+  column: number;
+  body: Body;
+  facing: number;
+  alive: boolean;
+  grounded: boolean;
+  // Frame counters. Jump timing is per column so a Bro does not draw from
+  // the rescue random stream.
+  jumpTimer: number;
+  throwTimer: number;
+  walkTimer: number;
+};
+export type Hammer = {
+  id: number;
+  broId: number;
+  areaId: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  facing: number;
+  age: number;
+  windup: number;
+};
 export type MushroomKind = "mushroom" | "mushroom3x" | "mushroom8x";
 export type ItemKind = "star" | "flower" | "oneUp" | MushroomKind;
 export const isMushroom = (kind: ItemKind): kind is MushroomKind =>
@@ -1054,6 +1080,8 @@ export class Simulation {
   bowsers: Bowser[] = [];
   bowserFlames: BowserFlame[] = [];
   lakitus: Lakitu[] = [];
+  hammerBros: HammerBro[] = [];
+  hammers: Hammer[] = [];
   items: Item[] = [];
   private springRides: SpringRide[] = [];
   vines: Vine[] = [];
@@ -1136,6 +1164,12 @@ export class Simulation {
   // Hold each victim until that overlap ends, including after Mario leaves 8x.
   private hugeContactHold = new Set<Actor>();
   private marioHugeHold = new Set<Actor>();
+  // 8x demotion only. The same overlap must not also shrink. A new
+  // hammer or Bro is a separate hit.
+  private hammerHugeHold = new Map<
+    Actor,
+    { bros: Set<number>; hammers: Set<number> }
+  >();
   private timerAcc = 0;
   private timerStarted = false;
   private awarded = { warned: 0, saved: 0, died: 0, flag: false, mario: 0 };
@@ -1162,6 +1196,8 @@ export class Simulation {
     this.bowsers = [];
     this.bowserFlames = [];
     this.lakitus = [];
+    this.hammerBros = [];
+    this.hammers = [];
     const retry =
       mode !== "title" &&
       this.retrySpawn &&
@@ -1281,6 +1317,7 @@ export class Simulation {
     this.bouncedNpcs.clear();
     this.hugeContactHold.clear();
     this.marioHugeHold.clear();
+    this.hammerHugeHold.clear();
     this.flagPrevPlayerX = this.player.body.position.x;
     this.flagPrevMarioX = this.mario.body.position.x;
     this.shellStomps.clear();
@@ -1299,6 +1336,7 @@ export class Simulation {
   private spawnLevelActors(room: Room) {
     if (room.spawnedActors) return;
     room.spawnedActors = true;
+    this.spawnHammerBros(room);
     if (room.data.type !== "water") return;
     for (const enemy of room.data.enemies) {
       if (enemyRole(enemy.type) !== "fish") continue;
@@ -1321,6 +1359,355 @@ export class Simulation {
         if (overlaps(fish.body, room.solids, 0.01).length) this.fitActor(fish);
       }
       this.npcs.push(fish);
+    }
+  }
+
+  // Type 5 is outside the land population and outside WARNED, SAVED, and DIED.
+  private spawnHammerBros(room: Room) {
+    for (const enemy of room.data.enemies) {
+      if (enemyRole(enemy.type) !== "hammer-bro") continue;
+      const body = this.physics.rectangle(
+        0,
+        0,
+        T.hammerBroWidth,
+        T.hammerBroHeight,
+        false,
+      );
+      this.placeHammerBro(room, enemy.column, enemy.row, body);
+      this.hammerBros.push({
+        id: this.nextId++,
+        areaId: room.data.id,
+        column: enemy.column,
+        body,
+        facing: -1,
+        alive: true,
+        grounded: true,
+        jumpTimer: 0,
+        throwTimer: 0,
+        walkTimer: T.hammerBroWalkFrames,
+      });
+    }
+  }
+
+  private placeHammerBro(
+    room: Room,
+    column: number,
+    row: number,
+    body: Body,
+  ) {
+    const x = room.offset + column * 32 + 16;
+    const rowTop = MAP_TOP + row * 32;
+    const half = body.width / 2;
+    const floors = room.solids.filter(
+      (solid) =>
+        !solid.headOnly &&
+        x + half > solid.bounds.min.x &&
+        x - half < solid.bounds.max.x &&
+        solid.bounds.min.y >= rowTop - 1,
+    );
+    floors.sort((a, b) => a.bounds.min.y - b.bounds.min.y);
+    const floor = floors[0];
+    Body.setPosition(body, {
+      x,
+      y: floor
+        ? floor.bounds.min.y - body.height / 2
+        : T.groundY - body.height / 2,
+    });
+    Body.setVelocity(body, { x: 0, y: 0 });
+  }
+
+  // Idle until the player is close. The whole view is too wide: a Bro would
+  // jump and land again before the player reaches the column. SMB spawns him
+  // at the screen edge, so the first jump is the one the player meets.
+  private broCanThrow(bro: HammerBro) {
+    if (this.player.areaId !== bro.areaId || this.inPipe(this.player))
+      return false;
+    const dx = this.player.body.position.x - bro.body.position.x;
+    // Vertical distance must not freeze a Bro who is on screen above the
+    // floor. 5-2 column 124 stands near y=154 while the player is at y=416.
+    return Math.abs(dx) < 240;
+  }
+
+  private broOnGround(bro: HammerBro) {
+    const bottom = bro.body.bounds.max.y;
+    const half = footingWidth(bro.body.width) / 2;
+    return this.solids.some(
+      (solid) =>
+        !solid.headOnly &&
+        bro.body.position.x + half > solid.bounds.min.x &&
+        bro.body.position.x - half < solid.bounds.max.x &&
+        bottom >= solid.bounds.min.y - 2 &&
+        bottom <= solid.bounds.min.y + 10 &&
+        bro.body.velocity.y >= -0.2,
+    );
+  }
+
+  private updateHammerBros(dt: number) {
+    const frames = dt * 60;
+    for (const bro of this.hammerBros) {
+      if (!bro.alive) continue;
+      if (bro.body.position.y > 640) {
+        bro.alive = false;
+        this.physics.remove(bro.body);
+        continue;
+      }
+      // Spawned at load, but idle until the player is close. Otherwise every
+      // Bro jumps and walks off before the player arrives. Timers stay put,
+      // the same way an offscreen throw does. A jump already in the air
+      // finishes; zeroing it would leave him hanging.
+      if (!this.broCanThrow(bro)) {
+        if (this.broOnGround(bro)) Body.setVelocity(bro.body, { x: 0, y: 0 });
+        continue;
+      }
+      bro.grounded = this.broOnGround(bro);
+      const playerLeft =
+        this.player.areaId === bro.areaId &&
+        this.player.body.position.x < bro.body.position.x;
+      bro.facing = playerLeft ? -1 : 1;
+      if (bro.walkTimer > 0) bro.walkTimer -= frames;
+      const chase = playerLeft && bro.walkTimer <= 0;
+      const shimmy =
+        (this.frame & 0x40) === 0 ? -T.hammerBroShimmy : T.hammerBroShimmy;
+      let jumped = false;
+      if (bro.jumpTimer > 0) bro.jumpTimer -= frames;
+      else if (bro.grounded) {
+        const low = bro.body.position.y > MAP_TOP + 8 * 32;
+        Body.setVelocity(bro.body, {
+          x: chase ? -T.hammerBroChase : shimmy,
+          y: -(low ? T.hammerBroJumpHigh : T.hammerBroJumpLow),
+        });
+        bro.grounded = false;
+        bro.jumpTimer = T.hammerBroJumpMin + (bro.column % 64);
+        jumped = true;
+      }
+      if (!jumped)
+        Body.setVelocity(bro.body, {
+          x: chase ? -T.hammerBroChase : shimmy,
+          y: bro.body.velocity.y,
+        });
+      if (jumped || !this.broCanThrow(bro)) continue;
+      if (bro.throwTimer > 0) {
+        bro.throwTimer -= frames;
+        continue;
+      }
+      if (this.hammers.length >= T.hammerSlots) continue;
+      bro.throwTimer = T.hammerThrowFrames;
+      this.hammers.push({
+        id: this.nextId++,
+        broId: bro.id,
+        areaId: bro.areaId,
+        x: bro.body.position.x + 4,
+        y: bro.body.bounds.min.y - 8,
+        vx: 0,
+        vy: 0,
+        facing: bro.facing,
+        age: 0,
+        windup: T.hammerWindupFrames,
+      });
+    }
+    const keep: Hammer[] = [];
+    for (const hammer of this.hammers) {
+      hammer.age += dt;
+      if (hammer.windup > 0) {
+        const bro = this.hammerBros.find(
+          (item) => item.id === hammer.broId && item.alive,
+        );
+        if (!bro) {
+          // Still in the hand. Do not launch it from a dead Bro.
+          if (hammer.windup > 0) continue;
+        } else {
+          hammer.x = bro.body.position.x + 4;
+          hammer.y = bro.body.bounds.min.y - 8;
+          hammer.facing = bro.facing;
+          hammer.windup -= frames;
+          if (hammer.windup <= 0) {
+            hammer.vx = bro.facing * T.hammerSpeed;
+            hammer.vy = T.hammerThrowVy;
+          }
+        }
+      }
+      if (hammer.windup <= 0) {
+        hammer.vy = Math.min(
+          T.hammerMaxVy,
+          hammer.vy + T.hammerGravity * frames,
+        );
+        hammer.x += hammer.vx * frames;
+        hammer.y += hammer.vy * frames;
+      }
+      const room = this.rooms.get(hammer.areaId);
+      if (
+        hammer.age > 6 ||
+        hammer.y > 680 ||
+        (room &&
+          (hammer.x < room.offset - 80 ||
+            hammer.x > room.offset + room.data.width * 32 + 80))
+      )
+        continue;
+      keep.push(hammer);
+    }
+    this.hammers = keep;
+  }
+
+  private defeatHammerBro(bro: HammerBro) {
+    if (!bro.alive) return;
+    bro.alive = false;
+    this.physics.remove(bro.body);
+    this.hammers = this.hammers.filter(
+      (hammer) => hammer.broId !== bro.id || hammer.windup <= 0,
+    );
+    this.burst(bro.body.position.x, bro.body.position.y, true);
+    this.events.push("splat");
+  }
+
+  private marioStompsBro(
+    bro: HammerBro,
+    prevTop: number,
+    bottom: number,
+    falling: boolean,
+  ) {
+    if (!falling || this.mario.areaId !== bro.areaId) return false;
+    const top = bro.body.bounds.min.y;
+    const m = this.mario;
+    if (
+      Math.abs(m.body.position.x - bro.body.position.x) >=
+      (m.body.width + bro.body.width) / 2
+    )
+      return false;
+    // Previous tops, same as an NPC stomp. A Bro who jumps during the step
+    // would otherwise rise out of the 8px band and the fall would count as a hit.
+    return bottom <= prevTop + 8 && m.body.bounds.max.y >= top - 1;
+  }
+
+  private actorHitsHammer(a: Actor, hammer: Hammer) {
+    if (hammer.windup > 0) return false;
+    return (
+      (a.areaId ?? this.level.main) === hammer.areaId &&
+      Math.abs(a.body.position.x - hammer.x) < a.body.width / 2 + 10 &&
+      Math.abs(a.body.position.y - hammer.y) < a.body.height / 2 + 10
+    );
+  }
+
+  private actorHitsBro(a: Actor, bro: HammerBro) {
+    return (
+      bro.alive &&
+      (a.areaId ?? this.level.main) === bro.areaId &&
+      Math.abs(a.body.position.x - bro.body.position.x) <
+        (a.body.width + bro.body.width) / 2 &&
+      Math.abs(a.body.position.y - bro.body.position.y) <
+        (a.body.height + bro.body.height) / 2
+    );
+  }
+
+  private hammerHazards(a: Actor) {
+    return {
+      bros: this.hammerBros.filter((bro) => this.actorHitsBro(a, bro)),
+      hammers: this.hammers.filter((hammer) => this.actorHitsHammer(a, hammer)),
+    };
+  }
+
+  private rememberHugeHammer(a: Actor) {
+    const touch = this.hammerHazards(a);
+    this.hammerHugeHold.set(a, {
+      bros: new Set(touch.bros.map((bro) => bro.id)),
+      hammers: new Set(touch.hammers.map((hammer) => hammer.id)),
+    });
+  }
+
+  private freshHammerHazard(a: Actor) {
+    const touch = this.hammerHazards(a);
+    if (!touch.bros.length && !touch.hammers.length) return false;
+    const hold = this.hammerHugeHold.get(a);
+    if (!hold) return true;
+    return (
+      touch.bros.some((bro) => !hold.bros.has(bro.id)) ||
+      touch.hammers.some((hammer) => !hold.hammers.has(hammer.id))
+    );
+  }
+
+  // Same split as a fireball: star and a lone 8x ignore it. Both sides at 8x
+  // demote once. Anything else uses hurt or one Mario power stage.
+  private applyHammerHurt(a: Actor) {
+    if (!a.alive || a.saved || this.inPipe(a)) return false;
+    if (!this.freshHammerHazard(a)) return false;
+    if (a === this.mario) {
+      if (!this.marioActive || this.marioStun > 0 || this.mario.starLeft > 0)
+        return false;
+      if (this.isHuge(this.mario) && this.isHuge(this.player)) {
+        this.demoteHuge(this.mario);
+        this.rememberHugeHammer(this.mario);
+        return true;
+      }
+      const stage = this.marioStage;
+      this.hitMarioByFireball(false);
+      return this.marioStage !== stage || !this.mario.alive;
+    }
+    if (a.starLeft > 0) return false;
+    if (this.isHuge(a) && this.isHuge(this.mario)) {
+      this.demoteHuge(a);
+      this.rememberHugeHammer(a);
+      return true;
+    }
+    return this.hurt(a);
+  }
+
+  private resolveHammerHits(
+    marioBottom: number,
+    marioFalling: boolean,
+    prevBroTops: Map<number, number>,
+  ) {
+    if (this.mode !== "playing") return;
+    if (this.marioActive && this.mario.alive && this.marioStun === 0)
+      for (const bro of this.hammerBros) {
+        if (!bro.alive) continue;
+        const prevTop = prevBroTops.get(bro.id);
+        if (prevTop === undefined) continue;
+        if (!this.marioStompsBro(bro, prevTop, marioBottom, marioFalling))
+          continue;
+        this.defeatHammerBro(bro);
+        Body.setVelocity(this.mario.body, {
+          x: this.mario.body.velocity.x,
+          y: -T.stompBounce,
+        });
+      }
+    for (const [actor, hold] of [...this.hammerHugeHold]) {
+      const touch = this.hammerHazards(actor);
+      const liveBros = new Set(touch.bros.map((bro) => bro.id));
+      const liveHammers = new Set(touch.hammers.map((hammer) => hammer.id));
+      for (const id of [...hold.bros]) if (!liveBros.has(id)) hold.bros.delete(id);
+      for (const id of [...hold.hammers])
+        if (!liveHammers.has(id)) hold.hammers.delete(id);
+      if (
+        !actor.alive ||
+        actor.saved ||
+        (hold.bros.size === 0 && hold.hammers.size === 0)
+      )
+        this.hammerHugeHold.delete(actor);
+    }
+    const actors = [
+      this.player,
+      ...this.npcs,
+      ...(this.marioActive ? [this.mario] : []),
+    ];
+    // Read the pair before any demotion. Otherwise the player drops to 3x
+    // first and Mario's both-8x check never runs.
+    const pairHuge =
+      this.marioActive && this.isHuge(this.player) && this.isHuge(this.mario);
+    for (const a of actors) {
+      if (!a.alive || a.saved || this.inPipe(a)) continue;
+      if (!this.freshHammerHazard(a)) continue;
+      if (
+        pairHuge &&
+        this.isHuge(a) &&
+        (a === this.player || a === this.mario)
+      ) {
+        // A star ignores the hit. The other 8x actor still demotes.
+        if (a.starLeft <= 0) {
+          this.demoteHuge(a);
+          this.rememberHugeHammer(a);
+        }
+        continue;
+      }
+      this.applyHammerHurt(a);
     }
   }
 
@@ -4613,6 +5000,7 @@ export class Simulation {
       this.updateNpcs(dt);
       this.updateCrowd(dt);
       this.updateLakitu(dt);
+      this.updateHammerBros(dt);
     }
     if (!scripted) this.updateMario(dt);
     for (const a of [this.player, ...this.npcs, this.mario]) {
@@ -4647,6 +5035,9 @@ export class Simulation {
     const playerFalling = this.player.body.velocity.y > 0.2;
     const marioBottom = this.mario.body.bounds.max.y;
     const marioFalling = this.mario.body.velocity.y > 0.2;
+    const prevBroTops = new Map<number, number>();
+    for (const bro of this.hammerBros)
+      if (bro.alive) prevBroTops.set(bro.id, bro.body.bounds.min.y);
     const prevNpcTops = new Map<Actor, number>();
     for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
     // Mario and NPCs on land keep a jump that starts on a wall face.
@@ -4738,6 +5129,7 @@ export class Simulation {
       marioFalling,
     );
     this.updateCastleHazards(dt);
+    this.resolveHammerHits(marioBottom, marioFalling, prevBroTops);
     this.updateFlagpoles(dt);
     if (this.mode === "finishing") {
       this.stepTally(dt);

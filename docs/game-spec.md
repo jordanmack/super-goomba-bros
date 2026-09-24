@@ -233,6 +233,17 @@ the player or other NPCs. Any contact with a spike character defeats Mario.
 He never chooses a spike character as a stomp target. Fireballs, star, and 8x
 keep their existing rules.
 
+3-1, 5-2, 7-1, 8-3, and 8-4 spawn one Hammer Bro at each original type-5
+placement. They are not part of the land population of 30, and they are not
+rescue NPCs, so they are not in WARNED, SAVED, or DIED. They walk a short beat,
+jump, and throw hammers. A hammer arcs and does not break blocks. A hammer or
+contact with the Bro uses the existing hurt rules: it shrinks or kills the
+player and an NPC, adds that NPC death to DIED, and drops Mario one power
+stage. A star ignores the hit. A lone 8x ignores it. When both sides are 8x,
+the hit demotes once and does not drop another stage. Mario's stomp defeats
+the Bro. The player does not stomp or rescue him. The Bro and the hammer use
+art from the enemy sheet.
+
 Unwarned NPCs patrol, pause, turn, and step off safe surfaces. They avoid lethal
 gaps and do not rapidly flip direction on a small block. A warning starts their
 reaction delay and then their escape.
