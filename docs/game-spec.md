@@ -371,15 +371,21 @@ Scenery blocks sight. Warnings and running crowds also draw attention.
 His jumps keep their launch direction so targets can dodge.
 Side contact alone is not a stomp, including grounded contact and air overlap
 with equal feet. He still hunts a giant player and giant NPCs, including 8x.
-2x and 3x size is not star immunity. 8x (player, NPC, or Mario) cannot be
-killed or shrunk by stomp, fireball, moving shell, side contact, or player
-attacks. Falling out of the level still kills player and NPC 8x. 8x Mario
+2x and 3x size is not star immunity. A lone 8x (player, NPC, or Mario) cannot be
+killed or shrunk by a smaller stomp, fireball, moving shell, side contact,
+Bullet Bill, firebar, or other smaller attack. Falling out of the level still kills player and NPC 8x. 8x Mario
 who falls out ends the hunt and returns on the existing timer. TIME 0 still
-kills 8x. Any contact between 8x and an enemy is one hit, not a star-kill, and does
+kills 8x. Any contact between a lone 8x and a smaller enemy is one hit, not a star-kill, and does
 not require a falling stomp: 8x player or 8x NPC contact drops Mario one power
-stage; 8x Mario contact shrinks 2x or 3x to 1x and kills only 1x. Both sides
-8x means no hit. A player or NPC star still defeats him on contact. Mario
-hitting a 2x or 3x player still uses shrink-then-kill.
+stage; 8x Mario contact shrinks 2x or 3x to 1x and kills only 1x. When both
+sides are 8x, one land stomp or one fireball drops one level. On land that
+stomp is the existing feet rule: a falling landing, or higher feet when both
+are in the air. Equal feet are a side and do not hit. That same overlap does
+not drop another level, including after Mario's stun ends: a player or NPC
+goes from 8x to 3x, and Mario loses 8x but keeps the power stage under it,
+including fire. Side contact between two 8x bodies does not hit. Water overlap
+between two 8x bodies does not hit. A player or NPC star still defeats him on contact, including when he
+is 8x. Mario hitting a 2x or 3x player still uses shrink-then-kill.
 
 Running NPCs in view increase capped crowd pressure. More pressure makes Mario
 return sooner, react faster, run faster, and attack more often. Idle, dead,
@@ -414,7 +420,8 @@ per beat. Skip the player hurt while the player has a star, is 8x, is
 mid-shrink, or `marioStun` is active. The player cannot hurt Mario by contact
 at any size; 2x and 3x are a damage buffer, not a weapon. A water body hit
 never creates a new shell. A moving shell still kills on overlap. Fireballs,
-star, and 8x stay direction-free as on land. Mario's water speed is
+star, and a lone 8x stay direction-free as on land. Two 8x bodies do not hit
+by water overlap. Mario's water speed is
 `marioSwimSpeed` in tuning, with no `marioRunning` boost, and is below the
 player's swim speed so a swimming player can pull away. NPCs use
 `npcSwimSpeed` so they are not faster than Mario. Shells in water sink until
@@ -422,9 +429,12 @@ they meet the floor, then travel along it. A stopped shell rests on the floor.
 A kick above the floor does not teleport down. `shellWake` and `shellShake`
 are unchanged.
 
-His power stages are small, big, and fire. A player fireball or a giant-player
-stomp reduces one stage: fire to big, big to small, then small to defeated.
-8x Mario ignores those hits. Shrink and grow blink between the two sizes.
+His power stages are small, big, and fire. A smaller player's fireball or
+giant stomp reduces one stage: fire to big, big to small, then small to
+defeated. 8x Mario ignores those smaller hits. An 8x player's land stomp or
+fireball ends 8x and keeps the stage under it, including fire. That hit does
+not also drop a stage, and the same overlap does not chain a second shrink.
+Shrink and grow blink between the two sizes.
 Damage causes blinking, with no frozen hit pose. An active Mario can upgrade
 only by collecting an item. Elapsed stage time can affect the form in which
 he returns; it cannot spontaneously change his active power. On a stage with
@@ -513,7 +523,7 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   blink between the two sizes. Growth resolves overlap with scenery. Giant
   NPCs can back up to leave low ceilings. The first damaging stomp or hit on
   2x or 3x form shrinks to small instead of killing, and also removes a
-  flower. 8x ignores those hits. Collecting a flower never changes Goomba
+  flower. A lone 8x ignores those hits. Collecting a flower never changes Goomba
   or NPC size.
 - Player fireballs match the shooter's scale at every size. Existing shots
   keep their launch size.
@@ -546,8 +556,10 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   tries to enter a goal pipe or castle door while 8x, they shrink to the timer
   fallback in that same action (player and NPC to 3x, Mario to Super Mario),
   the 8x timer ends, then they enter, save, or finish. Player, NPC, and Mario
-  8x use the same smash rule. The character can still walk. 8x ignores stomp,
-  fireball, moving shell, side contact, and player attacks.
+  8x use the same smash rule. The character can still walk. A lone 8x ignores a
+  smaller stomp, fireball, moving shell, side contact, Bullet Bill, firebar, and
+  other smaller attacks. An 8x land stomp or fireball demotes another 8x by one
+  level (player or NPC to 3x; Mario loses 8x and keeps the power under it).
 - A flower gives the player fireballs and a white palette. NPCs can show the
   flower palette but do not shoot. Mario becomes SMB1 Fire Mario. Collecting
   a flower never changes Goomba or NPC size. A damaging hit while large
@@ -571,7 +583,8 @@ breakable brick on side or bottom contact. Top contact bounces and does not
 break. Question blocks, used blocks, and unbreakable tiles are not broken this
 way. Player fireballs do not harm NPCs. A Mario fireball is a normal hit: it
 shrinks 2x or 3x to 1x and kills only 1x, matching a stomp or moving shell.
-Stars and 8x ignore that fireball.
+Stars ignore that fireball. A lone 8x ignores a smaller Mario fireball. An 8x
+Mario fireball demotes another 8x to 3x and does not also shrink that body to 1x.
 
 ## Vines
 
@@ -616,8 +629,9 @@ lane as a matter of course. They may still be hit.
 A campaign starts with three lives. Lives persist across stages in one
 campaign. Play Again resets to three. One successful attack kills an
 unprotected player. 2x and 3x form shrinks on the first damaging stomp, shell,
-or fireball hit and loses a flower; that size is not full immunity. 8x ignores
-those hits.
+or fireball hit and loses a flower; that size is not full immunity. A lone 8x
+ignores those smaller hits. An 8x land stomp or fireball demotes another 8x by
+one level.
 Falling out of the level also kills, including 8x. TIME 0 still kills 8x. Stars
 grant full immunity. Death spends a life. If lives remain, the original-style
 black intro shows WORLD n-n and the player Goomba × remaining lives at
