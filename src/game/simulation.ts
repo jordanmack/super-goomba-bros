@@ -4029,9 +4029,14 @@ export class Simulation {
     const marioFalling = this.mario.body.velocity.y > 0.2;
     const prevNpcTops = new Map<Actor, number>();
     for (const n of this.npcs) prevNpcTops.set(n, this.npcTop(n));
-    // Only the player keeps a jump while flush against a wall. NPCs and Mario
-    // still use Arcade's vertical-first separation.
+    // Mario and NPCs on land keep a jump that starts on a wall face.
+    // Water keeps Arcade separation. The player release stays on in every room,
+    // including an approach of more than one pixel.
     this.player.body.riseAlongWall = true;
+    for (const n of [...this.npcs, this.mario]) {
+      n.body.riseAlongWall = this.roomFor(n).data.type !== "water";
+      n.body.wallRiseGap = 1;
+    }
     this.physics.step(dt);
     this.tryGrabVine(this.player);
     for (const n of [...this.npcs, this.mario]) {

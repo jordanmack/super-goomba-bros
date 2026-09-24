@@ -27,8 +27,11 @@ export class Body {
   ignoreWalls = false;
   // "top": 8x may stand on the lid; the volume is empty until smash (pipes).
   passHuge: "volume" | "top" = "volume";
-  // Player only. A rising graze on a wall face must not resolve as a ceiling.
+  // A rising graze on a wall face must not resolve as a ceiling.
   riseAlongWall = false;
+  // Player keeps any non-overlapping approach. Mario and NPCs use 1:
+  // a wider gap lets a ceiling corner count as a wall.
+  wallRiseGap = Number.POSITIVE_INFINITY;
   // Feet Y, stood-on floor, and bound volume of an 8x volume-hold. Keeps
   // that merged wall+floor after the floor AABB overlap ends. Frozen spans
   // keep rebuild rematch on the original pair, not another column.
@@ -426,6 +429,7 @@ function releaseRisingSide(
   mover: ArcadeMover,
   solidValue: object,
   nearby: readonly object[],
+  maxGap: number,
 ) {
   const solid = asArcadeBox(solidValue);
   if (!solid) return false;
@@ -445,6 +449,10 @@ function releaseRisingSide(
   if (fromLeft && !solid.checkCollision.left) return false;
   if (fromRight && !solid.checkCollision.right) return false;
   if (!fromLeft && !fromRight) return false;
+  // Mario and NPCs only release when already on the face. A wider approach
+  // lets a head climb a ceiling corner. The player max gap stays unlimited.
+  const gap = fromLeft ? solidLeft - prevRight : prevLeft - solidRight;
+  if (gap > maxGap) return false;
   // A body whose center has crossed the face is entering under a ceiling.
   const center = mover.x + mover.width / 2;
   if (fromLeft && center >= solidLeft) return false;
@@ -596,7 +604,10 @@ export class PhysicsWorld {
       if (nearby.length) {
         this.world.collide(native, nearby, undefined, (_actor, solid) => {
           if (!wrapper.ignoreWalls) {
-            if (wrapper.riseAlongWall && releaseRisingSide(native, solid, nearby))
+            if (
+              wrapper.riseAlongWall &&
+              releaseRisingSide(native, solid, nearby, wrapper.wallRiseGap)
+            )
               return false;
             return true;
           }
