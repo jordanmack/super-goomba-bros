@@ -527,7 +527,15 @@ export class Play extends Phaser.Scene {
       shelled &&
       actor.shell === "stopped" &&
       actor.wakeLeft <= T.shellShake;
-    if (shelled) {
+    if (actor.egg) {
+      sprite
+        .stop()
+        .setTexture(
+          Math.floor((sim.elapsed * 60) / T.spinyEggFrameTicks) % 2
+            ? "spikeEggTurn"
+            : "spikeEgg",
+        );
+    } else if (shelled) {
       sprite
         .stop()
         .setTexture(
@@ -549,7 +557,7 @@ export class Play extends Phaser.Scene {
         (shake && Math.floor(sim.elapsed * 16) % 2 ? shown : 0),
       Math.round(actor.body.bounds.max.y),
     );
-    sprite.setDisplaySize(box.w, box.h).setFlipX(actor.facing < 0);
+    sprite.setDisplaySize(box.w, box.h).setFlipX(!actor.egg && actor.facing < 0);
     sprite.setAlpha(
       mario && sim.marioStun > 0 && Math.floor(sim.elapsed * 18) % 2 ? 0.25 : 1,
     );

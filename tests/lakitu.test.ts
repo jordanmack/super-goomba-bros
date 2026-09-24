@@ -387,6 +387,153 @@ test("star, 8x, and fireballs keep their rules against a spike", () => {
   spinyHuge.physics.clear();
 });
 
+function throwEgg(s: Simulation) {
+  const before = new Set(s.npcs);
+  s.lakitus[0]!.throwWait = 0;
+  step(s);
+  const egg = s.npcs.find((n) => !before.has(n));
+  assert.ok(egg);
+  assert.equal(egg.kind, "spike");
+  assert.equal(egg.egg, true);
+  return egg;
+}
+
+test("Lakitu tosses a Spiny egg straight up, and it hatches into a walker on landing", () => {
+  const s = start(4, 1);
+  const cloud = revealLakitu(s);
+  // 4-1 ground runs from 1088 to 2496. The player stays out of warning range,
+  // so the hatched Spiny idles instead of fleeing.
+  Body.setPosition(s.player.body, { x: 1300, y: MAP_TOP + 96 });
+  cloud.x = 1500;
+  const egg = throwEgg(s);
+  const x = cloud.x;
+  assert.ok(x > 1400 && x < 1600, `${x}`);
+  const spawnTop = cloud.y - T.lakituHeight / 2 - T.spinyEggRise;
+  const gravity = T.spinyEggGravity / 3600;
+  assert.equal(egg.body.position.x, x);
+  assert.equal(egg.body.velocity.x, 0);
+  assert.ok(Math.abs(egg.body.velocity.y - (T.spinyEggVy + gravity)) < 1e-6);
+  const top = egg.body.bounds.min.y;
+  assert.ok(top < spawnTop && top >= spawnTop + T.spinyEggVy - 0.5, `${top}`);
+  let rise = 1;
+  while (egg.body.velocity.y < 0 && rise < 60) {
+    step(s);
+    rise++;
+    assert.equal(egg.body.position.x, x);
+    assert.equal(egg.egg, true);
+  }
+  // $fd at $20 force: SMB1 rises for 24 frames.
+  assert.equal(rise, 24);
+  let fastest = 0;
+  for (let i = 0; i < 300 && egg.egg; i++) {
+    step(s);
+    if (!egg.egg) break;
+    assert.equal(egg.body.position.x, x);
+    assert.equal(egg.body.velocity.x, 0);
+    fastest = Math.max(fastest, egg.body.velocity.y);
+  }
+  assert.equal(egg.egg, false);
+  assert.equal(egg.alive, true);
+  assert.ok(fastest >= T.spinyEggMaxFall, `${fastest}`);
+  assert.ok(fastest <= T.spinyEggMaxFall + gravity + 1e-9, `${fastest}`);
+  assert.equal(egg.warned, false);
+  assert.equal(egg.body.velocity.y, 0);
+  assert.equal(Math.abs(egg.body.velocity.x), T.spinyWalkSpeed);
+  const landed = egg.body.position.x;
+  step(s, 10);
+  assert.equal(Math.abs(egg.body.position.x - landed), 10 * T.spinyWalkSpeed);
+  s.physics.clear();
+});
+
+test("a Spiny egg is a rescue NPC from the throw and a loss in the air counts", () => {
+  const s = start(4, 1);
+  revealLakitu(s);
+  const warnedBefore = s.warned;
+  const egg = throwEgg(s);
+  step(s);
+  assert.equal(egg.egg, true);
+  assert.equal(egg.warned, true, "the player beside Lakitu warns the egg");
+  assert.equal(s.warned, warnedBefore + 1);
+  assert.equal(s.npcs.length, T.population + 1);
+  s.fireballs = [
+    {
+      id: 9101,
+      x: egg.body.position.x,
+      y: egg.body.position.y,
+      vx: 0,
+      vy: 0,
+      age: 0,
+      owner: "player",
+    },
+  ];
+  step(s);
+  assert.equal(egg.alive, true, "player fireballs do not hit it");
+  assert.equal(egg.egg, true);
+  const diedBefore = s.died();
+  s.fireballs = [
+    {
+      id: 9102,
+      x: egg.body.position.x,
+      y: egg.body.position.y,
+      vx: 0,
+      vy: 0,
+      age: 0,
+      owner: "mario",
+    },
+  ];
+  step(s);
+  assert.equal(egg.alive, false);
+  assert.equal(s.died(), diedBefore + 1);
+  assert.equal(s.died() + s.saved + s.living(), s.npcs.length);
+  s.physics.clear();
+});
+
+test("a Spiny egg does not hurt the player or NPCs and defeats Mario, even from above", () => {
+  const friendly = start(4, 1);
+  revealLakitu(friendly);
+  const egg = throwEgg(friendly);
+  const other = friendly.npcs.find((n) => n.kind === "goomba")!;
+  Body.setFrozen(friendly.player.body, false);
+  for (const a of [friendly.player, egg, other]) {
+    Body.setPosition(a.body, { x: 700, y: 200 });
+    Body.setVelocity(a.body, { x: 0, y: 0 });
+  }
+  step(friendly);
+  assert.equal(friendly.player.alive, true);
+  assert.equal(other.alive, true);
+  assert.equal(egg.alive, true);
+  assert.equal(egg.egg, true);
+  friendly.physics.clear();
+
+  const s = start(4, 1);
+  s.cameraX = s.activeRoom.offset + 400;
+  revealLakitu(s);
+  enterMario(s);
+  parkAway(s);
+  const hazard = throwEgg(s);
+  assert.equal(s.marioStage, 2);
+  const x = s.cameraX - 80;
+  stand(s.mario, x);
+  // Mario lands on the airborne egg. That is not a stomp.
+  Body.setPosition(hazard.body, {
+    x,
+    y: T.groundY - s.mario.body.height - hazard.body.height / 2 - 2,
+  });
+  Body.setVelocity(hazard.body, { x: 0, y: 0 });
+  Body.setPosition(s.mario.body, {
+    x,
+    y: hazard.body.bounds.min.y - s.mario.body.height / 2 - 1,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 4 });
+  for (let i = 0; i < 4 && s.mario.alive; i++) step(s);
+  assert.equal(s.mario.alive, false);
+  assert.ok(s.events.includes("marioDeath"));
+  assert.equal(hazard.alive, true);
+  assert.equal(hazard.egg, true, "a stomp does not hatch it");
+  assert.notEqual(s.marioTarget, hazard.id);
+  s.physics.clear();
+});
+
 test("Lakitu stages return Fire Mario and other stages keep the timer", () => {
   for (const [world, stage] of [
     [4, 1],

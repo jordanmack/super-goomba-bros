@@ -508,10 +508,14 @@ test("spike NPCs use the flipped Spiny walk frames, not the red Cheep Cheep", ()
   assert.deepEqual(SPINY_SHEET, {
     stand: { x: 90, y: 154 },
     walk: { x: 120, y: 154 },
+    egg: { x: 210, y: 154 },
+    eggTurn: { x: 240, y: 154 },
   });
   const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
-  const spike = between(sprites, "const spike = crop(", "const koopa = crop(");
+  const spike = between(sprites, "const spike = crop(", "const spikeEgg = crop(");
   assert.equal(spike.match(/\btrue,/g)?.length, 2, "both frames are flipped");
+  const egg = between(sprites, "const spikeEgg = crop(", "const koopa = crop(");
+  assert.doesNotMatch(egg, /\btrue\b/, "egg frames are not mirrored");
   const enemies = join(root, "src/assets/smb/enemies.png");
   const frame = (x: number, y: number) =>
     new Uint8ClampedArray(atlasRgba(enemies, `16x16+${x}+${y}`));
@@ -530,6 +534,20 @@ test("spike NPCs use the flipped Spiny walk frames, not the red Cheep Cheep", ()
     assert.notDeepEqual(left, fish);
   }
   assert.notDeepEqual(frame(90, 154), frame(120, 154), "two walk poses");
+  const podoboo = frame(60, 154);
+  const eggs = [SPINY_SHEET.egg, SPINY_SHEET.eggTurn].map(({ x, y }) => {
+    const egg = frame(x, y);
+    let red = 0;
+    for (let row = 0; row < H; row++)
+      for (let col = 0; col < W; col++) {
+        const [r, g, b, a] = px(egg, col, row);
+        if (a && r > 200 && g < 80 && b < 40) red++;
+      }
+    assert.ok(red >= 80, `(${x}, ${y}) is a red egg`);
+    assert.notDeepEqual(egg, podoboo);
+    return egg;
+  });
+  assert.notDeepEqual(eggs[0], eggs[1], "two egg frames");
 });
 
 test("flagpole fireworks draw the three SMB1 frames at 2x on one center", () => {

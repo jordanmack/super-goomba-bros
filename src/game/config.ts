@@ -181,7 +181,17 @@ export const TUNING = {
   lakituSpeed: 1.6,
   lakituThrow: 2.2,
   lakituSpikeCap: 4,
-  spikeThrowVy: 1.5,
+  // SMB1 CreateSpiny: the egg starts 8px above Lakitu with Enemy_Y_Speed $fd
+  // and no X speed. MoveD_EnemyVertically uses force $20 and SetHiMax $03 for
+  // it. At 2x: -6 px/frame, 0.25 px/frame^2 (900 px/s^2), and a 6 px/frame cap.
+  spinyEggRise: 16,
+  spinyEggVy: -6,
+  spinyEggGravity: 900,
+  spinyEggMaxFall: 6,
+  // FrameCounter bit 3 picks the egg frame, so each frame shows for 8 ticks.
+  spinyEggFrameTicks: 8,
+  // LandEnemyProperly gives a hatched Spiny Enemy_X_Speed $08 = 1 px/frame at 2x.
+  spinyWalkSpeed: 1,
   // Hammer Bro. NES speeds are 2x, matching shellSpeed and bulletSpeed.
   // Shimmy Enemy_X_Speed is $04/$fc (0.25 px/frame). Chase after the walk
   // timer is $f8. Jump Y is $fa or $fd. Throw timer is HammerThrowTmrData $30.

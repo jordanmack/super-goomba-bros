@@ -135,6 +135,8 @@ export type Actor = {
   id: number;
   body: Body;
   kind: "goomba" | "koopa" | "mario" | "fish" | "spike";
+  // Lakitu's spike starts as an egg and hatches when it lands.
+  egg?: boolean;
   alive: boolean;
   saved: boolean;
   warned: boolean;
@@ -1792,17 +1794,37 @@ export class Simulation {
   private throwSpike(lakitu: Lakitu) {
     const spike = this.actor(lakitu.x, "spike");
     spike.areaId = lakitu.areaId;
-    const facing = lakitu.facing || 1;
     Body.setPosition(spike.body, {
       x: lakitu.x,
-      y: lakitu.y + T.lakituHeight / 2 + spike.body.height / 2 + 1,
+      y:
+        lakitu.y -
+        T.lakituHeight / 2 -
+        T.spinyEggRise +
+        spike.body.height / 2,
     });
-    spike.facing = facing;
+    spike.facing = lakitu.facing || 1;
     spike.homeX = lakitu.x;
     spike.grounded = false;
-    Body.setVelocity(spike.body, { x: facing * 1.2, y: T.spikeThrowVy });
+    spike.egg = true;
+    Body.setVelocity(spike.body, { x: 0, y: T.spinyEggVy });
     if (overlaps(spike.body, this.solids, 0.01).length) this.fitActor(spike);
     this.npcs.push(spike);
+  }
+
+  /** Falls straight down until it lands, then hatches into a walking Spiny. */
+  private stepEgg(n: Actor) {
+    if (!n.grounded) {
+      Body.setVelocity(n.body, {
+        x: 0,
+        y: Math.min(n.body.velocity.y, T.spinyEggMaxFall),
+      });
+      return true;
+    }
+    n.egg = false;
+    n.homeX = n.body.position.x;
+    n.idleDrop = undefined;
+    n.idleWalking = true;
+    return false;
   }
 
   private actor(x: number, kind: Actor["kind"]): Actor {
@@ -4997,7 +5019,9 @@ export class Simulation {
         a.jumpFallG ??
         (a === this.player || a === this.mario
           ? T.jumpFallGravity
-          : T.npcJumpFallGravity);
+          : a.egg
+            ? T.spinyEggGravity
+            : T.npcJumpFallGravity);
       a.body.gravityScale = !a.grounded
         ? (hold ? holdG : fallG) / T.gravity
         : 1;
@@ -5190,6 +5214,7 @@ export class Simulation {
         else this.updateShelledKoopa(n, dt);
         continue;
       }
+      if (n.egg && this.stepEgg(n)) continue;
       if (n.grounded) n.navVx = undefined;
       if (
         n.navDetourBelow &&
@@ -5222,7 +5247,10 @@ export class Simulation {
         continue;
       }
       if (!n.warned) {
-        const speed = T.idleSpeed * (0.8 + n.fear * 0.4);
+        const speed =
+          n.kind === "spike"
+            ? T.spinyWalkSpeed
+            : T.idleSpeed * (0.8 + n.fear * 0.4);
         if (n.kind === "fish") {
           n.idleWait -= dt;
           if (n.idleWait <= 0) {

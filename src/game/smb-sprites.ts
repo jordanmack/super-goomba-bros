@@ -43,10 +43,13 @@ export const HAMMER_BRO_SHEET = {
 } as const;
 
 // Spiny walk frames face left, so they are flipped. (150, 154) and (180, 154)
-// are the right-facing mirrors. y=184 is the red Cheep Cheep.
+// are the right-facing mirrors. y=184 is the red Cheep Cheep. The two egg
+// frames follow them. (60, 154) is a Podoboo.
 export const SPINY_SHEET = {
   stand: { x: 90, y: 154 },
   walk: { x: 120, y: 154 },
+  egg: { x: 210, y: 154 },
+  eggTurn: { x: 240, y: 154 },
 } as const;
 
 export function characterSprites({ mario, enemies }: SpriteSources) {
@@ -96,6 +99,14 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     16,
     true,
   );
+  const spikeEgg = crop(enemies, SPINY_SHEET.egg.x, SPINY_SHEET.egg.y, 16, 16);
+  const spikeEggTurn = crop(
+    enemies,
+    SPINY_SHEET.eggTurn.x,
+    SPINY_SHEET.eggTurn.y,
+    16,
+    16,
+  );
   const koopa = crop(enemies, 150, 0, 16, 24, true);
   const koopaWalk = crop(enemies, 180, 0, 16, 24, true);
   const koopaShell = crop(enemies, 360, 4, 16, 16);
@@ -124,6 +135,8 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     hammer,
     spike,
     spikeWalk,
+    spikeEgg,
+    spikeEggTurn,
     koopa,
     koopaWalk,
     koopaShell,

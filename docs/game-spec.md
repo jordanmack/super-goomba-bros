@@ -227,12 +227,19 @@ tally uses the actual NPC count rather than the land population alone.
 records are spawn points along the stage, not three Lakitus at once. He rides
 a cloud and uses Lakitu art from the enemy sheet. He is an ally. He does not
 harm the player, and he is not a ground rescue NPC, so he is not in WARNED,
-SAVED, or DIED. He throws spike characters. They use the Spiny walk frames at
-(90, 154) and (120, 154) on that sheet. Spike characters are extra rescue
-NPCs, like fish: they join WARNED, SAVED, and DIED, and they are not part of
-the land population of 30. They do not hurt the player or other NPCs. Any
-contact with a spike character defeats Mario. He never chooses a spike
-character as a stomp target. Fireballs, star, and 8x keep their existing rules.
+SAVED, or DIED. He throws spike characters. Each one starts as a Spiny egg,
+drawn with the two egg frames at (210, 154) and (240, 154), alternating every 8
+frames. As in SMB1, the egg appears 16 px above Lakitu's top and is tossed
+straight up at 6 px/frame with no sideways speed. It falls at 0.25 px/frame^2
+up to 6 px/frame. When it lands, it hatches into a walking Spiny. The walker
+uses the Spiny walk frames at (90, 154) and (120, 154) on that sheet, and it
+idles at 1 px/frame (SMB1 $08). Spike characters are extra rescue NPCs, like
+fish: they join WARNED, SAVED, and DIED from the moment the egg appears, so a
+loss before it lands still counts. They are not part of the land population of
+30. Eggs and walkers do not hurt the player or other NPCs. Any contact with
+either defeats Mario, including a landing on top, which does not hatch or kill
+it. He never chooses a spike character as a stomp target. Fireballs, star, and
+8x keep their existing rules.
 
 3-1, 5-2, 7-1, 8-3, and 8-4 spawn one Hammer Bro at each original type-5
 placement. They are not part of the land population of 30, and they are not
