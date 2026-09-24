@@ -46,6 +46,10 @@ export const ENEMY_BALANCE_LIFT = 36;
 export const ENEMY_RIGHT_LIFT = 42;
 export const ENEMY_PLATFORM_MIN = 36;
 export const ENEMY_PLATFORM_MAX = 44;
+// L_UndergroundArea3: one-screen pipe coin rooms. Each screen spans columns
+// 32k to 32k+16: a wall at 32k, the exit lip at 32k+15 and 32k+16, and
+// ceiling brick on row 2. scripts/extract-levels.mjs fills the columns between.
+export const COIN_ROOM_AREA = "42";
 
 export type EnemyRole =
   | "hammer-bro"
@@ -375,6 +379,17 @@ export class Room {
   }
 
   // One x only. Nearby search would let hunter Mario pop on-camera.
+  /** Interior of the coin-room screen around x, or undefined elsewhere. */
+  coinScreenAt(x: number) {
+    if (this.data.id !== COIN_ROOM_AREA) return undefined;
+    const wall = Math.floor((x - this.offset) / (32 * 32)) * 32;
+    return {
+      left: this.offset + (wall + 1) * 32,
+      right: this.offset + (wall + 15) * 32,
+      top: MAP_TOP + 3 * 32,
+    };
+  }
+
   standOnFloor(actor: Actor, x: number) {
     const half = actor.body.width / 2,
       height = actor.body.height;

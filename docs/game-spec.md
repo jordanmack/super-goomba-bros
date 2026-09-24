@@ -406,7 +406,12 @@ area's door. The player may backtrack to find more NPCs.
 
 Use one active Mario. He normally advances right, but can pause, backtrack,
 break bricks, enter pipes, and return from the left. Returns are an unexplained
-game dynamic. They do not replace NPCs or reset the attempt.
+game dynamic. They do not replace NPCs or reset the attempt. In the area 42
+pipe coin rooms there is no floor off camera, so he returns inside the
+player's screen instead: on free floor between its side walls and under its
+ceiling, as far from the player as he can, and at least 96 px away. He never
+uses the brick fill or a neighboring screen. If no such floor is free, he
+waits.
 
 Mario observes at intervals, reacts with a delay, and aims ahead of targets.
 Scenery blocks sight. Warnings and running crowds also draw attention.

@@ -175,6 +175,8 @@ export const TUNING = {
   bowserFlameLife: 3.2,
   bowserShoutRange: 240,
   bowserShoutCooldown: 3.2,
+  // Least distance between the player and Mario's spawn in a coin room.
+  coinRoomMarioGap: 96,
   // One cloud Lakitu. Type-17 rows are spawn points, not extra riders.
   lakituWidth: 32,
   lakituHeight: 48,

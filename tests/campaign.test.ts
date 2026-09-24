@@ -364,3 +364,113 @@ test("title cheat start continues the campaign in order through later stages", (
   assert.equal(sim.level.id, "4-4");
   sim.physics.clear();
 });
+
+function followCamera(sim: Simulation, width = 960) {
+  const room = sim.activeRoom;
+  sim.viewWidth = width;
+  sim.cameraX = Math.max(
+    room.offset,
+    Math.min(
+      room.offset + room.data.width * 32 - width,
+      sim.player.body.position.x - width * 0.36,
+    ),
+  );
+}
+
+test("Mario spawns and stays inside the player's coin-room screen", () => {
+  const sim = new Simulation(() => 0.5, physics());
+  sim.levelIndex = campaignIndex(1, 2);
+  sim.reset();
+  finishPipeIntro(sim);
+  sim.marioReturn = 1e6;
+  const main = sim.activeRoom;
+  assert.equal(main.data.id, "40");
+  // The 1-2 bonus pipe drops into area 42, page 2 (columns 32-48).
+  const entry = main.data.pipes.find((p) => p.column === 103)!;
+  Body.setPosition(sim.player.body, {
+    x: main.offset + (entry.column + entry.width / 2) * 32,
+    y: MAP_TOP + entry.row * 32 - 14,
+  });
+  Body.setVelocity(sim.player.body, { x: 0, y: 0 });
+  followCamera(sim);
+  for (
+    let frame = 0;
+    frame < 400 && (sim.activeRoom.data.id !== "42" || sim.player.pipeTravel);
+    frame++
+  ) {
+    sim.step(1 / 60, { ...emptyInput(), down: sim.activeRoom.data.id === "40" });
+    followCamera(sim);
+  }
+  const room = sim.activeRoom;
+  assert.equal(room.data.id, "42");
+  const column = (x: number) => Math.floor((x - room.offset) / 32);
+  const spawn = (page: number) => {
+    const wall = page * 16;
+    Body.setFrozen(sim.mario.body, true);
+    sim.marioActive = false;
+    sim.marioDeath = null;
+    sim.marioReturn = 0;
+    for (let i = 0; i < 30 && !sim.marioActive; i++) {
+      sim.step(1 / 60, emptyInput());
+      followCamera(sim);
+    }
+    assert.equal(sim.marioActive, true, `page ${page}`);
+    assert.equal(sim.mario.areaId, "42");
+    const b = sim.mario.body.bounds;
+    assert.ok(b.min.x >= room.offset + (wall + 1) * 32, `page ${page} ${b.min.x}`);
+    assert.ok(b.max.x <= room.offset + (wall + 15) * 32, `page ${page} ${b.max.x}`);
+    assert.ok(b.min.y >= MAP_TOP + 3 * 32, `page ${page} ${b.min.y}`);
+    assert.ok(
+      Math.abs(sim.mario.body.position.x - sim.player.body.position.x) >=
+        T.coinRoomMarioGap,
+    );
+    return wall;
+  };
+  assert.equal(column(sim.player.body.position.x) >> 5, 1);
+  assert.ok(sim.cameraX < room.offset + 32 * 32, "the view shows the fill");
+  const wall = spawn(2);
+  // A star keeps the player alive, and Mario runs from it inside the walls.
+  sim.player.starLeft = 5;
+  for (let frame = 0; frame < 240 && sim.marioActive; frame++) {
+    sim.step(1 / 60, emptyInput());
+    followCamera(sim);
+    const b = sim.mario.body.bounds;
+    assert.ok(b.min.x >= room.offset + (wall + 1) * 32 - 0.5, `${frame}`);
+    assert.ok(b.max.x <= room.offset + (wall + 15) * 32 + 0.5, `${frame}`);
+  }
+
+  assert.equal(sim.mode, "playing");
+  assert.equal(sim.player.alive, true);
+  sim.player.starLeft = 0;
+  for (const page of [0, 4, 6, 8]) {
+    Body.setFrozen(sim.player.body, true);
+    assert.ok(room.standOnFloor(sim.player, room.offset + (page * 16 + 2) * 32 + 16));
+    followCamera(sim);
+    spawn(page);
+  }
+
+  // No free floor in the screen: Mario waits instead of using the gap. The
+  // blocker's top in the open ceiling at columns 33-34 is above the room.
+  Body.setFrozen(sim.mario.body, true);
+  sim.marioActive = false;
+  sim.marioReturn = 0;
+  const blocker = sim.physics.rectangle(
+    room.offset + 40 * 32,
+    MAP_TOP + 8 * 32,
+    14 * 32,
+    10 * 32,
+    true,
+  );
+  room.solids.push(blocker);
+  Body.setPosition(sim.player.body, {
+    x: room.offset + 34 * 32 + 16,
+    y: T.groundY - sim.player.body.height / 2,
+  });
+  followCamera(sim);
+  for (let i = 0; i < 30; i++) sim.step(1 / 60, emptyInput());
+  assert.equal(sim.marioActive, false);
+  room.solids.splice(room.solids.indexOf(blocker), 1);
+  sim.physics.remove(blocker);
+  spawn(2);
+  sim.physics.clear();
+});

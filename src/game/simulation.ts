@@ -5809,6 +5809,8 @@ export class Simulation {
 
   private placeHunterMario() {
     const room = this.roomFor(this.player);
+    const screen = room.coinScreenAt(this.player.body.position.x);
+    if (screen) return this.placeMarioInScreen(room, screen);
     const half = this.mario.body.width / 2;
     const page = 16 * 32;
     const pageIndex = Math.max(0, Math.floor((this.cameraX - room.offset) / page));
@@ -5840,6 +5842,25 @@ export class Simulation {
       if (tryAt(x)) return true;
     }
     return false;
+  }
+
+  // A coin room is a closed screen with no floor off camera. Mario stands on
+  // the free floor inside it farthest from the player, or waits for one.
+  private placeMarioInScreen(
+    room: Room,
+    screen: { left: number; right: number; top: number },
+  ) {
+    const px = this.player.body.position.x;
+    let best: number | undefined;
+    for (let x = screen.left + 16; x < screen.right; x += 32) {
+      if (Math.abs(x - px) < T.coinRoomMarioGap) continue;
+      if (!room.standOnFloor(this.mario, x)) continue;
+      const b = this.mario.body.bounds;
+      if (b.min.x < screen.left || b.max.x > screen.right || b.min.y < screen.top)
+        continue;
+      if (best === undefined || Math.abs(x - px) > Math.abs(best - px)) best = x;
+    }
+    return best !== undefined && room.standOnFloor(this.mario, best);
   }
 
   private enterMarioDoor() {
