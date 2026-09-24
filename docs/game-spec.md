@@ -236,13 +236,15 @@ keep their existing rules.
 3-1, 5-2, 7-1, 8-3, and 8-4 spawn one Hammer Bro at each original type-5
 placement. They are not part of the land population of 30, and they are not
 rescue NPCs, so they are not in WARNED, SAVED, or DIED. They walk a short beat,
-jump, and throw hammers. A hammer arcs and does not break blocks. A hammer or
-contact with the Bro uses the existing hurt rules: it shrinks or kills the
-player and an NPC, adds that NPC death to DIED, and drops Mario one power
-stage. A star ignores the hit. A lone 8x ignores it. When both sides are 8x,
-the hit demotes once and does not drop another stage. Mario's stomp defeats
-the Bro. The player does not stomp or rescue him. The Bro and the hammer use
-art from the enemy sheet.
+jump, and throw hammers. A hammer arcs and does not break blocks. They fight
+Mario and do not hunt the rescue cast. A hammer or contact with the Bro hurts
+Mario only. It drops him one power stage. A star ignores the hit. A lone 8x
+ignores it. When both sides are 8x, Mario demotes once and that overlap does
+not demote him again. The player and rescue NPCs stay unhurt, and the hit
+does not add to DIED. Mario's stomp defeats the Bro. The player does not stomp
+or rescue him. He shouts through the existing shout system, in short lines
+about holding Mario off, defending the kingdom, and protecting the people and
+the king. The Bro and the hammer use art from the enemy sheet.
 
 Unwarned NPCs patrol, pause, turn, and step off safe surfaces. They avoid lethal
 gaps and do not rapidly flip direction on a small block. A warning starts their

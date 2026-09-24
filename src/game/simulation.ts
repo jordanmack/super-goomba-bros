@@ -15,6 +15,7 @@ import {
 } from "./physics.ts";
 import {
   BOWSER_PHRASES,
+  HAMMER_BRO_PHRASES,
   MAP_TOP,
   PHRASES,
   STANDING_JUMP_IMPULSE,
@@ -343,6 +344,7 @@ export type HammerBro = {
   jumpTimer: number;
   throwTimer: number;
   walkTimer: number;
+  shoutWait: number;
 };
 export type Hammer = {
   id: number;
@@ -1385,6 +1387,7 @@ export class Simulation {
         jumpTimer: 0,
         throwTimer: 0,
         walkTimer: T.hammerBroWalkFrames,
+        shoutWait: 0,
       });
     }
   }
@@ -1416,15 +1419,15 @@ export class Simulation {
     Body.setVelocity(body, { x: 0, y: 0 });
   }
 
-  // Idle until the player is close. The whole view is too wide: a Bro would
-  // jump and land again before the player reaches the column. SMB spawns him
-  // at the screen edge, so the first jump is the one the player meets.
+  // Idle until Mario is close. They fight him, not the rescue cast. The
+  // whole view is too wide: a Bro would jump and land again before Mario
+  // reaches the column. Vertical distance must not freeze a Bro who is on
+  // screen above the floor. 5-2 column 124 stands near y=154.
   private broCanThrow(bro: HammerBro) {
-    if (this.player.areaId !== bro.areaId || this.inPipe(this.player))
+    if (!this.marioActive || !this.mario.alive) return false;
+    if (this.mario.areaId !== bro.areaId || this.inPipe(this.mario))
       return false;
-    const dx = this.player.body.position.x - bro.body.position.x;
-    // Vertical distance must not freeze a Bro who is on screen above the
-    // floor. 5-2 column 124 stands near y=154 while the player is at y=416.
+    const dx = this.mario.body.position.x - bro.body.position.x;
     return Math.abs(dx) < 240;
   }
 
@@ -1451,29 +1454,42 @@ export class Simulation {
         this.physics.remove(bro.body);
         continue;
       }
-      // Spawned at load, but idle until the player is close. Otherwise every
-      // Bro jumps and walks off before the player arrives. Timers stay put,
-      // the same way an offscreen throw does. A jump already in the air
-      // finishes; zeroing it would leave him hanging.
+      // Spawned at load, but idle until Mario is close. Otherwise every Bro
+      // jumps and walks off before he arrives. Timers stay put, the same way
+      // an offscreen throw does. A jump already in the air finishes; zeroing
+      // it would leave him hanging.
       if (!this.broCanThrow(bro)) {
         if (this.broOnGround(bro)) Body.setVelocity(bro.body, { x: 0, y: 0 });
         continue;
       }
       bro.grounded = this.broOnGround(bro);
-      const playerLeft =
-        this.player.areaId === bro.areaId &&
-        this.player.body.position.x < bro.body.position.x;
-      bro.facing = playerLeft ? -1 : 1;
+      const marioLeft = this.mario.body.position.x < bro.body.position.x;
+      bro.facing = marioLeft ? -1 : 1;
+      if (bro.shoutWait > 0) bro.shoutWait -= dt;
+      else {
+        this.shouts.push({
+          id: this.nextId++,
+          text: HAMMER_BRO_PHRASES[
+            Math.floor(this.random() * HAMMER_BRO_PHRASES.length)
+          ]!,
+          left: T.bubbleTime,
+          x: bro.body.position.x,
+          y: bro.body.bounds.min.y - 24,
+        });
+        this.events.push("warn");
+        bro.shoutWait = T.bowserShoutCooldown;
+      }
       if (bro.walkTimer > 0) bro.walkTimer -= frames;
-      const chase = playerLeft && bro.walkTimer <= 0;
+      const chase = bro.walkTimer <= 0;
       const shimmy =
         (this.frame & 0x40) === 0 ? -T.hammerBroShimmy : T.hammerBroShimmy;
+      const stepX = chase ? bro.facing * T.hammerBroChase : shimmy;
       let jumped = false;
       if (bro.jumpTimer > 0) bro.jumpTimer -= frames;
       else if (bro.grounded) {
         const low = bro.body.position.y > MAP_TOP + 8 * 32;
         Body.setVelocity(bro.body, {
-          x: chase ? -T.hammerBroChase : shimmy,
+          x: stepX,
           y: -(low ? T.hammerBroJumpHigh : T.hammerBroJumpLow),
         });
         bro.grounded = false;
@@ -1482,7 +1498,7 @@ export class Simulation {
       }
       if (!jumped)
         Body.setVelocity(bro.body, {
-          x: chase ? -T.hammerBroChase : shimmy,
+          x: stepX,
           y: bro.body.velocity.y,
         });
       if (jumped || !this.broCanThrow(bro)) continue;
@@ -1624,30 +1640,22 @@ export class Simulation {
     );
   }
 
-  // Same split as a fireball: star and a lone 8x ignore it. Both sides at 8x
-  // demote once. Anything else uses hurt or one Mario power stage.
+  // Mario only. Star and a lone 8x ignore it. Both sides at 8x demote Mario
+  // once. The player and rescue NPCs are not hurt, and DIED does not change.
   private applyHammerHurt(a: Actor) {
+    if (a !== this.mario) return false;
     if (!a.alive || a.saved || this.inPipe(a)) return false;
     if (!this.freshHammerHazard(a)) return false;
-    if (a === this.mario) {
-      if (!this.marioActive || this.marioStun > 0 || this.mario.starLeft > 0)
-        return false;
-      if (this.isHuge(this.mario) && this.isHuge(this.player)) {
-        this.demoteHuge(this.mario);
-        this.rememberHugeHammer(this.mario);
-        return true;
-      }
-      const stage = this.marioStage;
-      this.hitMarioByFireball(false);
-      return this.marioStage !== stage || !this.mario.alive;
-    }
-    if (a.starLeft > 0) return false;
-    if (this.isHuge(a) && this.isHuge(this.mario)) {
-      this.demoteHuge(a);
-      this.rememberHugeHammer(a);
+    if (!this.marioActive || this.marioStun > 0 || this.mario.starLeft > 0)
+      return false;
+    if (this.isHuge(this.mario) && this.isHuge(this.player)) {
+      this.demoteHuge(this.mario);
+      this.rememberHugeHammer(this.mario);
       return true;
     }
-    return this.hurt(a);
+    const stage = this.marioStage;
+    this.hitMarioByFireball(false);
+    return this.marioStage !== stage || !this.mario.alive;
   }
 
   private resolveHammerHits(
@@ -1683,32 +1691,8 @@ export class Simulation {
       )
         this.hammerHugeHold.delete(actor);
     }
-    const actors = [
-      this.player,
-      ...this.npcs,
-      ...(this.marioActive ? [this.mario] : []),
-    ];
-    // Read the pair before any demotion. Otherwise the player drops to 3x
-    // first and Mario's both-8x check never runs.
-    const pairHuge =
-      this.marioActive && this.isHuge(this.player) && this.isHuge(this.mario);
-    for (const a of actors) {
-      if (!a.alive || a.saved || this.inPipe(a)) continue;
-      if (!this.freshHammerHazard(a)) continue;
-      if (
-        pairHuge &&
-        this.isHuge(a) &&
-        (a === this.player || a === this.mario)
-      ) {
-        // A star ignores the hit. The other 8x actor still demotes.
-        if (a.starLeft <= 0) {
-          this.demoteHuge(a);
-          this.rememberHugeHammer(a);
-        }
-        continue;
-      }
-      this.applyHammerHurt(a);
-    }
+    if (this.marioActive && this.mario.alive && !this.inPipe(this.mario))
+      this.applyHammerHurt(this.mario);
   }
 
   private onLakituStage() {

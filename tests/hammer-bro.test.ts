@@ -4,7 +4,7 @@ import { Simulation, emptyInput } from "../src/game/simulation.ts";
 import type { Actor, HammerBro, ItemKind } from "../src/game/simulation.ts";
 import { Body } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
-import { TUNING as T } from "../src/game/config.ts";
+import { BOWSER_PHRASES, HAMMER_BRO_PHRASES, TUNING as T } from "../src/game/config.ts";
 import { areaData, campaignIndex } from "../src/game/levels.ts";
 import { ENEMY_HAMMER_BRO, enemyRole } from "../src/game/room.ts";
 import { HAMMER_BRO_SHEET } from "../src/game/smb-sprites.ts";
@@ -71,7 +71,28 @@ function holdBro(bro: HammerBro) {
   bro.jumpTimer = 300;
   bro.throwTimer = 300;
   bro.walkTimer = 300;
+  bro.shoutWait = 300;
   Body.setVelocity(bro.body, { x: 0, y: 0 });
+}
+
+function meetMario(s: Simulation, bro: HammerBro, dx = -180, y?: number) {
+  s.marioActive = true;
+  s.mario.alive = true;
+  s.mario.areaId = bro.areaId;
+  s.marioStun = 0;
+  s.marioLook = 10;
+  s.marioPause = 10;
+  s.marioChase = 0;
+  s.marioReaction = 1;
+  s.cameraX = bro.body.position.x - 400;
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, {
+    x: bro.body.position.x + dx,
+    y: y ?? bro.body.position.y - 40,
+  });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  Body.setFrozen(s.player.body, true);
+  Body.setPosition(s.player.body, { x: 200, y: T.groundY - 20 });
 }
 
 function park(s: Simulation) {
@@ -119,7 +140,7 @@ test("one Hammer Bro spawns at each type-5 column, outside the land 30 and the r
   plain.physics.clear();
 });
 
-test("an offscreen Hammer Bro stays on his column until the view arrives", () => {
+test("an offscreen Hammer Bro stays on his column until Mario arrives", () => {
   const s = start(3, 1);
   const bro = broAt(s, 116);
   assert.ok(bro);
@@ -127,12 +148,21 @@ test("an offscreen Hammer Bro stays on his column until the view arrives", () =>
   const y = bro.body.position.y;
   park(s);
   Body.setFrozen(s.player.body, true);
-  Body.setPosition(s.player.body, { x: 200, y: T.groundY - 40 });
+  Body.setPosition(s.player.body, { x: x - 180, y: y - 120 });
+  step(s, 40);
+  assert.ok(Math.abs(bro.body.position.x - x) < 1, "player does not wake a Bro");
+  assert.ok(Math.abs(bro.body.position.y - y) < 2, "player does not make him jump");
+  s.marioActive = true;
+  s.mario.alive = true;
+  s.mario.areaId = bro.areaId;
+  Body.setFrozen(s.mario.body, true);
+  Body.setPosition(s.mario.body, { x: 200, y: T.groundY - 40 });
   step(s, 180);
   assert.equal(bro.alive, true);
-  assert.ok(Math.abs(bro.body.position.x - x) < 1, "offscreen Bro walked");
-  assert.ok(Math.abs(bro.body.position.y - y) < 2, "offscreen Bro jumped");
-  Body.setPosition(s.player.body, { x: x - 180, y: y - 120 });
+  assert.ok(Math.abs(bro.body.position.x - x) < 1, "far Mario does not wake a Bro");
+  assert.ok(Math.abs(bro.body.position.y - y) < 2, "far Mario does not make him jump");
+  Body.setFrozen(s.mario.body, false);
+  Body.setPosition(s.mario.body, { x: x - 180, y: y - 120 });
   let moved = false;
   for (let frame = 0; frame < 50 && bro.alive; frame++) {
     step(s);
@@ -146,7 +176,7 @@ test("an offscreen Hammer Bro stays on his column until the view arrives", () =>
   s.physics.clear();
 });
 
-test("a Hammer Bro above the floor wakes when the player is underneath", () => {
+test("a Hammer Bro above the floor wakes when Mario is underneath", () => {
   const s = start(5, 2);
   const bro = broAt(s, 124);
   assert.ok(bro);
@@ -156,6 +186,9 @@ test("a Hammer Bro above the floor wakes when the player is underneath", () => {
   assert.ok(y < T.groundY - 200, "column 124 is the high Bro");
   Body.setFrozen(s.player.body, true);
   Body.setPosition(s.player.body, { x: x - 80, y: T.groundY - 20 });
+  step(s, 40);
+  assert.ok(Math.abs(bro.body.position.x - x) < 1, "player underneath does not wake him");
+  meetMario(s, bro, -80, T.groundY - 20);
   let moved = false;
   for (let frame = 0; frame < 40 && bro.alive; frame++) {
     step(s);
@@ -171,11 +204,7 @@ test("a Hammer Bro walks and jumps, and a hammer arcs without breaking a brick",
   const bro = broAt(s, 116);
   assert.ok(bro);
   park(s);
-  Body.setFrozen(s.player.body, true);
-  Body.setPosition(s.player.body, {
-    x: bro.body.position.x - 180,
-    y: bro.body.position.y - 120,
-  });
+  meetMario(s, bro, -180, bro.body.position.y - 120);
   const startX = bro.body.position.x;
   const startY = bro.body.position.y;
   let walked = false;
@@ -197,11 +226,8 @@ test("a Hammer Bro walks and jumps, and a hammer arcs without breaking a brick",
   still.jumpTimer = 400;
   still.walkTimer = 400;
   still.throwTimer = 0;
-  Body.setFrozen(arc.player.body, true);
-  Body.setPosition(arc.player.body, {
-    x: still.body.position.x + 180,
-    y: still.body.position.y - 120,
-  });
+  still.shoutWait = 300;
+  meetMario(arc, still, 180, still.body.position.y - 120);
   step(arc);
   const hammer = arc.hammers.find((item) => item.broId === still.id);
   assert.ok(hammer, "hammer left the Bro");
@@ -247,6 +273,7 @@ test("Mario's stomp defeats the Bro, and the player does not stomp or rescue him
   holdBro(bro);
   const warned = s.warned;
   const saved = s.saved;
+  const died = s.died();
   Body.setFrozen(s.player.body, false);
   Body.setPosition(s.player.body, {
     x: bro.body.position.x,
@@ -255,11 +282,12 @@ test("Mario's stomp defeats the Bro, and the player does not stomp or rescue him
   Body.setVelocity(s.player.body, { x: 0, y: 6 });
   step(s);
   assert.equal(bro.alive, true);
-  assert.equal(s.player.alive, false);
-  assert.equal(s.mode, "dead");
+  assert.equal(s.player.alive, true);
+  assert.equal(s.mode, "playing");
   assert.notEqual(s.player.body.velocity.y, -T.stompBounce);
   assert.equal(s.saved, saved);
   assert.equal(s.warned, warned);
+  assert.equal(s.died(), died);
   assert.equal(landCount(s), T.population);
   s.physics.clear();
 
@@ -314,73 +342,66 @@ test("Mario's stomp defeats the Bro, and the player does not stomp or rescue him
   hunt.physics.clear();
 });
 
-test("a hammer or Bro uses hurt rules, including star, lone 8x, and one 8x demotion", () => {
-  const killed = start(3, 1);
-  const victimBro = broAt(killed, 116);
-  assert.ok(victimBro);
-  park(killed);
-  holdBro(victimBro);
-  const npc = killed.npcs[0]!;
-  Body.setPosition(npc.body, { ...victimBro.body.position });
-  Body.setVelocity(npc.body, { x: 0, y: 0 });
-  const diedBefore = killed.died();
-  step(killed);
-  assert.equal(npc.alive, false);
-  assert.equal(killed.died(), diedBefore + 1);
-  assert.equal(victimBro.alive, true);
-  killed.physics.clear();
+test("a hammer or Bro hurts Mario only, and he shouts", () => {
+  const joined = HAMMER_BRO_PHRASES.join(" ");
+  assert.notDeepEqual([...HAMMER_BRO_PHRASES], [...BOWSER_PHRASES]);
+  assert.match(joined, /Mario/);
+  assert.match(joined, /kingdom/);
+  assert.match(joined, /people/);
+  assert.match(joined, /king/);
 
-  const stage = start(3, 1);
-  const stageBro = broAt(stage, 116);
-  assert.ok(stageBro);
-  park(stage);
-  holdBro(stageBro);
-  stage.cameraX = stageBro.body.position.x - 400;
-  stage.marioActive = true;
-  stage.setMarioStage(2);
-  stage.mario.areaId = stageBro.areaId;
-  stage.marioStun = 0;
-  stage.marioLook = 10;
-  stage.marioPause = 10;
-  stage.marioReaction = 1;
-  Body.setFrozen(stage.mario.body, false);
-  Body.setPosition(stage.mario.body, { ...stageBro.body.position });
-  Body.setVelocity(stage.mario.body, { x: 0, y: 0 });
-  Body.setFrozen(stage.player.body, true);
-  Body.setPosition(stage.player.body, { x: 240, y: T.groundY - 20 });
-  step(stage);
-  assert.equal(stage.marioStage, 1);
-  assert.equal(stage.mario.alive, true);
-  assert.equal(stageBro.alive, true);
-  const drops = stage.events.filter((event) => event === "shrink").length;
-  step(stage);
-  assert.equal(stage.marioStage, 1);
-  assert.equal(
-    stage.events.filter((event) => event === "shrink").length,
-    drops,
+  const voice = start(3, 1);
+  const voiceBro = broAt(voice, 116);
+  assert.ok(voiceBro);
+  park(voice);
+  voiceBro.shoutWait = 0;
+  meetMario(voice, voiceBro);
+  const shoutX = voiceBro.body.position.x;
+  step(voice);
+  const line = voice.shouts.find(
+    (shout) =>
+      (HAMMER_BRO_PHRASES as readonly string[]).includes(shout.text) &&
+      Math.abs(shout.x - shoutX) < 2,
   );
-  stage.physics.clear();
+  assert.ok(line, "Bro shouted a defender line from his own spot");
+  voice.physics.clear();
+
+  const overlap = start(3, 1);
+  const overlapBro = broAt(overlap, 116);
+  assert.ok(overlapBro);
+  park(overlap);
+  holdBro(overlapBro);
+  overlap.setMarioStage(2);
+  meetMario(overlap, overlapBro, 0);
+  Body.setPosition(overlap.mario.body, { ...overlapBro.body.position });
+  const npc = overlap.npcs[0]!;
+  Body.setPosition(npc.body, { ...overlapBro.body.position });
+  Body.setVelocity(npc.body, { x: 0, y: 0 });
+  Body.setFrozen(overlap.player.body, true);
+  Body.setPosition(overlap.player.body, { ...overlapBro.body.position });
+  const diedBefore = overlap.died();
+  step(overlap);
+  assert.equal(overlap.marioStage, 1);
+  assert.equal(overlap.mario.alive, true);
+  assert.equal(overlap.player.alive, true);
+  assert.equal(overlap.player.scale, 1);
+  assert.equal(npc.alive, true);
+  assert.equal(overlap.died(), diedBefore);
+  assert.equal(overlapBro.alive, true);
+  const drops = overlap.events.filter((event) => event === "shrink").length;
+  step(overlap);
+  assert.equal(overlap.marioStage, 1);
+  assert.equal(overlap.events.filter((event) => event === "shrink").length, drops);
+  assert.equal(overlap.died(), diedBefore);
+  overlap.physics.clear();
 
   const wind = start(3, 1);
   const windBro = broAt(wind, 116);
   assert.ok(windBro);
   park(wind);
   holdBro(windBro);
-  wind.cameraX = windBro.body.position.x - 400;
-  wind.marioActive = true;
   wind.setMarioStage(2);
-  wind.mario.areaId = windBro.areaId;
-  wind.marioStun = 0;
-  wind.marioLook = 10;
-  wind.marioPause = 10;
-  Body.setFrozen(wind.mario.body, true);
-  Body.setPosition(wind.mario.body, {
-    x: windBro.body.position.x + 120,
-    y: windBro.body.position.y,
-  });
-  Body.setVelocity(wind.mario.body, { x: 0, y: 0 });
-  Body.setFrozen(wind.player.body, true);
-  Body.setPosition(wind.player.body, { x: 240, y: T.groundY - 20 });
+  meetMario(wind, windBro, 120);
   wind.hammers.push({
     id: 9002,
     broId: windBro.id,
@@ -394,9 +415,17 @@ test("a hammer or Bro uses hurt rules, including star, lone 8x, and one 8x demot
     windup: 8,
   });
   step(wind);
-  assert.equal(wind.marioStage, 2);
-  assert.equal(wind.mario.alive, true);
-  assert.equal(windBro.alive, true);
+  assert.equal(wind.marioStage, 2, "a hammer still in the hand does not hit");
+  const thrown = wind.hammers[0]!;
+  thrown.windup = 0;
+  thrown.vx = 0;
+  thrown.vy = 0;
+  thrown.x = wind.mario.body.position.x;
+  thrown.y = wind.mario.body.position.y;
+  step(wind);
+  assert.equal(wind.marioStage, 1, "a thrown hammer drops one Mario stage");
+  assert.equal(wind.player.alive, true);
+  assert.equal(wind.died(), 0);
   wind.physics.clear();
 
   const starred = start(3, 1);
@@ -404,14 +433,15 @@ test("a hammer or Bro uses hurt rules, including star, lone 8x, and one 8x demot
   assert.ok(starBro);
   park(starred);
   holdBro(starBro);
-  give(starred, starred.player, "star");
-  Body.setFrozen(starred.player.body, true);
-  Body.setPosition(starred.player.body, { ...starBro.body.position });
+  starred.setMarioStage(2);
+  give(starred, starred.mario, "star");
+  meetMario(starred, starBro, 0);
+  Body.setPosition(starred.mario.body, { ...starBro.body.position });
+  const starStage = starred.marioStage;
   step(starred);
-  assert.equal(starred.player.alive, true);
-  assert.equal(starred.player.scale, 1);
+  assert.equal(starred.mario.alive, true);
+  assert.equal(starred.marioStage, starStage);
   assert.equal(starred.events.includes("shrink"), false);
-  assert.equal(starred.events.includes("splat"), false);
   starred.physics.clear();
 
   const lone = start(3, 1);
@@ -419,13 +449,15 @@ test("a hammer or Bro uses hurt rules, including star, lone 8x, and one 8x demot
   assert.ok(loneBro);
   park(lone);
   holdBro(loneBro);
-  give(lone, lone.player, "mushroom8x");
-  assert.equal(lone.mario.scale < T.hugeScale, true);
-  Body.setFrozen(lone.player.body, true);
-  Body.setPosition(lone.player.body, { ...loneBro.body.position });
+  give(lone, lone.mario, "mushroom8x");
+  assert.equal(lone.player.scale < T.hugeScale, true);
+  assert.equal(lone.mario.scale, T.hugeScale);
+  meetMario(lone, loneBro, 0);
+  Body.setPosition(lone.mario.body, { ...loneBro.body.position });
   step(lone);
+  assert.equal(lone.mario.alive, true);
+  assert.equal(lone.mario.scale, T.hugeScale);
   assert.equal(lone.player.alive, true);
-  assert.equal(lone.player.scale, T.hugeScale);
   assert.equal(lone.events.includes("shrink"), false);
   lone.physics.clear();
 
@@ -434,58 +466,25 @@ test("a hammer or Bro uses hurt rules, including star, lone 8x, and one 8x demot
   assert.ok(bothBro);
   park(both);
   holdBro(bothBro);
-  both.cameraX = bothBro.body.position.x - 400;
-  both.marioActive = true;
   give(both, both.player, "mushroom8x");
   give(both, both.mario, "mushroom8x");
   assert.equal(both.player.scale, T.hugeScale);
   assert.equal(both.mario.scale, T.hugeScale);
-  both.mario.areaId = "24";
-  Body.setFrozen(both.mario.body, true);
-  Body.setPosition(both.mario.body, {
-    x: bothBro.body.position.x + 500,
-    y: bothBro.body.position.y,
-  });
-  Body.setFrozen(both.player.body, true);
+  meetMario(both, bothBro, 0);
+  Body.setPosition(both.mario.body, { ...bothBro.body.position });
   Body.setPosition(both.player.body, { ...bothBro.body.position });
   const before = shrinks(both);
   step(both);
   assert.equal(both.player.alive, true);
-  assert.equal(both.player.scale, T.giantScale);
-  assert.equal(both.mario.scale, T.hugeScale);
+  assert.equal(both.player.scale, T.hugeScale);
+  assert.equal(both.mario.alive, true);
+  assert.equal(both.mario.scale, 1);
   assert.equal(shrinks(both), before + 1);
   step(both);
-  assert.equal(both.player.scale, T.giantScale);
+  assert.equal(both.mario.scale, 1);
+  assert.equal(both.player.scale, T.hugeScale);
   assert.equal(shrinks(both), before + 1);
   both.physics.clear();
-
-  const starredHuge = start(3, 1);
-  const hugeBro = broAt(starredHuge, 116);
-  assert.ok(hugeBro);
-  park(starredHuge);
-  holdBro(hugeBro);
-  starredHuge.cameraX = hugeBro.body.position.x - 400;
-  starredHuge.marioActive = true;
-  give(starredHuge, starredHuge.player, "mushroom8x");
-  give(starredHuge, starredHuge.mario, "mushroom8x");
-  give(starredHuge, starredHuge.player, "star");
-  assert.equal(starredHuge.player.scale, T.hugeScale);
-  assert.equal(starredHuge.mario.scale, T.hugeScale);
-  starredHuge.mario.areaId = "24";
-  Body.setFrozen(starredHuge.mario.body, true);
-  Body.setPosition(starredHuge.mario.body, {
-    x: hugeBro.body.position.x + 500,
-    y: hugeBro.body.position.y,
-  });
-  Body.setFrozen(starredHuge.player.body, true);
-  Body.setPosition(starredHuge.player.body, { ...hugeBro.body.position });
-  const starShrinks = shrinks(starredHuge);
-  step(starredHuge);
-  assert.equal(starredHuge.player.alive, true);
-  assert.equal(starredHuge.player.scale, T.hugeScale);
-  assert.equal(starredHuge.mario.scale, T.hugeScale);
-  assert.equal(shrinks(starredHuge), starShrinks);
-  starredHuge.physics.clear();
 });
 
 test("Hammer Bro and hammer crops are the enemy-sheet frames", () => {

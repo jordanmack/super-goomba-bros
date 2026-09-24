@@ -262,6 +262,14 @@ export const BOWSER_PHRASES = [
   "Get to the door! I will stall Mario!",
 ];
 
+export const HAMMER_BRO_PHRASES = [
+  "Hold Mario off! The kingdom stands!",
+  "Stand fast! I defend the kingdom!",
+  "Protect the people! Mario stops here!",
+  "For the king! I will hold the plumber!",
+  "The king is safe! Mario shall not pass!",
+];
+
 export const WARNING_CHIRPS = [
   { startHz: 520, peakHz: 940, endHz: 360, peakAt: 0.08, endAt: 0.18, stopAt: 0.21 },
   { startHz: 700, peakHz: 1200, endHz: 520, peakAt: 0.06, endAt: 0.16, stopAt: 0.2 },
