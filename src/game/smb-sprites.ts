@@ -42,6 +42,13 @@ export const HAMMER_BRO_SHEET = {
   hammer: { x: 282, y: 86, width: 16, height: 16 },
 } as const;
 
+// Spiny walk frames face left, so they are flipped. (150, 154) and (180, 154)
+// are the right-facing mirrors. y=184 is the red Cheep Cheep.
+export const SPINY_SHEET = {
+  stand: { x: 90, y: 154 },
+  walk: { x: 120, y: 154 },
+} as const;
+
 export function characterSprites({ mario, enemies }: SpriteSources) {
   const goomba = crop(enemies, 0, 4, 16, 16);
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
@@ -73,9 +80,22 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     HAMMER_BRO_SHEET.hammer.width,
     HAMMER_BRO_SHEET.hammer.height,
   );
-  // y=180 is four blank rows. The feet sit on y=199, so the 16px frame starts at 184.
-  const spike = crop(enemies, 0, 184, 16, 16, true);
-  const spikeWalk = crop(enemies, 30, 184, 16, 16, true);
+  const spike = crop(
+    enemies,
+    SPINY_SHEET.stand.x,
+    SPINY_SHEET.stand.y,
+    16,
+    16,
+    true,
+  );
+  const spikeWalk = crop(
+    enemies,
+    SPINY_SHEET.walk.x,
+    SPINY_SHEET.walk.y,
+    16,
+    16,
+    true,
+  );
   const koopa = crop(enemies, 150, 0, 16, 24, true);
   const koopaWalk = crop(enemies, 180, 0, 16, 24, true);
   const koopaShell = crop(enemies, 360, 4, 16, 16);

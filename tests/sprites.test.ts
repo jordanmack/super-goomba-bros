@@ -10,6 +10,7 @@ import {
   FIREWORK_SHEET,
   flagTextureKey,
   SPRING_DRAW,
+  SPINY_SHEET,
   SPRING_SHEET,
   stampAxe,
   stampEmblemInCloth,
@@ -501,6 +502,34 @@ test("Bowser walk uses the first two packed 32x32 frames so the snout is visible
   assert.equal(opaqueLeft(42), 0, "second packed frame snout sits on the left edge");
   assert.ok(opaqueLeft(0) > 0, "x=0 crop is left of the packed frame");
   assert.ok(snout(2) > 8 && snout(42) > 8, "walk frames keep the yellow snout");
+});
+
+test("spike NPCs use the flipped Spiny walk frames, not the red Cheep Cheep", () => {
+  assert.deepEqual(SPINY_SHEET, {
+    stand: { x: 90, y: 154 },
+    walk: { x: 120, y: 154 },
+  });
+  const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
+  const spike = between(sprites, "const spike = crop(", "const koopa = crop(");
+  assert.equal(spike.match(/\btrue,/g)?.length, 2, "both frames are flipped");
+  const enemies = join(root, "src/assets/smb/enemies.png");
+  const frame = (x: number, y: number) =>
+    new Uint8ClampedArray(atlasRgba(enemies, `16x16+${x}+${y}`));
+  const fish = frame(0, 184);
+  for (const { x, y } of [SPINY_SHEET.stand, SPINY_SHEET.walk]) {
+    const left = frame(x, y);
+    const right = frame(x + 60, y);
+    let opaque = 0;
+    for (let row = 0; row < H; row++)
+      for (let col = 0; col < W; col++) {
+        const pixel = px(left, col, row);
+        if (pixel[3]) opaque++;
+        assert.deepEqual(pixel, px(right, W - 1 - col, row), `(${x}, ${y})`);
+      }
+    assert.ok(opaque >= 80, `(${x}, ${y}) holds a sprite`);
+    assert.notDeepEqual(left, fish);
+  }
+  assert.notDeepEqual(frame(90, 154), frame(120, 154), "two walk poses");
 });
 
 test("flagpole fireworks draw the three SMB1 frames at 2x on one center", () => {
