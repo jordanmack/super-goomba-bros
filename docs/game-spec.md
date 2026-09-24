@@ -237,6 +237,16 @@ Warned NPCs move toward a rescue door. They plan landings, use platforms and
 springs, back up for higher routes, and find lower paths through castle passages
 and down from a ceiling above an exit. A fleeing NPC that meets a non-goal
 enterable pipe may duck in and count as saved after the entry animation.
+A warned land NPC fleeing to a door does not repeat one path. The choices
+come from that NPC's traits, which are drawn from the simulation random
+stream, so one seed replays the same path. On ground
+that stays safe ahead, the NPC sometimes makes a short hop and lands on that
+same ground. At a pit, a hole, or a break between platforms, the NPC sometimes
+leaves before the lip and sometimes waits a short time at the edge, then goes.
+Each of those jumps has a planned landing that is safe. The NPC sometimes stops
+briefly, then runs again. A stop always ends. Mario, an unwarned patrol, a
+swimmer, Lakitu, a shell, and a room with a firebar or a moving platform do
+not use these choices. A firebar crossing stays on its timer. A gap that would kill the NPC is not taken.
 Swimmers, including warned fish, route around coral and pipes toward the rescue
 door. They do not route around actors. Mario swimming through a pack hurts at
 most one NPC per 0.15s reaction lock; that lock is the bound, not a water dash.

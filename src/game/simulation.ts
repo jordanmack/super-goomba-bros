@@ -186,6 +186,14 @@ export type Actor = {
   navFirebarGo?: { bar: number; moves: Uint8Array; step: number; frame: number };
   navFirebarWaitFrame?: number;
   navDrop?: { x: number; vx: number; delay: number };
+  // Warned land flee only. Holds count down to zero, then the run continues.
+  fleeHold?: number;
+  fleeLock?: number;
+  fleeEdge?: number;
+  fleeEarly?: boolean;
+  fleeLip?: number;
+  // X modulo run speed before a short hop, restored on landing.
+  fleeGrid?: number;
   jumpHeld?: boolean;
   jumpHoldG?: number;
   jumpFallG?: number;
@@ -1859,6 +1867,306 @@ export class Simulation {
       this.npcFirebarClear(a),
     );
   }
+  // Stable outer edge of the floor under the body, across abutting rects.
+  // A moving platform and a well are not a flee lip.
+  private floorLip(
+    a: Actor,
+    direction: number,
+    solids: Body[],
+    feet: number,
+  ) {
+    const x = a.body.position.x;
+    const under = solids.find(
+      (s) =>
+        !s.headOnly &&
+        !s.motion &&
+        x > s.bounds.min.x &&
+        x < s.bounds.max.x &&
+        Math.abs(s.bounds.min.y - feet) < 4 &&
+        !enclosedWell(solids, s.bounds),
+    );
+    if (!under) return;
+    let edge = direction > 0 ? under.bounds.max.x : under.bounds.min.x;
+    for (let guard = 0; guard < 64; guard++) {
+      let grew = false;
+      for (const s of solids) {
+        if (s.headOnly || s.motion) continue;
+        if (Math.abs(s.bounds.min.y - feet) > 4) continue;
+        if (
+          direction > 0 &&
+          s.bounds.min.x <= edge + 2 &&
+          s.bounds.max.x > edge + 1
+        ) {
+          edge = s.bounds.max.x;
+          grew = true;
+        } else if (
+          direction < 0 &&
+          s.bounds.max.x >= edge - 2 &&
+          s.bounds.min.x < edge - 1
+        ) {
+          edge = s.bounds.min.x;
+          grew = true;
+        }
+      }
+      if (!grew) break;
+    }
+    return edge;
+  }
+  // Near edge of the next same-height floor past this lip. Undefined when
+  // the far side is not at this height.
+  private farFloorEdge(
+    solids: Body[],
+    lip: number,
+    direction: number,
+    feet: number,
+  ) {
+    let best: number | undefined;
+    let bestGap = Infinity;
+    for (const s of solids) {
+      if (s.headOnly || s.motion) continue;
+      if (Math.abs(s.bounds.min.y - feet) > 20) continue;
+      if (enclosedWell(solids, s.bounds)) continue;
+      const edge = direction > 0 ? s.bounds.min.x : s.bounds.max.x;
+      const gap = (edge - lip) * direction;
+      if (gap < 8 || gap >= bestGap) continue;
+      bestGap = gap;
+      best = edge;
+    }
+    return best;
+  }
+  // 0..1 from traits drawn at spawn. Same seed and place, same choice.
+  private fleeRoll(a: Actor, salt: number, key: number) {
+    const mixed =
+      Math.sin(a.fear * 12.9898 + a.speed * 78.233 + salt + key * 0.017) *
+      43758.5453;
+    return mixed - Math.floor(mixed);
+  }
+  private clearFlee(a: Actor) {
+    if (!a.fleeHold && !a.fleeEdge && !a.fleeEarly) return;
+    a.fleeHold = 0;
+    a.fleeEdge = 0;
+    a.fleeEarly = false;
+  }
+  // Short hop on the floor under the body. Lands before the lip.
+  private tryFleeHop(
+    a: Actor,
+    direction: number,
+    solids: Body[],
+    lip: number,
+  ) {
+    const start = a.body.position.x;
+    const feet = a.body.bounds.max.y;
+    const impulse = 4;
+    const launch = planJump(
+      a.body,
+      solids,
+      direction,
+      2.4,
+      impulse,
+      (landing) => {
+        const ahead = (landing.x - start) * direction;
+        const before = (lip - landing.x) * direction;
+        return (
+          ahead >= 20 &&
+          ahead <= 100 &&
+          before >= 40 &&
+          Math.abs(landing.y + a.body.height / 2 - feet) < 6
+        );
+      },
+      false,
+      undefined,
+      undefined,
+      0,
+    );
+    if (!launch) return false;
+    const speed = this.runSpeedFor(a);
+    a.fleeGrid = ((start % speed) + speed) % speed;
+    this.launchJump(a, launch.vx, impulse, 0);
+    return true;
+  }
+  // Leave before the lip only when the lip itself has a safe arc to the same
+  // floor. A pit the lip jump cannot clear is not taken early either.
+  private tryFleeEarly(
+    a: Actor,
+    direction: number,
+    solids: Body[],
+    lip: number,
+  ) {
+    const pace = this.runSpeedFor(a);
+    const impulse = jumpArc(pace).impulse;
+    const half = a.body.width / 2;
+    const probe = new Body(
+      lip - direction * (half + 8),
+      a.body.position.y,
+      a.body.width,
+      a.body.height,
+    );
+    const lipArc = planJump(
+      probe,
+      solids,
+      direction,
+      pace,
+      impulse,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      0,
+    );
+    if (!lipArc) return false;
+    const far = this.farFloorEdge(solids, lip, direction, a.body.bounds.max.y);
+    if (far === undefined) return false;
+    const launch = planJump(
+      a.body,
+      solids,
+      direction,
+      pace,
+      impulse,
+      (landing) =>
+        (landing.x - far) * direction >= 32 &&
+        Math.abs(landing.y - lipArc.y) <= 36,
+      false,
+      undefined,
+      undefined,
+      0,
+    );
+    if (!launch) return false;
+    this.launchJump(a, launch.vx, impulse, 0);
+    return true;
+  }
+  // Warned land NPCs only. Mario, water, shells, wells, and firebar rooms
+  // keep the old path. A hold always reaches zero.
+  private fleeDither(
+    a: Actor,
+    direction: number,
+    solids: Body[],
+    supported: boolean,
+    wall: boolean,
+    inWell: boolean,
+    firebarHalt: boolean,
+  ) {
+    const room = this.roomFor(a);
+    if (
+      a === this.mario ||
+      firebarHalt ||
+      wall ||
+      inWell ||
+      a.kind === "fish" ||
+      a.shell !== "none" ||
+      a.navDetourBelow ||
+      room.data.type === "water" ||
+      room.firebars.length ||
+      room.platforms.length > 0 ||
+      room.onSpring(a)
+    ) {
+      this.clearFlee(a);
+      return false;
+    }
+    if ((a.navRetry ?? 0) > 0) return false;
+    if (a.fleeGrid !== undefined) {
+      const speed = this.runSpeedFor(a);
+      const mod = (value: number) => ((value % speed) + speed) % speed;
+      const delta = mod(a.fleeGrid - mod(a.body.position.x));
+      const shift = delta > speed / 2 ? delta - speed : delta;
+      const next = a.body.position.x + shift;
+      const feetNow = a.body.bounds.max.y;
+      const onFloor = this.solids.some(
+        (s) =>
+          !s.headOnly &&
+          next > s.bounds.min.x + 2 &&
+          next < s.bounds.max.x - 2 &&
+          Math.abs(s.bounds.min.y - feetNow) < 4,
+      );
+      if (onFloor) Body.setPosition(a.body, { x: next, y: a.body.position.y });
+      a.fleeGrid = undefined;
+    }
+    const feet = a.body.bounds.max.y;
+    const lip = this.floorLip(a, direction, this.solids, feet);
+    if (lip === undefined) return false;
+    const reach = (lip - a.body.position.x) * direction;
+    if ((a.fleeHold ?? 0) > 0) {
+      a.fleeHold = (a.fleeHold ?? 0) - 1;
+      this.move(a, 0);
+      return true;
+    }
+    if (!supported || reach < 14) {
+      if ((a.fleeEdge ?? 0) > 0) {
+        a.fleeEdge = (a.fleeEdge ?? 0) - 1;
+        this.move(a, 0);
+        return true;
+      }
+      return false;
+    }
+    if (reach <= 140) {
+      const lipKey = Math.round(lip);
+      if (a.fleeLip !== lipKey) {
+        a.fleeLip = lipKey;
+        // No safe arc from the lip: do not pause or leave early. The old
+        // failure path must see the same approach.
+        const pace = this.runSpeedFor(a);
+        const probe = new Body(
+          lip - direction * (a.body.width / 2 + 8),
+          a.body.position.y,
+          a.body.width,
+          a.body.height,
+        );
+        const lipArc = planJump(
+          probe,
+          solids,
+          direction,
+          pace,
+          jumpArc(pace).impulse,
+        );
+        if (!lipArc) {
+          a.fleeEarly = false;
+          a.fleeEdge = 0;
+        } else {
+          // Traits already came from the simulation random stream. A new
+          // draw here would shift Mario and pipe rolls.
+          const roll = this.fleeRoll(a, 1, lipKey);
+          if (roll < 0.2) {
+            a.fleeEarly = true;
+            a.fleeEdge = 0;
+          } else if (roll < 0.45) {
+            a.fleeEarly = false;
+            a.fleeEdge = 6;
+          } else {
+            a.fleeEarly = false;
+            a.fleeEdge = 0;
+          }
+        }
+      }
+      if (a.fleeEarly && reach <= 72 && reach >= 48) {
+        a.fleeEarly = false;
+        if (this.tryFleeEarly(a, direction, solids, lip)) {
+          a.fleeLock = 24;
+          return true;
+        }
+      }
+      return false;
+    }
+    if (a.fleeLock === undefined) {
+      a.fleeLock = 8;
+      return false;
+    }
+    if (a.fleeLock > 0) {
+      a.fleeLock -= 1;
+      return false;
+    }
+    const roll = this.fleeRoll(a, 2, Math.round(a.body.position.x / 96));
+    if (roll < 0.16 && this.tryFleeHop(a, direction, solids, lip)) {
+      a.fleeLock = 48;
+      return true;
+    }
+    if (roll < 0.28) {
+      a.fleeHold = 6;
+      a.fleeLock = 64;
+      this.move(a, 0);
+      return true;
+    }
+    a.fleeLock = 48;
+    return false;
+  }
   private autoJump(a: Actor, direction: number) {
     if (!a.grounded) return;
     const p = a.body.position,
@@ -1963,6 +2271,18 @@ export class Simulation {
         this.move(a, 0);
       } else a.navFirebarGo = undefined;
     }
+    if (
+      this.fleeDither(
+        a,
+        direction,
+        solids,
+        supported,
+        wall,
+        inWell,
+        firebarHalt,
+      )
+    )
+      return;
     if (!firebarHalt && supported && !wall && (a === this.mario || !inWell))
       return;
     if (a === this.mario) {
