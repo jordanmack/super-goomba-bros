@@ -26,7 +26,11 @@ import {
   areaGaps,
   isCannonTile,
 } from "../src/game/levels.ts";
-import { ENEMY_BALANCE_LIFT, ENEMY_FISH } from "../src/game/room.ts";
+import {
+  ENEMY_BALANCE_LIFT,
+  ENEMY_FISH,
+  ENEMY_RIGHT_LIFT,
+} from "../src/game/room.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
 const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
@@ -11577,6 +11581,74 @@ test("a coupled balance lift pair moves in opposite directions under load", () =
   assert.notEqual(sine.body.position.x, sx);
 });
 
+test("a type-42 lift waits, then rides right and carries the player", () => {
+  const s = game();
+  const room = s.loadRoom("2b");
+  assert.equal(room.data.header.cloud, true);
+  assert.equal(room.data.type, "overworld");
+  const lift = room.platforms.find((p) => p.kind === ENEMY_RIGHT_LIFT);
+  assert.ok(lift, "area 2b has a type-42 lift");
+  const startX = lift.body.position.x;
+  s.player.areaId = "2b";
+  const npc = s.npcs[0]!;
+  npc.areaId = "2b";
+  npc.alive = true;
+  Body.setPosition(npc.body, {
+    x: lift.body.position.x,
+    y: lift.body.bounds.min.y - npc.body.height / 2,
+  });
+  Body.setVelocity(npc.body, { x: 0, y: 0 });
+  Body.setPosition(s.player.body, {
+    x: room.offset + 80,
+    y: lift.body.position.y,
+  });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  tick(s, 0.5);
+  assert.equal(lift.body.position.x, startX, "an NPC does not start the lift");
+  assert.equal(lift.rightSpeed, 0);
+  npc.areaId = s.level.main;
+  Body.setPosition(npc.body, { x: s.rooms.get(s.level.main)!.offset + 400, y: 200 });
+
+  Body.setPosition(s.player.body, {
+    x: lift.body.position.x,
+    y: lift.body.bounds.min.y - s.player.body.height / 2,
+  });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  s.player.grounded = true;
+  const armed = lift.body.position.x;
+  const playerArmed = s.player.body.position.x;
+  let previous = armed;
+  for (let frame = 0; frame < 61; frame++) {
+    s.step(dt, emptyInput());
+    assert.ok(
+      lift.body.position.x >= previous - 0.001,
+      "the right lift does not reverse",
+    );
+    previous = lift.body.position.x;
+  }
+  const moved = lift.body.position.x - armed;
+  assert.ok(Math.abs(moved - T.rightLiftSpeed * 60) < 1, `moved ${moved}`);
+  assert.equal(lift.rightSpeed, T.rightLiftSpeed);
+  const carried = s.player.body.position.x - playerArmed;
+  assert.ok(
+    Math.abs(carried - moved) < 1,
+    `player carried ${carried}, lift ${moved}`,
+  );
+
+  Body.setPosition(s.player.body, {
+    x: room.offset + 80,
+    y: lift.body.position.y,
+  });
+  const left = lift.body.position.x;
+  tick(s, 0.5);
+  assert.ok(lift.body.position.x > left + 40, "it keeps moving after the rider leaves");
+  assert.ok(lift.body.position.x > startX);
+
+  const same = s.loadRoom("34");
+  assert.equal(same.data.header.cloud, true);
+  assert.equal(same.platforms.some((p) => p.kind === ENEMY_RIGHT_LIFT), true);
+});
+
 function vineStage() {
   const s = game();
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "2-1");
@@ -11722,6 +11794,56 @@ test("falling from a vine cloud destination returns to the overworld page", () =
   assert.equal(s.activeRoom.data.id, "28");
   assert.ok(s.player.alive);
   assert.ok(s.player.body.position.y < 640);
+});
+
+test("a cloud area uses the star theme and the overworld restores ground music", () => {
+  const s = vineStage();
+  assert.equal(s.player.starLeft, 0);
+  assert.equal(s.musicKey(), "overworld");
+  const brick = s.obstacles.find((c) => c.content === "vine")!;
+  s.hitBlock(brick, s.player);
+  const vine = s.vines[0]!;
+  while (vine.height < vine.maxHeight) s.step(dt, emptyInput());
+  Body.setPosition(s.player.body, {
+    x: vine.x,
+    y: vine.bottomY - s.player.body.height / 2 - 4,
+  });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  s.step(dt, emptyInput());
+  let frames = 0;
+  while (s.activeRoom.data.id === "28" && frames++ < 600)
+    s.step(dt, { ...emptyInput(), up: true });
+  assert.equal(s.activeRoom.data.id, "2b");
+  assert.equal(s.player.starLeft, 0);
+  assert.equal(s.activeRoom.data.header.cloud, true);
+  assert.equal(s.musicKey(), "starman");
+
+  s.step(dt, { ...emptyInput(), jump: true });
+  Body.setPosition(s.player.body, {
+    x: s.player.body.position.x,
+    y: 700,
+  });
+  s.step(dt, emptyInput());
+  assert.equal(s.activeRoom.data.id, "28");
+  assert.equal(s.player.starLeft, 0);
+  assert.equal(s.musicKey(), "overworld");
+
+  s.player.starLeft = T.starSeconds;
+  assert.equal(s.musicKey(), "starman");
+  s.player.areaId = "2b";
+  assert.equal(s.musicKey(), "starman");
+  s.player.areaId = "28";
+  assert.equal(s.musicKey(), "starman");
+  s.player.starLeft = 0;
+  assert.equal(s.musicKey(), "overworld");
+  s.marioActive = true;
+  s.mario.alive = true;
+  s.mario.starLeft = T.starSeconds;
+  assert.equal(s.musicKey(), "starman");
+  s.mario.starLeft = 0;
+  const npc = s.npcs[0]!;
+  npc.starLeft = T.starSeconds;
+  assert.equal(s.musicKey(), "overworld");
 });
 
 test("walkPace uses whole-velocity speed for fish and x-speed for the rest", () => {

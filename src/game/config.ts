@@ -73,6 +73,9 @@ export const TUNING = {
   areaSpacing: 20000,
   pipeCooldown: 0.8,
   pipeSpeed: 2,
+  // NES RightPlatform sets Enemy_X_Speed to $10 (1 px/frame) on contact.
+  // 2x tiles use 2 px/frame, the same scale as shellSpeed and vineClimbSpeed.
+  rightLiftSpeed: 2,
   // NES vine grow/climb are 1 px/frame; 2x tiles use 2 px/frame.
   vineGrowSpeed: 2,
   vineClimbSpeed: 2,

@@ -53,6 +53,14 @@ export function themeFor(area: Area) {
   return area.palette;
 }
 
+const AREA_TRACKS = new Set(["overworld", "underground", "water", "castle"]);
+
+// Cloud bonus areas use SMB1 CloudMusic, which is the star recording.
+export function areaMusicKey(areaType: string, cloud: boolean, star: boolean) {
+  if (star || cloud) return "starman";
+  return AREA_TRACKS.has(areaType) ? areaType : "overworld";
+}
+
 export function vineDestination(area: Area, column: number, world: number) {
   return area.destinations
     .filter((d) => d.world === world && d.column <= column + 11)

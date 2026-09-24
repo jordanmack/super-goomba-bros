@@ -39,6 +39,7 @@ import {
   isSpringTile,
   stageTimer,
   terrainRects,
+  areaMusicKey,
   vineDestination,
   vineExitColumn,
 } from "./levels.ts";
@@ -443,6 +444,14 @@ export class Simulation {
   }
   get activeRoom() {
     return this.roomFor(this.player);
+  }
+  // Starman recording. Cloud areas use that same track with no star.
+  musicKey() {
+    const room = this.activeRoom;
+    const star =
+      (this.player.alive && this.player.starLeft > 0) ||
+      (this.marioActive && this.mario.alive && this.mario.starLeft > 0);
+    return areaMusicKey(room.data.type, room.data.header.cloud, star);
   }
   warpSignage() {
     const room = this.activeRoom;
@@ -4510,11 +4519,13 @@ export class Simulation {
     }
     if (!scripted)
       for (const room of this.rooms.values())
-        room.updatePlatforms(this.elapsed, [
+        room.updatePlatforms(
+          this.elapsed,
+          [this.player, ...this.npcs, this.mario].filter(
+            (a) => !this.inPipe(a),
+          ),
           this.player,
-          ...this.npcs,
-          this.mario,
-        ].filter((a) => !this.inPipe(a)));
+        );
     for (const c of this.obstacles) {
       c.bounce = Math.max(0, c.bounce - dt);
       if (c.coinTimerFrames !== undefined)

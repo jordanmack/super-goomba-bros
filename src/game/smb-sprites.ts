@@ -3,6 +3,16 @@ export type SpriteSources = Record<
   HTMLImageElement
 >;
 
+function repeatTile(tile: HTMLCanvasElement, copies: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = tile.width * copies;
+  canvas.height = tile.height;
+  const context = canvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  for (let i = 0; i < copies; i++) context.drawImage(tile, i * tile.width, 0);
+  return canvas;
+}
+
 function crop(
   image: HTMLImageElement,
   x: number,
@@ -432,6 +442,8 @@ export function scenerySprites({ mario, enemies, items }: SpriteSources) {
     bowserFlame: crop(enemies, 101, 253, 24, 8),
     axe: pixelAxe(),
     platform: crop(items, 80, 24, 48, 8),
+    // DrawLargePlatform tile $75. The sheet stores one puff; the lift is six.
+    cloudPlatform: repeatTile(crop(items, 96, 160, 8, 8), 6),
     rope: pixelRope(),
     pulley: pixelPulley(),
     coin: crop(items, 0, 80, 16, 16),

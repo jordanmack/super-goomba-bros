@@ -325,13 +325,7 @@ export default function App() {
           }
           for (const event of sim.events.splice(0)) audio.event(event);
           audio.syncVictory(sim.victoryLoop);
-          audio.update(
-            sim.mode === "playing",
-            (sim.player.alive && sim.player.starLeft > 0) ||
-              (sim.marioActive && sim.mario.alive && sim.mario.starLeft > 0),
-            sim.activeRoom.data.type,
-            sim.hurry,
-          );
+          audio.update(sim.mode === "playing", sim.musicKey(), sim.hurry);
         }
         renderer.render(sim, now / 1000);
         const clusters: {

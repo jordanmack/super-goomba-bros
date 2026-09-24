@@ -256,13 +256,14 @@ export class Play extends Phaser.Scene {
         3,
       ).setRotation(0);
     }
+    const platformKey = room.data.header.cloud ? "cloudPlatform" : "platform";
     for (const platform of room.platforms)
       image(
         platform.body.position.x,
         platform.body.position.y,
         platform.body.width,
         platform.body.height,
-        "platform",
+        platformKey,
         4,
       ).setRotation(0);
     if (room.axe && !room.bridgeDropped)

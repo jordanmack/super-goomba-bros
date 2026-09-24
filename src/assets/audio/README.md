@@ -27,8 +27,11 @@ and a fade. Playback skips the opening silence and loops an interior 86.4-second
 segment, measured from the repeated waveform envelope. Exact offsets and effect
 mappings are in `../../game/audio.ts`.
 Starman skips its opening silence and loops an interior 12.8-second segment.
-It plays only while the player or active Mario has a star. NPC stars do not
-change the music. Death and level-clear cues take priority.
+It plays while the player or active Mario has a star, and while the current
+area is a cloud bonus. That is the original CloudMusic recording, not a new
+file. NPC stars do not change the music. Leaving a cloud area restores the
+area theme unless a star is still active. Death and level-clear cues take
+priority.
 
 Area tracks preserve their opening and then loop an interior section before the
 recording's fade. Loop periods were checked against waveform energy and pitch

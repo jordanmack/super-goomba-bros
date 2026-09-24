@@ -358,13 +358,9 @@ export class GameAudio {
     else this.play(EFFECTS[event]);
   }
 
-  update(music = true, star = false, areaType = "overworld", hurry = false) {
+  update(music = true, theme = "overworld", hurry = false) {
     if (!this.available) return;
-    const key = star
-      ? "starman"
-      : areaType in MUSIC_LOOPS
-        ? areaType
-        : "overworld";
+    const key = theme in MUSIC_LOOPS ? theme : "overworld";
     if (this.music && (this.music.key !== key || !music)) this.stopMusic();
     if (!music) this.musicResume = null;
     const rate = hurry ? T.hurryRate : 1;

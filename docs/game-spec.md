@@ -29,6 +29,10 @@ settings unless a rule below explicitly fixes their relationship.
   type 36 / $24) are coupled: weight on one lowers it and raises its partner,
   and removing the weight reverses that motion. A rope and pulley are drawn and
   move with the pair. Ordinary moving platforms keep their independent motion.
+  A right lift (original enemy type 42 / $2A) stays still until the player
+  stands on it, then moves right at NES speed $10 scaled like the other NES
+  speeds (2 px/frame) and carries the rider. It does not reverse. In a cloud
+  area that lift is drawn with the cloud puff, not the girder.
   A spring squashes when the player, Mario, or an NPC lands on it. Jump is
   not required. Idle and the bounce use the three original spring frames.
   Each squash step lasts 4 frames at Y offsets 16, 32, and 16, then the pad
@@ -672,8 +676,11 @@ Play the original area music and effects. Start audio after a user gesture.
 Pause stops playback progress and plays the original pause cue on pause and
 resume; mute silences music and effects. A question-block item plays the
 original appear effect with the bump; pickup still uses the power-up collect
-sound. Player or active Mario stars use Starman music. NPC stars do not change
-music. Death, clear, and game-over cues take priority and must finish. There is
+sound. Player or active Mario stars use Starman music. Entering a cloud area
+(`header.cloud`) selects that same Starman recording even when no star is
+active. Returning to the overworld restores the ground theme. A star that is
+already active keeps that same theme. NPC stars do not change music.
+Death, clear, and game-over cues take priority and must finish. There is
 no heartbeat, distance meter, or approach-based volume change.
 
 An unavailable audio decoder must not break controls or leave uncaught errors.

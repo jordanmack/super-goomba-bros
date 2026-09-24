@@ -42,6 +42,7 @@ export type Cannon = {
 export const ENEMY_FISH = 7;
 export const ENEMY_LAKITU = 17;
 export const ENEMY_BALANCE_LIFT = 36;
+export const ENEMY_RIGHT_LIFT = 42;
 export const ENEMY_PLATFORM_MIN = 36;
 export const ENEMY_PLATFORM_MAX = 44;
 
@@ -79,6 +80,9 @@ export type Platform = {
   kind: number;
   phase: number;
   partner?: number;
+  // Type 42 only. Speed stays 0 until the player stands on it, then $10.
+  rightSpeed?: number;
+  rightTravel?: number;
 };
 
 export class Room {
@@ -228,6 +232,9 @@ export class Room {
           origin,
           kind: enemy.type,
           phase: enemy.column % 7,
+          ...(enemy.type === ENEMY_RIGHT_LIFT
+            ? { rightSpeed: 0, rightTravel: 0 }
+            : {}),
         });
         continue;
       }
@@ -522,7 +529,30 @@ export class Room {
     this.balanceRopes = ropes;
   }
 
-  updatePlatforms(elapsed: number, actors: Actor[]) {
+  private updateRightLift(
+    platform: Platform,
+    dt: number,
+    actors: Actor[],
+    player?: Actor,
+  ) {
+    const { body, origin } = platform;
+    const before = { x: body.position.x, y: body.position.y };
+    const riding = this.ridersOn(platform, actors);
+    const speed = platform.rightSpeed ?? 0;
+    platform.rightTravel = (platform.rightTravel ?? 0) + speed * dt * 60;
+    body.motion = undefined;
+    body.position.x = origin.x + platform.rightTravel;
+    body.position.y = origin.y;
+    if (player && riding.includes(player))
+      platform.rightSpeed = T.rightLiftSpeed;
+    this.carryRiders(
+      riding,
+      body.position.x - before.x,
+      body.position.y - before.y,
+    );
+  }
+
+  updatePlatforms(elapsed: number, actors: Actor[], player?: Actor) {
     const dt =
       this.platformElapsed === undefined
         ? 0
@@ -542,6 +572,10 @@ export class Room {
         continue;
       }
       if (platform.kind === ENEMY_BALANCE_LIFT) continue;
+      if (platform.kind === ENEMY_RIGHT_LIFT) {
+        this.updateRightLift(platform, dt, actors, player);
+        continue;
+      }
       const { body, origin, kind, phase } = platform;
       const before = { ...body.position };
       const riding = this.ridersOn(platform, actors);
