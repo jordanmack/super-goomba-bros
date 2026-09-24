@@ -520,7 +520,10 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
 - 8x lasts 15 seconds, independent of the star, then the player and NPCs
   become 3x. A same-size or smaller mushroom does not reset that timer.
   While 8x, overlap destroys breakable bricks, question and content blocks,
-  pipes, and unbreakable wall tiles that are not floors. Destroyed solids play
+  and unbreakable wall tiles that are not floors. Feet on a non-goal pipe lid
+  do not destroy that pipe, including when the body hangs past the sides, and
+  the lid supports the body like a floor. Left, right, and below contact still
+  destroys a non-goal pipe. Destroyed solids play
   the brick-break burst and lose collision. A question or content block yields
   its prize first, then
   breaks. Player coin contents add to the coin count. Mario or NPC coin
@@ -536,9 +539,10 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   The elevated
   flush wall of a stood-on merged wall+floor also stays, so 8x can keep walking
   after the floor AABB overlap ends. Ground-level walls still smash. 8x never smashes a
-  goal pipe or castle door. The door stays solid. 8x no longer passes through
-  an intact pipe: contact destroys it, and that mouth cannot be entered after
-  it is gone. Non-goal pipes stay smashable. When the player, an NPC, or Mario
+  goal pipe or castle door. The door stays solid. Standing on a non-goal pipe
+  does not enter it, and 8x does not travel through an intact non-goal pipe.
+  A side or bottom hit still destroys that pipe, and that mouth cannot be
+  entered after it is gone. When the player, an NPC, or Mario
   tries to enter a goal pipe or castle door while 8x, they shrink to the timer
   fallback in that same action (player and NPC to 3x, Mario to Super Mario),
   the 8x timer ends, then they enter, save, or finish. Player, NPC, and Mario

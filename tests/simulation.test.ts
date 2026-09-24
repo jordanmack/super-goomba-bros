@@ -32,7 +32,7 @@ const FIRST_AREA = areaData("25");
 const GOAL_X = FIRST_AREA.goal.column * 32 + 16;
 const GAPS = areaGaps(FIRST_AREA);
 import type { Input } from "../src/game/simulation.ts";
-import type { ItemKind, Actor } from "../src/game/simulation.ts";
+import type { ItemKind, Actor, Obstacle } from "../src/game/simulation.ts";
 import {
   actorSpriteBox,
   itemDrawY,
@@ -6185,11 +6185,13 @@ test("8x walking smashes bricks, questions, pipes, and walls; items fly out", ()
 
   const intact = s.obstacles.find((c) => c.kind === "pipe" && !c.broken)!;
   const lid = intact.body!.bounds.min.y;
-  at(s, intact.x, lid - 14 * s.player.scale);
+  at(s, intact.x, lid - s.player.body.height / 2);
   tick(s, 0.1, { down: true });
-  assert.equal(intact.broken, true);
-  assert.ok(!s.solids.includes(intact.body!));
+  assert.equal(intact.broken, false);
+  assert.ok(s.solids.includes(intact.body!));
   assert.equal(s.player.pipeTravel, undefined);
+  assert.equal(s.player.grounded, true);
+  assert.ok(Math.abs(s.player.body.bounds.max.y - lid) < 2);
 });
 
 test("8x smash launches each item kind on a real step without emerge", () => {
@@ -6828,6 +6830,283 @@ test("8x smash of a ground pipe keeps the floor in that column", () => {
   assert.ok(Math.abs(s.player.body.bounds.max.y - T.groundY) < 16);
   assert.equal(cellSolid(s, data.column, 13), true);
   s.physics.clear();
+});
+
+type LidWho = "player" | "npc" | "mario";
+
+function castlePipeRoom(s: Simulation) {
+  const room = s.loadRoom("65");
+  s.pipeIntro = false;
+  s.player.areaId = room.data.id;
+  return room;
+}
+
+function findPipe(s: Simulation, column: number, row: number) {
+  const room = s.roomFor(s.player);
+  const data = room.data.pipes.find((p) => p.column === column && p.row === row);
+  assert.ok(data, `pipe ${column},${row}`);
+  const x = room.offset + (data.column + data.width / 2) * 32;
+  const pipe = s.obstacles.find(
+    (c) => c.kind === "pipe" && c.body && Math.abs(c.x - x) < 1,
+  );
+  assert.ok(pipe, `pipe body ${column}`);
+  assert.ok(pipe.body);
+  return { data, pipe, top: pipe.body.bounds.min.y };
+}
+
+function placeFeet(actor: Actor, x: number, feet: number) {
+  overlapAt(actor, x, feet - actor.body.height / 2);
+}
+
+function growClear(s: Simulation, who: LidWho, actor: Actor, x: number) {
+  placeFeet(actor, x, T.groundY);
+  give(s, actor, "mushroom8x");
+  assert.equal(actor.scale, T.hugeScale, `${who}: grew`);
+}
+
+function holdLid(s: Simulation, who: LidWho, actor: Actor) {
+  if (who === "mario") {
+    stillMario(s);
+    s.marioPause = 30;
+    s.marioLook = 30;
+    s.marioReaction = 30;
+    s.marioDecision = 30;
+    s.marioChase = 0;
+    s.cameraX = actor.body.position.x - 200;
+  }
+  if (who === "npc") {
+    actor.warned = false;
+    actor.state = "idle";
+    actor.idleWalking = false;
+    actor.idleWait = 30;
+    actor.idleDrop = undefined;
+    actor.homeX = actor.body.position.x;
+    actor.pipeWait = 30;
+    actor.navVx = undefined;
+  }
+}
+
+function assertSupported(who: string, actor: Actor, pipe: Obstacle, top: number) {
+  assert.equal(pipe.broken, false, `${who}: pipe stays`);
+  assert.equal(actor.pipeTravel, undefined, `${who}: does not enter`);
+  assert.equal(actor.scale, T.hugeScale, `${who}: stays 8x`);
+  assert.equal(actor.alive, true, `${who}: alive`);
+  assert.equal(actor.grounded, true, `${who}: lid supports`);
+  assert.ok(
+    Math.abs(actor.body.bounds.max.y - top) < 2,
+    `${who}: feet ${actor.body.bounds.max.y} lid ${top}`,
+  );
+  assert.ok(pipe.body);
+  assert.ok(actor.body.width > pipe.body.width, `${who}: wider than the lid`);
+}
+
+test("8x player, Mario, and NPC stand and walk on a non-goal pipe lid", () => {
+  for (const who of ["player", "npc", "mario"] as const) {
+    const s = game();
+    const room = castlePipeRoom(s);
+    const actors = smashActors(s);
+    const actor = actors[who];
+    const { pipe, top } = findPipe(s, 152, 6);
+    assert.equal(pipe.body!.width, 64);
+    assert.notEqual(room.data.goal?.kind, "pipe");
+    growClear(s, who, actor, 180);
+    assert.equal(pipe.broken, false, `${who}: grow did not hit the pipe`);
+    placeFeet(actor, pipe.x, top);
+    holdLid(s, who, actor);
+    const standInput = who === "player" ? { down: true } : {};
+    tick(s, 0.2, standInput);
+    assertSupported(who, actor, pipe, top);
+    assert.ok(actor.body.bounds.min.x < pipe.body!.bounds.min.x, `${who}: hangs left`);
+    assert.ok(actor.body.bounds.max.x > pipe.body!.bounds.max.x, `${who}: hangs right`);
+    assert.ok(s.solids.includes(pipe.body!), `${who}: lid solid stays`);
+
+    const startX = actor.body.position.x;
+    if (who === "player") {
+      tick(s, 0.2, { right: true, down: true });
+    } else if (who === "npc") {
+      actor.idleWalking = true;
+      actor.idleWait = 30;
+      actor.facing = 1;
+      actor.homeX = actor.body.position.x;
+      tick(s, 0.25);
+    } else {
+      s.marioPause = 0;
+      s.marioReaction = 0;
+      s.marioLook = 30;
+      s.marioDecision = 30;
+      s.marioChase = 0;
+      s.mario.facing = 1;
+      placeFeet(actor, pipe.x - 110, top);
+      s.cameraX = actor.body.position.x - 200;
+      tick(s, 0.2);
+    }
+    const walkedFrom = who === "mario" ? pipe.x - 110 : startX;
+    assert.ok(
+      actor.body.position.x > walkedFrom + 2,
+      `${who}: walked ${actor.body.position.x - walkedFrom}`,
+    );
+    assertSupported(`${who} walk`, actor, pipe, top);
+    assert.ok(
+      actor.body.bounds.min.x < pipe.body!.bounds.min.x,
+      `${who}: walk still hangs past a side`,
+    );
+
+    if (who === "mario") {
+      placeFeet(actor, pipe.x, top);
+      s.random = () => 0;
+      s.marioDecision = 0;
+      s.marioReaction = 30;
+      s.marioLook = 30;
+      s.cameraX = pipe.x - 200;
+      tick(s, dt);
+    } else if (who === "npc") {
+      placeFeet(actor, pipe.x, top);
+      actor.warned = true;
+      actor.wait = 0;
+      actor.pipeWait = 0;
+      actor.state = "run";
+      actor.idleDrop = undefined;
+      s.random = () => 0;
+      tick(s, dt);
+    }
+    assert.equal(pipe.broken, false, `${who}: enter attempt keeps the pipe`);
+    assert.equal(actor.pipeTravel, undefined, `${who}: 8x does not enter`);
+    assert.equal(actor.scale, T.hugeScale, `${who}: enter attempt stays 8x`);
+    s.physics.clear();
+  }
+});
+
+test("8x left, right, and below contact still smashes a non-goal pipe", () => {
+  const hits = ["left", "right", "below"] as const;
+  for (const who of ["player", "npc", "mario"] as const) {
+    for (const hit of hits) {
+      const s = game();
+      castlePipeRoom(s);
+      const actors = smashActors(s);
+      const actor = actors[who];
+      const { pipe, top } = findPipe(s, 152, 6);
+      const body = pipe.body!;
+      growClear(s, who, actor, 180);
+      assert.equal(pipe.broken, false, `${who} ${hit}: grow stayed clear`);
+      const midY = (body.bounds.min.y + body.bounds.max.y) / 2;
+      let x = pipe.x;
+      let y = midY;
+      if (hit === "left") x = body.bounds.min.x + 24 - actor.body.width / 2;
+      if (hit === "right") x = body.bounds.max.x - 24 + actor.body.width / 2;
+      if (hit === "below") y = body.bounds.max.y - 20 + actor.body.height / 2;
+      overlapAt(actor, x, y);
+      holdLid(s, who, actor);
+      assert.ok(actor.body.bounds.max.y > top + 6, `${who} ${hit}: not a lid stand`);
+      assert.ok(
+        actor.body.bounds.max.x > body.bounds.min.x &&
+          actor.body.bounds.min.x < body.bounds.max.x &&
+          actor.body.bounds.max.y > body.bounds.min.y &&
+          actor.body.bounds.min.y < body.bounds.max.y,
+        `${who} ${hit}: overlaps the pipe`,
+      );
+      if (hit === "below") {
+        assert.ok(actor.body.bounds.max.y > body.bounds.max.y, `${who}: feet below the pipe`);
+        assert.ok(actor.body.bounds.min.y < body.bounds.max.y, `${who}: head in the pipe`);
+        assert.ok(actor.body.width > body.width, `${who}: below hit hangs past the sides`);
+      }
+      tick(s, dt);
+      assert.equal(pipe.broken, true, `${who} ${hit}: smashes`);
+      assert.ok(!s.solids.includes(body), `${who} ${hit}: solid removed`);
+      assert.equal(actor.pipeTravel, undefined, `${who} ${hit}: smash is not an enter`);
+      s.physics.clear();
+    }
+  }
+});
+
+test("8x does not break a goal pipe when stood on or touched", () => {
+  for (const who of ["player", "npc", "mario"] as const) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+    s.reset();
+    s.marioReturn = 1e6;
+    s.pipeIntro = false;
+    s.player.areaId = "40";
+    const actors = smashActors(s);
+    const actor = actors[who];
+    const goal = s.roomFor(actor).data.goal;
+    assert.equal(goal?.kind, "pipe");
+    const { pipe, top } = findPipe(s, goal.column, goal.row);
+    growClear(s, who, actor, s.roomFor(actor).offset + 400);
+    assert.equal(pipe.broken, false, `${who}: grow stayed clear`);
+    placeFeet(actor, pipe.x, top);
+    holdLid(s, who, actor);
+    tick(s, 0.15);
+    assertSupported(who, actor, pipe, top);
+    assert.ok(actor.body.bounds.min.x < pipe.body!.bounds.min.x, `${who}: hangs past the goal lid`);
+    // Right enters this side mouth. Walk the other way so the lid test is a walk.
+    let origin = actor.body.position.x;
+    if (who === "player") tick(s, 0.15, { left: true });
+    else if (who === "npc") {
+      actor.idleWalking = true;
+      actor.idleWait = 30;
+      actor.facing = -1;
+      actor.homeX = actor.body.position.x;
+      tick(s, 0.25);
+    } else {
+      s.marioPause = 0;
+      s.marioReaction = 0;
+      s.marioLook = 30;
+      s.marioDecision = 30;
+      s.marioChase = 0;
+      s.mario.facing = 1;
+      // Keep the edge probe on the lid and Mario left of the despawn line.
+      placeFeet(actor, pipe.x - 116, top);
+      s.cameraX = actor.body.position.x - 200;
+      origin = actor.body.position.x;
+      tick(s, 0.15);
+    }
+    assert.ok(
+      Math.abs(actor.body.position.x - origin) > 2,
+      `${who}: walked the goal lid`,
+    );
+    assertSupported(`${who} goal walk`, actor, pipe, top);
+
+    const body = pipe.body!;
+    const room = s.roomFor(actor);
+    let rightX = body.bounds.max.x - 24 + actor.body.width / 2;
+    // Mario leaves the hunt past the goal. Stay overlapping from the right.
+    if (who === "mario") rightX = Math.min(rightX, room.goalX + 90);
+    const touches = [
+      {
+        name: "left",
+        x: body.bounds.min.x + 24 - actor.body.width / 2,
+        y: (body.bounds.min.y + body.bounds.max.y) / 2,
+      },
+      {
+        name: "right",
+        x: rightX,
+        y: (body.bounds.min.y + body.bounds.max.y) / 2,
+      },
+      {
+        name: "below",
+        x: pipe.x,
+        y: body.bounds.max.y - 20 + actor.body.height / 2,
+      },
+    ];
+    for (const touch of touches) {
+      overlapAt(actor, touch.x, touch.y);
+      holdLid(s, who, actor);
+      assert.ok(actor.body.bounds.max.y > top + 6, `${who} ${touch.name}: not the lid`);
+      assert.ok(
+        actor.body.bounds.max.x > body.bounds.min.x &&
+          actor.body.bounds.min.x < body.bounds.max.x &&
+          actor.body.bounds.max.y > body.bounds.min.y &&
+          actor.body.bounds.min.y < body.bounds.max.y,
+        `${who} ${touch.name}: overlaps before the step`,
+      );
+      tick(s, dt);
+      assert.equal(s.marioActive || who !== "mario", true, `${who} ${touch.name}: still active`);
+      assert.equal(pipe.broken, false, `${who} ${touch.name}: goal pipe stays`);
+      assert.ok(s.solids.includes(body), `${who} ${touch.name}: goal solid stays`);
+      assert.equal(actor.pipeTravel, undefined, `${who} ${touch.name}: touch does not enter`);
+    }
+    s.physics.clear();
+  }
 });
 
 test("8x walking keeps the floor through merged stair columns", () => {

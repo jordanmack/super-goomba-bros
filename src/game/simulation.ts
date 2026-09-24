@@ -3061,13 +3061,22 @@ export class Simulation {
 
   private smashContact(a: Actor, c: Obstacle) {
     if (!c.body) return false;
-    if (overlaps(a.body, [c.body], 0.1).length) return true;
-    if (c.kind !== "pipe") return false;
-    const top = c.body.bounds.min.y;
+    // Feet on the lid are a floor, including a body that hangs past the sides.
+    // Left, right, and below overlap still smash a non-goal pipe.
+    if (c.kind === "pipe" && this.feetOnPipeLid(a, c)) return false;
+    return overlaps(a.body, [c.body], 0.1).length > 0;
+  }
+
+  // Same 6px band as 8x lid support in the physics step. A deeper overlap is
+  // not standing on the lid.
+  private feetOnPipeLid(a: Actor, c: Obstacle) {
+    const solid = c.body;
+    if (!solid) return false;
+    const top = solid.bounds.min.y;
+    if (a.body.bounds.max.y > top + 6) return false;
     return (
-      Math.abs(a.body.bounds.max.y - top) < 12 &&
-      a.body.bounds.max.x > c.body.bounds.min.x + 0.01 &&
-      a.body.bounds.min.x < c.body.bounds.max.x - 0.01
+      a.body.bounds.max.x > solid.bounds.min.x + 0.01 &&
+      a.body.bounds.min.x < solid.bounds.max.x - 0.01
     );
   }
 
