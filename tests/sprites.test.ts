@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   AXE_HEIGHT,
   AXE_WIDTH,
+  FIREWORK_SHEET,
   flagTextureKey,
   SPRING_DRAW,
   SPRING_SHEET,
@@ -452,6 +453,52 @@ test("Bowser walk uses the first two packed 32x32 frames so the snout is visible
   assert.equal(opaqueLeft(42), 0, "second packed frame snout sits on the left edge");
   assert.ok(opaqueLeft(0) > 0, "x=0 crop is left of the packed frame");
   assert.ok(snout(2) > 8 && snout(42) > 8, "walk frames keep the yellow snout");
+});
+
+test("flagpole fireworks draw the three SMB1 frames at 2x on one center", () => {
+  assert.deepEqual(FIREWORK_SHEET, [
+    { key: "fireworkSmall", x: 364, y: 188, width: 8, height: 8 },
+    { key: "fireworkMedium", x: 392, y: 185, width: 12, height: 14 },
+    { key: "fireworkLarge", x: 420, y: 184, width: 16, height: 16 },
+  ]);
+  const sheet = atlasRgba(join(root, "src/assets/smb/enemies.png"), "436x261+0+0");
+  const isSprite = (x: number, y: number) => {
+    const i = (y * 436 + x) * 4;
+    return sheet[i + 3] >= 128 && !(sheet[i] === 0 && sheet[i + 1] === 136);
+  };
+  for (const frame of FIREWORK_SHEET) {
+    // Opaque bounds within a 2px ring match the crop exactly, so each crop's
+    // center is its frame's center.
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (let y = frame.y - 2; y < frame.y + frame.height + 2; y++)
+      for (let x = frame.x - 2; x < Math.min(436, frame.x + frame.width + 2); x++) {
+        if (!isSprite(x, y)) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    assert.deepEqual(
+      { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 },
+      { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+      frame.key,
+    );
+    assert.equal(frame.y + frame.height / 2, 192, `${frame.key} center row`);
+  }
+  const sprites = readFileSync(join(root, "src/game/smb-sprites.ts"), "utf8");
+  const play = readFileSync(join(root, "src/game/scenes/Play.ts"), "utf8");
+  const simulation = readFileSync(join(root, "src/game/simulation.ts"), "utf8");
+  assert.match(sprites, /fireball: crop\(enemies, 364, 188, 8, 8\)/);
+  assert.match(sprites, /\.\.\.fireworkSprites\(enemies\)/);
+  const draw = between(play, "for (const firework of sim.fireworks)", "for (const n of sim.npcs)");
+  assert.match(draw, /FIREWORK_SHEET\[fireworkFrame\(firework\)\]/);
+  assert.match(draw, /frame\.width \* 2/);
+  assert.match(draw, /frame\.height \* 2/);
+  assert.match(draw, /frame\.key/);
+  assert.doesNotMatch(simulation, /fireworkBurst|firework: true/);
 });
 
 test("castle axe is the SMB1 hatchet, not brick debris", () => {

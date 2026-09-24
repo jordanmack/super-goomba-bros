@@ -39,7 +39,10 @@ export const TUNING = {
   fireworkGood: 12,
   fireworkStrong: 20,
   fireworkInterval: 0.4,
-  fireworkBurst: 18,
+  // RunFireworks shows graphics 0, 1, 2 and resets ExplosionTimerCounter to
+  // $08 for each. Then that firework is gone.
+  fireworkFrames: 3,
+  fireworkFrameHold: 8,
   timeScore: 50,
   coinsForLife: 100,
   tallyLineSeconds: 0.7,

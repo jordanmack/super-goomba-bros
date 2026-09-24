@@ -15,6 +15,7 @@ import {
   ENDING_LINE,
   Simulation as RulesSimulation,
   emptyInput,
+  fireworkFrame,
   pipeClip,
   victoryCue,
 } from "../src/game/simulation.ts";
@@ -11087,18 +11088,21 @@ test("flagpole fireworks match each rescue threshold and add 500 each", () => {
     s.tallyHold = 99;
     s.events.length = 0;
     const before = s.score;
+    const particles = s.particles.length;
     tick(s, dt);
     if (count === 0) {
       assert.equal(s.events.filter((event) => event === "firework").length, 0);
       assert.equal(s.score, before);
+      assert.equal(s.fireworks.length, 0);
       continue;
     }
     assert.equal(s.events.filter((event) => event === "firework").length, 1);
     assert.equal(s.score, before + T.fireworkScore);
-    const sky = s.particles.filter((p) => p.firework);
-    assert.ok(sky.length >= T.fireworkBurst);
-    assert.ok(sky.every((p) => p.y > 0 && p.y < MAP_TOP + 8 * 32));
-    assert.ok(sky.every((p) => Math.abs(p.x - s.goalX) < 120));
+    assert.equal(s.fireworks.length, 1, "one firework per award");
+    const [sky] = s.fireworks;
+    assert.ok(sky!.y > 0 && sky!.y < MAP_TOP + 8 * 32);
+    assert.ok(Math.abs(sky!.x - s.goalX) < 120);
+    assert.ok(s.particles.length <= particles, "no square burst");
     tick(s, T.fireworkInterval * 6 + 2 * dt);
     assert.equal(
       s.events.filter((event) => event === "firework").length,
@@ -11148,7 +11152,6 @@ test("tall castle-door fireworks burst above the roof against the sky", () => {
   const origins: number[] = [];
   assert.equal(s.activeRoom.data.goal?.kind, "castle-door");
   for (let n = 0; n < 3; n++) {
-    s.particles = s.particles.filter((p) => !p.firework);
     s.events.length = 0;
     let fired = false;
     for (let i = 0; i < 60; i++) {
@@ -11160,29 +11163,55 @@ test("tall castle-door fireworks burst above the roof against the sky", () => {
       }
     }
     assert.equal(fired, true, `burst ${n} fired`);
-    const sky = s.particles.filter((p) => p.firework);
-    assert.ok(sky.length >= T.fireworkBurst);
+    const sky = s.fireworks.find((firework) => firework.age === 0);
+    assert.ok(sky, `burst ${n} is drawn`);
+    // The large frame is 32px on screen, so its top and bottom stay in view.
     assert.ok(
-      sky.every((p) => p.y > 0 && p.y < VIEW_HEIGHT && p.y < roof),
-      `spawn y ${sky[0]?.y} roof ${roof}`,
+      sky.y - 16 > 0 && sky.y + 16 < VIEW_HEIGHT && sky.y < roof,
+      `spawn y ${sky.y} roof ${roof}`,
     );
-    const originYs = [...new Set(sky.map((p) => p.y))];
-    assert.equal(originYs.length, 1);
-    origins.push(originYs[0]!);
-    tick(s, dt);
-    let after = s.particles.filter((p) => p.firework);
-    assert.ok(
-      after.every((p) => p.y > 0 && p.y < VIEW_HEIGHT),
-      `step y ${after[0]?.y}`,
-    );
+    origins.push(sky.y);
+    const { x, y } = sky;
     tick(s, 0.2);
-    after = s.particles.filter((p) => p.firework);
-    assert.ok(
-      after.every((p) => p.y > 0 && p.y < VIEW_HEIGHT),
-      `later y ${after[0]?.y}`,
-    );
+    assert.equal(sky.x, x, "the burst center does not drift");
+    assert.equal(sky.y, y, "the burst center does not drift");
   }
   assert.equal(new Set(origins).size, 3, `origins ${origins.join(",")}`);
+});
+
+test("a flagpole firework shows small, medium, then large for 8 frames each", () => {
+  assert.equal(T.fireworkFrames, 3);
+  assert.equal(T.fireworkFrameHold, 8);
+  const s = game();
+  rescue(s, T.fireworkModest);
+  s.timeLeft = 0;
+  s.finish();
+  assert.equal(s.fireworksTotal, 1);
+  const particles = s.particles.length;
+  s.tallyHold = 99;
+  s.step(dt, emptyInput());
+  assert.equal(s.fireworks.length, 1);
+  const firework = s.fireworks[0]!;
+  const center = { x: firework.x, y: firework.y };
+  const frames = [fireworkFrame(firework)];
+  for (let i = 1; i < T.fireworkFrames * T.fireworkFrameHold; i++) {
+    s.tallyHold = 99;
+    s.step(dt, emptyInput());
+    assert.equal(s.fireworks.length, 1, `frame ${i}`);
+    assert.equal(s.fireworks[0], firework);
+    assert.deepEqual({ x: firework.x, y: firework.y }, center);
+    frames.push(fireworkFrame(firework));
+  }
+  assert.deepEqual(frames, [
+    ...Array(8).fill(0),
+    ...Array(8).fill(1),
+    ...Array(8).fill(2),
+  ]);
+  s.tallyHold = 99;
+  s.step(dt, emptyInput());
+  assert.equal(s.fireworks.length, 0, "gone after the large frame");
+  assert.ok(s.particles.length <= particles, "no square burst");
+  assert.equal(s.fireworksTotal, 1);
 });
 
 test("flagpole fireworks start after leftover TIME and do not hold auto-advance", () => {

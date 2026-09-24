@@ -370,7 +370,10 @@ Castle breakdown points:
   - 6 to 11 saved: 1 firework
   - 5 or fewer: 0
 - Each firework: +500, added to SCORE as that firework fires, with the original
-  fireworks cue. Fireworks burst above the castle against the sky.
+  fireworks cue. Fireworks burst above the castle against the sky. Each burst
+  is the three original SMB1 firework frames from the enemy sheet, small, then
+  medium, then large, on one center at 2x sprite scale. Each frame holds for 8
+  game frames, then that firework is gone.
 
 Pipe travel can rescue a fleeing NPC on a non-goal enterable pipe. That NPC
 leaves play after the entry animation and does not arrive in the destination.

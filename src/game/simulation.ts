@@ -279,7 +279,6 @@ export type Particle = {
   color: string;
   settled: boolean;
   blood: boolean;
-  firework?: boolean;
 };
 export type Fireball = {
   id: number;
@@ -441,6 +440,12 @@ export type Item = {
   ignoreActor?: Actor;
 };
 export type CoinPop = { x: number; y: number; age: number };
+/** One flagpole firework at a fixed center. Age counts game frames. */
+export type Firework = { x: number; y: number; age: number };
+/** RunFireworks graphic for this age: 0 small, 1 medium, 2 large. */
+export function fireworkFrame(firework: Firework) {
+  return Math.floor(firework.age / T.fireworkFrameHold);
+}
 type SpringPose = "extended" | "mid" | "compressed";
 type SpringRider = { id: number; x: number; vx: number; force: number };
 type SpringRide = {
@@ -1088,6 +1093,7 @@ export class Simulation {
   private springRides: SpringRide[] = [];
   vines: Vine[] = [];
   particles: Particle[] = [];
+  fireworks: Firework[] = [];
   events: GameEvent[] = [];
   mode: Mode = "title";
   elapsed = 0;
@@ -1312,6 +1318,7 @@ export class Simulation {
     this.vines = [];
     this.coinPops = [];
     this.particles = [];
+    this.fireworks = [];
     this.events = [];
     this.jumped = false;
     this.wasUp = false;
@@ -4583,10 +4590,9 @@ export class Simulation {
       p.age += dt;
       if (p.settled) continue;
       const oldY = p.y;
-      p.vy += (p.firework ? 220 : 520) * dt;
+      p.vy += 520 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      if (p.firework) p.y = Math.min(VIEW_HEIGHT - 1, Math.max(1, p.y));
       if (!p.blood) continue;
       const floor = this.solids.find(
         (s) =>
@@ -4601,7 +4607,7 @@ export class Simulation {
       }
     }
     this.particles = this.particles.filter((p) =>
-      p.firework || p.blood ? p.age < p.life : p.y < 540,
+      p.blood ? p.age < p.life : p.y < 540,
     );
   }
   save(n: Actor) {
@@ -4640,29 +4646,6 @@ export class Simulation {
     this.fireworkWait = 0;
   }
 
-  private fireworkBurst(x: number, y: number) {
-    const colors = ["#fffce0", "#ffd21a", "#ff5a18", "#ffffff"];
-    for (let i = 0; i < T.fireworkBurst; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 40 + Math.random() * 140;
-      this.particles.push({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 40,
-        age: 0,
-        life: 0.55,
-        size: 3 + Math.floor(Math.random() * 4),
-        color: colors[i % colors.length]!,
-        settled: false,
-        blood: false,
-        firework: true,
-      });
-    }
-    if (this.particles.length > 1200)
-      this.particles.splice(0, this.particles.length - 1200);
-  }
-
   private castleRoofY(room: Room) {
     const col = room.data.goal?.column ?? room.data.width - 3;
     for (let row = 0; row < 13; row++) {
@@ -4693,12 +4676,21 @@ export class Simulation {
     const lift = Math.max(...spots.map((entry) => -entry.dy));
     const span = roof - skyTop;
     const scale = span >= lift ? 1 : Math.max(0, span) / lift;
-    this.fireworkBurst(room.goalX + spot.dx, roof + spot.dy * scale);
+    this.fireworks.push({
+      x: room.goalX + spot.dx,
+      y: roof + spot.dy * scale,
+      age: 0,
+    });
     this.score += T.fireworkScore;
     this.events.push("firework");
   }
 
   private stepFireworks(dt: number) {
+    // Age first so a firework fired this step still shows its small frame.
+    for (const firework of this.fireworks) firework.age += dt * 60;
+    this.fireworks = this.fireworks.filter(
+      (firework) => firework.age < T.fireworkFrames * T.fireworkFrameHold,
+    );
     if (!this.fireworksArmed) return;
     this.fireworkWait -= dt;
     while (this.fireworksLeft > 0 && this.fireworkWait <= 0) {

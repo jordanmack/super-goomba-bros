@@ -11,6 +11,7 @@ import atlas from "../../assets/smb/metatiles.json";
 import {
   actorSpriteBox,
   actorWalkMoving,
+  fireworkFrame,
   itemDrawY,
   itemHoldHidden,
   itemSpriteSize,
@@ -20,6 +21,7 @@ import {
 } from "../simulation";
 import {
   BULLET_BILL_DRAW_Y,
+  FIREWORK_SHEET,
   flagTextureKey,
   SPRING_DRAW,
   SWEAT_DROP_HEIGHT,
@@ -363,6 +365,18 @@ export class Play extends Phaser.Scene {
         14,
         Phaser.Display.Color.HexStringToColor(p.color).color,
       ).setRotation(0);
+    for (const firework of sim.fireworks) {
+      // 2x sprite scale, centered, so all three frames share one center.
+      const frame = FIREWORK_SHEET[fireworkFrame(firework)]!;
+      image(
+        firework.x,
+        firework.y,
+        frame.width * 2,
+        frame.height * 2,
+        frame.key,
+        14,
+      );
+    }
     for (const n of sim.npcs)
       if (n.exclaimLeft > 0 && n.alive && !n.saved)
         // Tiny and unscaled: same pixels on 1x and 8x NPCs.

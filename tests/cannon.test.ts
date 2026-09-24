@@ -254,6 +254,7 @@ test("a cannon shot plays the fireworks blast only when the bill leaves", () => 
   );
   assert.ok(s.events.includes(CANNON_BLAST.event), "blast cue");
   assert.equal(s.events.includes("firework"), false);
+  assert.equal(s.fireworks.length, 0, "no firework frames");
   // Cold-boot LSFR selects slot 0 from all three enemy slots: write $0e,
   // then count the same barrel down on the two selects that follow.
   assert.equal(cannon.timer, T.cannonReload - 2);

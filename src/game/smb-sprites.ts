@@ -444,6 +444,25 @@ function pixelPulley() {
 export const BULLET_BILL_CROP = { x: 60, y: 125, width: 16, height: 16 };
 export const BULLET_BILL_DRAW_Y = 2;
 
+// SMB1 RunFireworks graphics 0, 1, 2 on the enemy sheet, small to large.
+// Each crop is the frame's exact bounds, so drawing each one centered on the
+// burst point keeps one center. The small frame is the same pixels as the
+// fireball.
+export const FIREWORK_SHEET = [
+  { key: "fireworkSmall", x: 364, y: 188, width: 8, height: 8 },
+  { key: "fireworkMedium", x: 392, y: 185, width: 12, height: 14 },
+  { key: "fireworkLarge", x: 420, y: 184, width: 16, height: 16 },
+] as const;
+
+function fireworkSprites(enemies: HTMLImageElement) {
+  return Object.fromEntries(
+    FIREWORK_SHEET.map((frame) => [
+      frame.key,
+      crop(enemies, frame.x, frame.y, frame.width, frame.height),
+    ]),
+  ) as Record<(typeof FIREWORK_SHEET)[number]["key"], HTMLCanvasElement>;
+}
+
 // Three JumpspringObject poses on the overworld strip of items.png.
 // Extended is idle and the launch pose. Mid and compressed are the squash.
 export const SPRING_SHEET = {
@@ -466,6 +485,7 @@ export function scenerySprites({ mario, enemies, items }: SpriteSources) {
   const marioFace = crop(mario, 180, 0, 16, 8);
   return {
     fireball: crop(enemies, 364, 188, 8, 8),
+    ...fireworkSprites(enemies),
     bulletBill: crop(
       enemies,
       BULLET_BILL_CROP.x,
