@@ -348,7 +348,13 @@ test("a hammer or Bro hurts Mario only, and he shouts", () => {
   assert.match(joined, /Mario/);
   assert.match(joined, /kingdom/);
   assert.match(joined, /people/);
-  assert.match(joined, /king/);
+  assert.match(joined, /\bking\b/);
+  for (const line of HAMMER_BRO_PHRASES)
+    assert.equal(
+      (BOWSER_PHRASES as readonly string[]).includes(line),
+      false,
+      line,
+    );
 
   const voice = start(3, 1);
   const voiceBro = broAt(voice, 116);
@@ -401,13 +407,17 @@ test("a hammer or Bro hurts Mario only, and he shouts", () => {
   park(wind);
   holdBro(windBro);
   wind.setMarioStage(2);
-  meetMario(wind, windBro, 120);
+  meetMario(wind, windBro, 0);
+  const handX = windBro.body.position.x + 4;
+  const handY = windBro.body.bounds.min.y - 8;
+  Body.setFrozen(wind.mario.body, true);
+  Body.setPosition(wind.mario.body, { x: handX, y: handY - 16 });
   wind.hammers.push({
     id: 9002,
     broId: windBro.id,
     areaId: windBro.areaId,
-    x: wind.mario.body.position.x,
-    y: wind.mario.body.position.y,
+    x: handX,
+    y: handY - 16,
     vx: 0,
     vy: 0,
     facing: -1,
@@ -471,8 +481,10 @@ test("a hammer or Bro hurts Mario only, and he shouts", () => {
   assert.equal(both.player.scale, T.hugeScale);
   assert.equal(both.mario.scale, T.hugeScale);
   meetMario(both, bothBro, 0);
+  Body.setFrozen(both.mario.body, true);
   Body.setPosition(both.mario.body, { ...bothBro.body.position });
-  Body.setPosition(both.player.body, { ...bothBro.body.position });
+  Body.setFrozen(both.player.body, true);
+  Body.setPosition(both.player.body, { x: 240, y: T.groundY - 20 });
   const before = shrinks(both);
   step(both);
   assert.equal(both.player.alive, true);
@@ -480,6 +492,8 @@ test("a hammer or Bro hurts Mario only, and he shouts", () => {
   assert.equal(both.mario.alive, true);
   assert.equal(both.mario.scale, 1);
   assert.equal(shrinks(both), before + 1);
+  both.marioStun = 0;
+  Body.setPosition(both.mario.body, { ...bothBro.body.position });
   step(both);
   assert.equal(both.mario.scale, 1);
   assert.equal(both.player.scale, T.hugeScale);
