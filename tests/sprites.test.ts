@@ -55,25 +55,58 @@ function between(source: string, start: string, end: string) {
   return source.slice(from, to);
 }
 
-function recolorMarioFlag(flag: Uint8ClampedArray, width = W) {
-  const out = new Uint8ClampedArray(flag);
-  for (let i = 0; i < out.length; i += 4) {
-    if (!out[i + 3]) continue;
-    const x = (i / 4) % width;
-    const r = out[i],
-      g = out[i + 1],
-      b = out[i + 2];
-    if (r > 200 && g > 200 && b > 200) {
-      out[i] = 228;
-      out[i + 1] = 92;
-      out[i + 2] = 16;
-    } else if (x > 3 && r > 180 && g < 100 && b < 100) {
-      out[i] = 252;
-      out[i + 1] = 216;
-      out[i + 2] = 168;
-    }
+const FIELD = [252, 252, 252] as const;
+const MARK = [181, 49, 33] as const;
+const HAT = [248, 56, 0] as const;
+const SKIN = [255, 164, 64] as const;
+
+type Box = { x0: number; y0: number; x1: number; y1: number };
+
+// Pole at x=2, orb, white field x3-13 y5-13, and a red plus in x6-10 y7-11.
+const PLUS_MARK: Box = { x0: 6, y0: 7, x1: 10, y1: 11 };
+
+function syntheticFlag() {
+  const flag = new Uint8ClampedArray(W * H * 4);
+  setPx(flag, 2, 2, 230, 156, 33);
+  setPx(flag, 3, 2, 230, 156, 33);
+  for (let y = 5; y <= 15; y++) setPx(flag, 2, y, ...MARK);
+  for (let y = 5; y <= 13; y++)
+    for (let x = 3; x <= 13; x++) setPx(flag, x, y, ...FIELD);
+  for (let d = 6; d <= 10; d++) {
+    setPx(flag, d, 9, ...MARK);
+    setPx(flag, 8, d + 1, ...MARK);
   }
-  return out;
+  return flag;
+}
+
+function inBox(box: Box, x: number, y: number) {
+  return x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1;
+}
+
+function assertOutsideMarkUnchanged(
+  flag: Uint8ClampedArray,
+  source: Uint8ClampedArray,
+  mark: Box,
+) {
+  assert.equal(flag.length, source.length);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (!inBox(mark, x, y))
+        assert.deepEqual(px(flag, x, y), px(source, x, y), `(${x}, ${y})`);
+}
+
+function countInBox(
+  flag: Uint8ClampedArray,
+  box: Box,
+  color: readonly [number, number, number],
+) {
+  let n = 0;
+  for (let y = box.y0; y <= box.y1; y++)
+    for (let x = box.x0; x <= box.x1; x++) {
+      const [r, g, b, a] = px(flag, x, y);
+      if (a && r === color[0] && g === color[1] && b === color[2]) n++;
+    }
+  return n;
 }
 
 test("claim maps to the shipped flag texture keys", () => {
@@ -81,66 +114,81 @@ test("claim maps to the shipped flag texture keys", () => {
   assert.equal(flagTextureKey("mario"), "marioFlag");
 });
 
-test("player flag stamps a scaled mushroom into the cloth, not a 1:1 copy or recolor", () => {
-  const flag = new Uint8ClampedArray(W * H * 4);
+test("player flag scales a mushroom into the red mark only, not the whole cloth", () => {
+  const flag = syntheticFlag();
   const mushroom = new Uint8ClampedArray(W * H * 4);
   const cap = [228, 88, 16] as const;
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) setPx(mushroom, x, y, ...cap);
-  setPx(flag, 2, 2, 230, 156, 33);
-  setPx(flag, 3, 2, 230, 156, 33);
-  setPx(flag, 2, 6, 181, 49, 33);
-  for (let y = 5; y <= 13; y++)
-    for (let x = 3; x <= 14; x++) setPx(flag, x, y, 252, 252, 252);
   const before = new Uint8ClampedArray(flag);
   stampMushroomFlag(flag, mushroom, W, H);
-  assert.deepEqual(px(flag, 2, 2), px(before, 2, 2));
-  assert.deepEqual(px(flag, 3, 2), px(before, 3, 2));
-  assert.deepEqual(px(flag, 2, 6), px(before, 2, 6));
-  let stamped = 0,
-    leftoverCloth = 0;
-  for (let y = 5; y <= 13; y++) {
-    for (let x = 3; x <= 14; x++) {
-      const [r, g, b] = px(flag, x, y);
-      if (r === cap[0] && g === cap[1] && b === cap[2]) stamped++;
-      if (r === 252 && g === 252 && b === 252) leftoverCloth++;
-    }
-  }
-  assert.ok(stamped >= 20, "scaled mushroom is visible in the cloth");
-  assert.ok(stamped < 12 * 9, "mushroom does not flood the whole cloth");
-  assert.ok(leftoverCloth >= 8, "uncovered cloth stays");
-  const recolor = recolorMarioFlag(before);
-  assert.notEqual(Buffer.from(flag).compare(Buffer.from(recolor)), 0);
-  assert.notDeepEqual(px(flag, 8, 8), px(recolor, 8, 8));
+  assertOutsideMarkUnchanged(flag, before, PLUS_MARK);
+  // 16x16 scales to the 5x5 mark, so the cap covers the mark box exactly.
+  for (let y = PLUS_MARK.y0; y <= PLUS_MARK.y1; y++)
+    for (let x = PLUS_MARK.x0; x <= PLUS_MARK.x1; x++)
+      assert.deepEqual(px(flag, x, y), [...cap, 255], `(${x}, ${y})`);
 });
 
-test("Mario flag stamps a scaled face into the cloth and leaves pole and orb", () => {
-  const flag = new Uint8ClampedArray(W * H * 4);
+test("Mario flag scales his face into the red mark and clears the rest of it", () => {
+  const flag = syntheticFlag();
   const face = new Uint8ClampedArray(W * 8 * 4);
-  const hat = [248, 56, 0] as const;
-  const skin = [255, 164, 64] as const;
   for (let y = 0; y < 8; y++)
-    for (let x = 0; x < W; x++)
-      setPx(face, x, y, ...(y < 3 ? hat : skin) as readonly [number, number, number], 255, W);
-  setPx(flag, 2, 2, 230, 156, 33);
-  setPx(flag, 2, 6, 181, 49, 33);
-  for (let y = 5; y <= 13; y++)
-    for (let x = 3; x <= 14; x++) setPx(flag, x, y, 252, 252, 252);
+    for (let x = 0; x < W; x++) {
+      const [r, g, b] = y < 3 ? HAT : SKIN;
+      setPx(face, x, y, r, g, b);
+    }
   const before = new Uint8ClampedArray(flag);
   stampEmblemInCloth(flag, face, W, H, W, 8);
-  assert.deepEqual(px(flag, 2, 2), px(before, 2, 2));
-  assert.deepEqual(px(flag, 2, 6), px(before, 2, 6));
-  let hatN = 0,
-    skinN = 0;
-  for (let y = 5; y <= 13; y++) {
-    for (let x = 3; x <= 14; x++) {
-      const [r, g, b] = px(flag, x, y);
-      if (r === hat[0] && g === hat[1] && b === hat[2]) hatN++;
-      if (r === skin[0] && g === skin[1] && b === skin[2]) skinN++;
-    }
+  assertOutsideMarkUnchanged(flag, before, PLUS_MARK);
+  // 16x8 scales to 5x3 on rows 8-10. The plus ends on rows 7 and 11 go white.
+  for (let x = PLUS_MARK.x0; x <= PLUS_MARK.x1; x++) {
+    assert.deepEqual(px(flag, x, 7), [...FIELD, 255]);
+    assert.deepEqual(px(flag, x, 8), [...HAT, 255]);
+    assert.deepEqual(px(flag, x, 9), [...SKIN, 255]);
+    assert.deepEqual(px(flag, x, 10), [...SKIN, 255]);
+    assert.deepEqual(px(flag, x, 11), [...FIELD, 255]);
   }
-  assert.ok(hatN >= 8, "Mario hat is visible in the cloth");
-  assert.ok(skinN >= 8, "Mario skin is visible in the cloth");
+});
+
+test("shipped flags keep the 16x16 pole flag and stamp only its red star", () => {
+  const items = join(root, "src/assets/smb/items.png");
+  const mario = join(root, "src/assets/smb/mario.png");
+  const source = new Uint8ClampedArray(atlasRgba(items, "16x16+128+0"));
+  const mushroom = new Uint8ClampedArray(atlasRgba(items, "16x16+0+0"));
+  const face = new Uint8ClampedArray(atlasRgba(mario, "16x8+180+0"));
+  const star: Box = { x0: W, y0: H, x1: -1, y1: -1 };
+  for (let y = 0; y < H; y++)
+    for (let x = 3; x < W; x++) {
+      const [r, g, b, a] = px(source, x, y);
+      if (!a || r <= 180 || g >= 100 || b >= 100) continue;
+      star.x0 = Math.min(star.x0, x);
+      star.y0 = Math.min(star.y0, y);
+      star.x1 = Math.max(star.x1, x);
+      star.y1 = Math.max(star.y1, y);
+    }
+  assert.deepEqual(star, { x0: 5, y0: 6, x1: 11, y1: 12 });
+  const mushroomFlag = stampMushroomFlag(
+    new Uint8ClampedArray(source),
+    mushroom,
+    W,
+    H,
+  );
+  const marioFlag = stampEmblemInCloth(
+    new Uint8ClampedArray(source),
+    face,
+    W,
+    H,
+    W,
+    8,
+  );
+  assertOutsideMarkUnchanged(mushroomFlag, source, star);
+  assertOutsideMarkUnchanged(marioFlag, source, star);
+  assert.ok(countInBox(mushroomFlag, star, [230, 156, 33]) >= 8, "cap gold");
+  assert.ok(countInBox(marioFlag, star, HAT) >= 4, "Mario hat");
+  assert.ok(countInBox(marioFlag, star, SKIN) >= 2, "Mario skin");
+  assert.equal(countInBox(marioFlag, star, MARK), 0, "the star is replaced");
+  assert.notDeepEqual(mushroomFlag, source);
+  assert.notDeepEqual(mushroomFlag, marioFlag);
 });
 
 test("Fire Mario draw path uses original fireMario frames, not the white palette", () => {
@@ -217,7 +265,7 @@ function atlasRgba(atlas: string, crop: string) {
   } catch (error) {
     const err = error as { code?: string };
     if (err.code === "ENOENT")
-      throw new Error("convert required to inspect metatiles.png");
+      throw new Error("convert required to inspect sprite sheets");
     throw error;
   }
 }

@@ -233,18 +233,22 @@ export function flagTextureKey(claim: "goomba" | "mario") {
   return claim === "mario" ? "marioFlag" : "mushroomFlag";
 }
 
-function isFlagCloth(
+function isFlagWhite(r: number, g: number, b: number, alpha: number) {
+  return !!alpha && r > 200 && g > 200 && b > 200;
+}
+
+// The red star in the white field. The pole edge (x<=2) is red too.
+function isFlagMark(
   x: number,
   r: number,
   g: number,
   b: number,
   alpha: number,
 ) {
-  if (!alpha || x <= 2) return false;
-  return (r > 200 && g > 200 && b > 200) || (r > 180 && g < 100 && b < 100);
+  return !!alpha && x > 2 && r > 180 && g < 100 && b < 100;
 }
 
-/** Scale an emblem into the flag cloth. Pole (x<=2) and orb stay. */
+/** Scale an emblem into the flag's red mark. Orb, pole, and field stay. */
 export function stampEmblemInCloth(
   flag: Uint8ClampedArray,
   emblem: Uint8ClampedArray,
@@ -256,18 +260,22 @@ export function stampEmblemInCloth(
   let minX = width,
     minY = height,
     maxX = -1,
-    maxY = -1;
+    maxY = -1,
+    field = -1;
   for (let i = 0; i < flag.length; i += 4) {
     const x = (i / 4) % width;
     const y = Math.floor(i / 4 / width);
-    if (!isFlagCloth(x, flag[i], flag[i + 1], flag[i + 2], flag[i + 3]))
+    const white = isFlagWhite(flag[i], flag[i + 1], flag[i + 2], flag[i + 3]);
+    if (field < 0 && white) field = i;
+    if (!isFlagMark(x, flag[i], flag[i + 1], flag[i + 2], flag[i + 3]))
       continue;
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
   }
-  if (maxX < minX) return flag;
+  if (maxX < minX || field < 0) return flag;
+  const fieldColor = flag.slice(field, field + 3);
   const boxW = maxX - minX + 1;
   const boxH = maxY - minY + 1;
   const scale = Math.min(boxW / emblemWidth, boxH / emblemHeight);
@@ -275,19 +283,23 @@ export function stampEmblemInCloth(
   const destH = Math.max(1, Math.round(emblemHeight * scale));
   const destX = minX + Math.floor((boxW - destW) / 2);
   const destY = minY + Math.floor((boxH - destH) / 2);
-  for (let i = 0; i < flag.length; i += 4) {
-    const x = (i / 4) % width;
-    const y = Math.floor(i / 4 / width);
-    if (!isFlagCloth(x, flag[i], flag[i + 1], flag[i + 2], flag[i + 3]))
-      continue;
-    const ex = Math.floor(((x - destX) * emblemWidth) / destW);
-    const ey = Math.floor(((y - destY) * emblemHeight) / destH);
-    if (ex < 0 || ey < 0 || ex >= emblemWidth || ey >= emblemHeight) continue;
-    const mi = (ey * emblemWidth + ex) * 4;
-    if (!emblem[mi + 3]) continue;
-    flag[i] = emblem[mi];
-    flag[i + 1] = emblem[mi + 1];
-    flag[i + 2] = emblem[mi + 2];
+  // Nearest-neighbor from pixel centers. The emblem replaces the mark, and
+  // mark pixels it leaves bare become field. Nothing outside the mark moves.
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const i = (y * width + x) * 4;
+      const ex = Math.floor(((x - destX + 0.5) * emblemWidth) / destW);
+      const ey = Math.floor(((y - destY + 0.5) * emblemHeight) / destH);
+      const mi = (ey * emblemWidth + ex) * 4;
+      const inside =
+        x >= destX && y >= destY && x < destX + destW && y < destY + destH;
+      if (inside && emblem[mi + 3]) {
+        flag[i] = emblem[mi];
+        flag[i + 1] = emblem[mi + 1];
+        flag[i + 2] = emblem[mi + 2];
+      } else if (isFlagMark(x, flag[i], flag[i + 1], flag[i + 2], flag[i + 3]))
+        flag.set(fieldColor, i);
+    }
   }
   return flag;
 }

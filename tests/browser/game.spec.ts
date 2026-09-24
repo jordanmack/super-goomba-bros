@@ -823,7 +823,7 @@ test("mushroom types use distinct colors and the 8x item draws larger", async ({
   expect(drawn.overhangs.oneUp).toBe(drawn.overhangs.mushroom);
 });
 
-test("player flagpole flag stamps a mushroom and Mario stamps a face in the cloth", async ({
+test("player flagpole flag stamps a mushroom and Mario stamps a face in the red star", async ({
   page,
 }) => {
   await page.goto("/");
@@ -840,52 +840,58 @@ test("player flagpole flag stamps a mushroom and Mario stamps a face in the clot
       const image = textures[name].getSourceImage() as HTMLCanvasElement;
       return image.getContext("2d")!.getImageData(0, 0, image.width, image.height);
     };
-    const mushroom = pixelsOf("mushroom");
+    const source = document.createElement("canvas");
+    source.width = 16;
+    source.height = 16;
+    const sourceContext = source.getContext("2d")!;
+    sourceContext.drawImage(
+      textures["source-items"].getSourceImage(),
+      128,
+      0,
+      16,
+      16,
+      0,
+      0,
+      16,
+      16,
+    );
+    const original = sourceContext.getImageData(0, 0, 16, 16);
     const marioFlag = pixelsOf("marioFlag");
     const mushroomFlag = pixelsOf("mushroomFlag");
+    // The red star in the original 16x16 flag spans x 5-11, y 6-12.
+    const inStar = (x: number, y: number) =>
+      x >= 5 && x <= 11 && y >= 6 && y <= 12;
     const clothStats = (data: ImageData) => {
-      let pole = 0,
-        orb = 0,
-        clothWhite = 0,
-        mushroomRed = 0,
-        mushroomCap = 0,
+      let changedOutside = 0,
+        gold = 0,
         hat = 0,
-        skin = 0,
-        oneToOne = 0;
-      const w = data.width;
+        skin = 0;
       for (let i = 0; i < data.data.length; i += 4) {
-        if (!data.data[i + 3]) continue;
-        const x = (i / 4) % w;
-        const y = Math.floor(i / 4 / w);
+        const x = (i / 4) % data.width;
+        const y = Math.floor(i / 4 / data.width);
         const r = data.data[i],
           gc = data.data[i + 1],
           b = data.data[i + 2];
-        if (x <= 2 && r > 160 && gc < 80 && b < 80) pole++;
-        if (y <= 4 && r > 200 && gc > 140 && b < 80) orb++;
-        if (x > 2 && r > 200 && gc > 200 && b > 200) clothWhite++;
-        if (x > 2 && y >= 5 && r > 160 && gc < 100 && b < 80) mushroomRed++;
-        if (x > 2 && y >= 5 && r > 200 && gc > 140 && b < 80) mushroomCap++;
-        if (x > 2 && r > 220 && gc < 80 && b < 40) hat++;
-        if (x > 2 && r > 220 && gc > 140 && gc < 200 && b > 40 && b < 100) skin++;
-        const mx = x - 1;
-        const my = y - 1;
-        if (
-          mx >= 0 &&
-          my >= 0 &&
-          mx < mushroom.width &&
-          my < mushroom.height
-        ) {
-          const mi = (my * mushroom.width + mx) * 4;
-          if (
-            mushroom.data[mi + 3] &&
-            r === mushroom.data[mi] &&
-            gc === mushroom.data[mi + 1] &&
-            b === mushroom.data[mi + 2]
-          )
-            oneToOne++;
+        if (!inStar(x, y)) {
+          for (let c = 0; c < 4; c++)
+            if (data.data[i + c] !== original.data[i + c]) {
+              changedOutside++;
+              break;
+            }
+          continue;
         }
+        if (r > 200 && gc > 140 && b < 80) gold++;
+        if (r > 220 && gc < 80 && b < 40) hat++;
+        if (r > 220 && gc > 140 && gc < 200 && b > 40 && b < 100) skin++;
       }
-      return { pole, orb, clothWhite, mushroomRed, mushroomCap, hat, skin, oneToOne };
+      return {
+        width: data.width,
+        height: data.height,
+        changedOutside,
+        gold,
+        hat,
+        skin,
+      };
     };
     const idle = {
       left: false,
@@ -968,15 +974,14 @@ test("player flagpole flag stamps a mushroom and Mario stamps a face in the clot
   });
   expect(drawn.sameCanvas).toBe(false);
   expect(drawn.hasGoombaFlag).toBe(false);
-  expect(drawn.mushroomFlag.pole).toBeGreaterThan(0);
-  expect(drawn.mushroomFlag.orb).toBeGreaterThan(0);
-  expect(drawn.mushroomFlag.mushroomRed + drawn.mushroomFlag.mushroomCap).toBeGreaterThan(8);
-  expect(drawn.mushroomFlag.clothWhite).toBeGreaterThan(4);
-  expect(drawn.mushroomFlag.oneToOne).toBeLessThan(50);
-  expect(drawn.marioFlag.pole).toBeGreaterThan(0);
-  expect(drawn.marioFlag.orb).toBeGreaterThan(0);
-  expect(drawn.marioFlag.hat).toBeGreaterThan(4);
-  expect(drawn.marioFlag.skin).toBeGreaterThan(4);
+  for (const flag of [drawn.mushroomFlag, drawn.marioFlag]) {
+    expect(flag.width).toBe(16);
+    expect(flag.height).toBe(16);
+    expect(flag.changedOutside).toBe(0);
+  }
+  expect(drawn.mushroomFlag.gold).toBeGreaterThanOrEqual(8);
+  expect(drawn.marioFlag.hat).toBeGreaterThanOrEqual(4);
+  expect(drawn.marioFlag.skin).toBeGreaterThanOrEqual(2);
   expect(drawn.playerClaim).toBe("goomba");
   expect(drawn.playerFlags.map((f: { key: string }) => f.key)).toEqual([
     "mushroomFlag",

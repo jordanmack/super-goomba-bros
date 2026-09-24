@@ -72,11 +72,12 @@ settings unless a rule below explicitly fixes their relationship.
 - The goal is the castle doorway. Castle interiors use a visible inverted-white
   rescue doorway after the original bridge, white on black with no gray fringe.
   On stages with a flagpole, the first of the player or
-  Mario to pass it raises a matching flag. The player flag stamps a red 2x
-  mushroom into the cloth. Mario's flag stamps small Mario's face the same way.
-  Cloth, pole, and orb stay. NPCs do
-  not claim it. The pole and flag never add collision or change velocity. The
-  castle door remains the real goal.
+  Mario to pass it raises a matching flag. It is the original 16x16 pole flag,
+  drawn at 32x32. The player flag scales the red 2x mushroom down,
+  nearest-neighbor, into the small red star on the white cloth. Mario's flag
+  puts small Mario's face there the same way. The orb, pole edge, and white
+  cloth stay. NPCs do not claim it. The pole and flag never add collision or
+  change velocity. The castle door remains the real goal.
 
 Original asset sources and frame details are in the
 [sprite credits](../src/assets/smb/README.md) and
