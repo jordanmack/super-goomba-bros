@@ -45,7 +45,10 @@ The converter follows the source's terrain masks, scenery tables, object
 dimensions, and metatile drawing rules. It keeps space beyond the last object
 for camera movement. It omits the original invisible castle stop block so the
 player can enter the door in this rescue game. Castle-room rescue doors are a
-custom endpoint after the original bridge, not a flag finish.
+custom endpoint after the original bridge, not a flag finish. In area 42, the
+pipe coin rooms, it fills the empty cells on rows 2-12 between each room's exit
+lip and the next room's left wall with wall brick (tile 82), so a wide view
+does not show that void.
 
 `tests/levels.test.ts` compares World 1-1 pipes, gaps, stairs, floating blocks,
 and castle coordinates with the previous map; it also checks all generated

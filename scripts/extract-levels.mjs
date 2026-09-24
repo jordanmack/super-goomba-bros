@@ -218,6 +218,25 @@ export function axeMetatileRow(tiles, column) {
 
 // Metatile IDs and area commands follow AreaParserCore / RunAObj in the source.
 // The first two screen rows are outside its thirteen-row playfield buffer.
+// L_UndergroundArea3 holds the one-screen pipe coin rooms. SMB1 never shows
+// the columns between a room's exit lip (tiles 20, 21) and the next room's left
+// wall, but a wide view does. Fill their empty cells on rows 2-12 with the side
+// wall brick.
+const COIN_ROOM_AREA = "42";
+const COIN_ROOM_BRICK = 82;
+const LIP_RIGHT = 21;
+
+function fillCoinRoomGaps(tiles, width) {
+  for (let lip = 0; lip < width; lip++) {
+    if (tiles[2][lip] !== LIP_RIGHT) continue;
+    let end = lip + 1;
+    while (end < width && !tiles.slice(3, 13).some((row) => row[end])) end++;
+    for (let column = lip + 1; column < end; column++)
+      for (let row = 2; row <= 12; row++)
+        if (!tiles[row][column]) tiles[row][column] = COIN_ROOM_BRICK;
+  }
+}
+
 export function decodeArea(tables, pointer) {
   const type = (pointer >> 5) & 3,
     id = areaId(pointer);
@@ -499,6 +518,7 @@ export function decodeArea(tables, pointer) {
       }
     }
   }
+  if (id === COIN_ROOM_AREA) fillCoinRoomGaps(tiles, width);
   const blocks = [];
   for (let row = 0; row < 15; row++)
     for (let column = 0; column < width; column++) {

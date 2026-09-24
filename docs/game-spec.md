@@ -24,6 +24,12 @@ settings unless a rule below explicitly fixes their relationship.
   Never read or require a ROM.
 - Keep the original gaps, pipe dimensions, block rows, stairs, ledges, and castle
   locations. Keep the custom NPC population and rescue rules.
+- The pipe coin rooms in underground area 42 are one original screen each. SMB1
+  never shows the columns between a room's exit lip and the next room's left
+  wall, but a wide view would. The extractor fills the empty cells there on rows
+  2-12 (columns 17-31, 81-95, 113-127, and 145-175) with the side-wall brick,
+  tile 82. They are ordinary bricks with the same smash rules as the walls. A
+  view wider than about 17:9 can still reach the next room's own left wall.
 - Include underground, water, and castle areas with their corresponding art and
   music. Moving platforms carry characters. Balance-lift pairs (original enemy
   type 36 / $24) are coupled: weight on one lowers it and raises its partner,

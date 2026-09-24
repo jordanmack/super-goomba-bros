@@ -258,6 +258,52 @@ test("1-2 and 4-2 warp-zone pipes go to distinct first stages", () => {
   assert.equal(levelOf("6-1").stage, 1);
 });
 
+test("area 42 fills the wide-view gaps beside the pipe coin rooms with wall brick", () => {
+  const area = areaOf("42");
+  const gaps = [
+    [17, 31],
+    [81, 95],
+    [113, 127],
+    [145, 175],
+  ];
+  const inGap = (column: number) =>
+    gaps.some(([from, to]) => column >= from! && column <= to!);
+  for (const [from, to] of gaps)
+    for (let column = from!; column <= to!; column++)
+      for (let row = 2; row <= 12; row++) {
+        assert.equal(area.tiles[row]![column], 82, `(${column}, ${row})`);
+        assert.ok(
+          area.blocks.some(
+            (b) =>
+              b.column === column &&
+              b.row === row &&
+              b.kind === "brick" &&
+              !b.hidden &&
+              b.content === null,
+          ),
+          `brick (${column}, ${row})`,
+        );
+      }
+  assert.ok(isSolidTile(82));
+  // The fill only turns empty cells into brick, so unchanged counts outside the
+  // gaps mean the chambers, lips, coins, question blocks, and pipes are intact.
+  let outside = 0;
+  for (let row = 0; row < area.height; row++)
+    for (let column = 0; column < area.width; column++)
+      if (!inGap(column) && area.tiles[row]![column]) outside++;
+  assert.equal(outside, 793);
+  assert.equal(area.blocks.filter((b) => !inGap(b.column)).length, 387);
+  for (const lip of [15, 47, 79, 111, 143])
+    for (let row = 2; row <= 10; row++) {
+      assert.equal(area.tiles[row]![lip], 20, `lip ${lip}, ${row}`);
+      assert.equal(area.tiles[row]![lip + 1], 21, `lip ${lip + 1}, ${row}`);
+    }
+  // The drop shafts inside the rooms stay open.
+  for (const column of [1, 2, 3, 129, 130, 131])
+    for (let row = 3; row <= 12; row++)
+      assert.equal(area.tiles[row]![column], 0, `shaft (${column}, ${row})`);
+});
+
 test("pipe routes preserve world-specific underground return pages and 8-4 connections", () => {
   const entry = areaOf("25").pipes.find((p) => p.direction === "down")!;
   assert.equal(entry.column, 57);
