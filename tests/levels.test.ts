@@ -351,6 +351,7 @@ test("palette controls stay latched and every area has matching tile art", () =>
 
 test("end-of-stage castles stay 5-wide and do not fill terrain to the right edge", () => {
   const castleBody = new Set([69, 70, 71, 72, 73, 74, 75]);
+  const tallIds: string[] = [];
   for (const area of areas) {
     if (area.type !== "overworld" || area.goal?.kind !== "castle-door")
       continue;
@@ -358,7 +359,11 @@ test("end-of-stage castles stay 5-wide and do not fill terrain to the right edge
       .filter((o) => o.opcode === 18 && o.column > 16)
       .at(-1);
     if (!castle) continue;
-    const after = castle.column + 5;
+    // Tall castles (data 0) keep a two-column wall wing. Short castles do not.
+    const wing = castle.data === 0 ? 2 : 0;
+    if (wing) tallIds.push(area.id);
+    const bodyEnd = castle.column + 5;
+    const after = bodyEnd + wing;
     for (let y = 2; y < 13; y++) {
       assert.equal(
         castleBody.has(area.tiles[y][area.width - 1]),
@@ -372,8 +377,64 @@ test("end-of-stage castles stay 5-wide and do not fill terrain to the right edge
           `${area.id} row ${y} col ${x}: no trailing castle fill`,
         );
     }
-    assert.equal(area.tiles[13][after], 84, `${area.id}: ground past castle`);
+    assert.equal(
+      area.tiles[13][bodyEnd],
+      84,
+      `${area.id}: ground past castle`,
+    );
+    if (!wing) {
+      for (let y = 2; y < 13; y++)
+        assert.equal(
+          castleBody.has(area.tiles[y][bodyEnd]),
+          false,
+          `${area.id} row ${y}: short castle has no right wing`,
+        );
+      continue;
+    }
+    const checkWing = (dx: number) => {
+      const leftColumn = castle.column - 2 + dx;
+      const rightColumn = bodyEnd + dx;
+      assert.equal(
+        area.tiles[7]![leftColumn],
+        69,
+        `${area.id}: left wing row 7`,
+      );
+      assert.equal(
+        area.tiles[7]![rightColumn],
+        69,
+        `${area.id}: right wing row 7`,
+      );
+      for (let y = 8; y <= 12; y++) {
+        assert.equal(
+          area.tiles[y]![leftColumn],
+          71,
+          `${area.id}: left wing row ${y}`,
+        );
+        assert.equal(
+          area.tiles[y]![rightColumn],
+          71,
+          `${area.id}: right wing row ${y}`,
+        );
+        assert.equal(
+          isSolidTile(area.tiles[y]![rightColumn]!),
+          false,
+          `${area.id}: right wing is not solid`,
+        );
+      }
+      assert.equal(
+        isSolidTile(area.tiles[7]![rightColumn]!),
+        false,
+        `${area.id}: right wing cap is not solid`,
+      );
+      assert.equal(
+        area.tiles[13]![rightColumn],
+        84,
+        `${area.id}: wing keeps ground`,
+      );
+    };
+    for (let dx = 0; dx < wing; dx++) checkWing(dx);
   }
+  assert.deepEqual(tallIds.sort(), ["20", "21", "26", "27", "2c", "2d"]);
   const area26 = areaOf("26");
   const area25 = areaOf("25");
   const castle26 = area26.objects
@@ -389,14 +450,25 @@ test("end-of-stage castles stay 5-wide and do not fill terrain to the right edge
   assert.deepEqual(slice(area26, castle26, 5), [71, 71, 74, 71, 71]);
   assert.deepEqual(slice(area25, castle25, 10), [69, 73, 73, 73, 69]);
   assert.deepEqual(slice(area25, castle25, 11), [71, 71, 74, 71, 71]);
-  // Foreground-2 wall still draws in the two columns before 1-3's castle.
+  // Foreground-2 wall draws two columns before 1-3's castle and two after it.
   assert.equal(area26.tiles[7]![castle26.column - 2], 69);
   assert.equal(area26.tiles[8]![castle26.column - 2], 71);
+  assert.equal(area26.tiles[7]![castle26.column + 5], 69);
+  assert.equal(area26.tiles[8]![castle26.column + 5], 71);
+  assert.equal(area26.tiles[7]![castle26.column + 6], 69);
+  assert.equal(area26.tiles[12]![castle26.column + 6], 71);
+  assert.equal(area26.tiles[7]![castle26.column + 7], 0);
   assert.equal(area26.tiles[7]![castle26.column], 73);
+  assert.equal(castle25.data, 6);
+  assert.equal(area25.tiles[10]![castle25.column + 5], 0);
   // Start-of-stage fg=2 (2-1) is not clipped by the end-castle bound.
   const area28 = areaOf("28");
   assert.equal(area28.tiles[7]![5], 69);
   assert.equal(area28.tiles[8]![5], 71);
+  assert.equal(
+    area28.objects.filter((o) => o.opcode === 18 && o.column > 16).at(-1)!.data,
+    6,
+  );
 });
 
 test("castle-room goals overlay the inverted door rather than punching a hole", () => {

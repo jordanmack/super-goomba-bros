@@ -252,8 +252,12 @@ export function decodeArea(tables, pointer) {
   const lastCastle = objects
     .filter((o) => o.opcode === 18 && o.column > 16)
     .at(-1);
+  // Tall end castles (opcode 18, data 0) already draw two scenery columns on
+  // the left. Keep the same two columns on the right, then stop. Short castles
+  // stay a closed five-column building with no wing.
+  const castleWallWing = lastCastle?.data === 0 ? 2 : 0;
   const castleWallEnd = lastCastle
-    ? lastCastle.column + objectWidth(lastCastle, style)
+    ? lastCastle.column + objectWidth(lastCastle, style) + castleWallWing
     : Number.POSITIVE_INFINITY;
   let terrain = header.terrain,
     background = header.background,
@@ -294,7 +298,8 @@ export function decodeArea(tables, pointer) {
     if (foreground) {
       // Foreground 2 is the repeating castle wall. Original data latches it at
       // the end-of-stage castle and never turns it off; extra camera padding
-      // then fills to the right edge. Stop the wall at the castle's width.
+      // then fills to the right edge. Stop at the building, after the two-column
+      // right wing on a tall castle. Do not fill out to the area edge.
       const skipCastleWall = foreground === 2 && x >= castleWallEnd;
       if (!skipCastleWall)
         for (let r = 0; r < 13; r++) {
