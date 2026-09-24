@@ -4192,6 +4192,280 @@ test("Fire Mario still shoots while chasing a loose item", () => {
   assert.equal(s.fireballs[0]!.owner, "mario");
 });
 
+function openRunway(s: Simulation) {
+  for (const solid of [...s.solids]) s.physics.remove(solid);
+  const floor = s.physics.rectangle(800, T.groundY + 80, 4000, 160, true);
+  s.solids = [floor];
+  s.obstacles = [];
+}
+
+function standAt(actor: Actor, x: number) {
+  Body.setPosition(actor.body, {
+    x,
+    y: T.groundY - actor.body.height / 2,
+  });
+  Body.setVelocity(actor.body, { x: 0, y: 0 });
+}
+
+function armChase(s: Simulation, x: number, aim: number) {
+  s.marioActive = true;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  s.marioLook = 30;
+  s.marioJumpWait = 10;
+  s.marioChase = 8;
+  s.marioIgnore = 0;
+  s.marioDecision = 30;
+  s.marioTarget = s.player.id;
+  s.marioHuntItem = false;
+  s.marioGoal = "chase";
+  s.brickTarget = null;
+  s.marioAim = aim;
+  s.marioSeenAgo = 0;
+  s.marioStun = 0;
+  s.mario.navVx = undefined;
+  Body.setFrozen(s.mario.body, false);
+  standAt(s.mario, x);
+  s.mario.facing = aim >= x ? 1 : -1;
+  s.cameraX = 0;
+}
+
+function settleRun(s: Simulation) {
+  let last = s.mario.body.velocity.x;
+  let stable = 0;
+  for (let frame = 0; frame < 180; frame++) {
+    s.marioSeenAgo = 0;
+    s.marioChase = 8;
+    s.marioReaction = 0;
+    s.marioJumpWait = 10;
+    s.marioLook = 30;
+    s.step(dt, emptyInput());
+    assert.equal(s.marioActive, true, `Mario dropped out on frame ${frame}`);
+    const vx = s.mario.body.velocity.x;
+    if (Math.abs(vx - last) < 1e-4 && Math.abs(vx) > 1) stable++;
+    else stable = 0;
+    last = vx;
+    if (stable >= 8) return vx;
+  }
+  assert.fail(
+    `run did not settle, vx=${last}, pressure=${s.marioPressure}`,
+  );
+}
+
+function shotFromRun(s: Simulation) {
+  s.setMarioStage(2);
+  // Past the old 0.8s sight gate, still inside the chase timeout.
+  s.marioSeenAgo = 1;
+  s.fireballs = [];
+  s.marioReaction = 0;
+  s.marioChase = 8;
+  s.marioLook = 30;
+  s.marioJumpWait = 10;
+  const before = s.mario.body.velocity.x;
+  s.step(dt, emptyInput());
+  const shot = owned(s, "mario").at(-1);
+  assert.ok(shot, "no Mario fireball");
+  const after = s.mario.body.velocity.x;
+  assert.ok(Math.abs(after) > 1, `horizontal speed collapsed to ${after}`);
+  assert.ok(
+    Math.abs(after) > Math.abs(before) * 0.5,
+    `shot frame zeroed the run (${before} -> ${after})`,
+  );
+  assert.equal(Math.sign(after), Math.sign(before));
+  assert.ok(
+    Math.abs(shot.vx) > Math.abs(after),
+    `shot ${shot.vx} is not ahead of run ${after}`,
+  );
+  assert.equal(Math.sign(shot.vx), Math.sign(after));
+  assert.equal(s.marioRunning, true);
+  return { before, after, shotVx: shot.vx };
+}
+
+test("Fire Mario's shot stays ahead of his run, including the crowd bonus, without stopping him", () => {
+  const calm = game();
+  openRunway(calm);
+  for (const n of calm.npcs) standAt(n, 2500);
+  standAt(calm.player, 2300);
+  armChase(calm, 400, 4400);
+  const calmVx = settleRun(calm);
+  assert.equal(calm.marioPressure, 0);
+  shotFromRun(calm);
+
+  const crowd = game();
+  openRunway(crowd);
+  const pack = crowd.npcs.slice(0, 6);
+  pack.forEach((n, i) => {
+    n.warned = true;
+    n.state = "run";
+    n.wait = 0;
+    n.shell = "none";
+    n.starLeft = 0;
+    standAt(n, 160 + i * 30);
+  });
+  for (const n of crowd.npcs) {
+    if (!pack.includes(n)) standAt(n, 2500);
+  }
+  standAt(crowd.player, 2300);
+  armChase(crowd, 400, 4400);
+  const crowdVx = settleRun(crowd);
+  assert.equal(crowd.marioPressure, 1);
+  assert.ok(
+    Math.abs(crowdVx) > Math.abs(calmVx),
+    `crowd run ${crowdVx} did not beat the calm run ${calmVx}`,
+  );
+  shotFromRun(crowd);
+});
+
+test("Fire Mario fires ahead on a chase and on a crowd goal when a slot is free", () => {
+  const air = game();
+  openRunway(air);
+  for (const n of air.npcs) standAt(n, 2500);
+  standAt(air.player, 2300);
+  air.setMarioStage(2);
+  armChase(air, 400, 900);
+  Body.setPosition(air.mario.body, { x: 400, y: T.groundY - 140 });
+  Body.setVelocity(air.mario.body, { x: 3.4, y: 0 });
+  air.marioSeenAgo = 1;
+  air.fireballs = [];
+  air.step(dt, emptyInput());
+  const airShot = owned(air, "mario").at(-1);
+  assert.ok(airShot, "an airborne chase with a free slot did not fire");
+  assert.equal(air.mario.grounded, false);
+  assert.ok(Math.abs(air.mario.body.velocity.x) > 1);
+  assert.ok(Math.abs(airShot.vx) > Math.abs(air.mario.body.velocity.x));
+  assert.ok(Math.abs(air.marioAim - 400) > 125);
+  air.step(dt, emptyInput());
+  assert.equal(owned(air, "mario").length, T.fireballSlots);
+  const ids = owned(air, "mario").map((ball) => ball.id);
+  air.step(dt, emptyInput());
+  assert.equal(owned(air, "mario").length, T.fireballSlots);
+  assert.deepEqual(
+    owned(air, "mario").map((ball) => ball.id),
+    ids,
+    "a third Mario fireball appeared",
+  );
+
+  const s = game();
+  openRunway(s);
+  const pack = s.npcs.slice(0, 6);
+  pack.forEach((n, i) => {
+    n.warned = true;
+    n.state = "run";
+    n.wait = 0;
+    n.shell = "none";
+    n.starLeft = 0;
+    standAt(n, 640 + i * 30);
+  });
+  parkNpcs(s, pack, 5000);
+  at(s, 2000);
+  s.setMarioStage(2);
+  s.marioActive = true;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  s.marioLook = 0;
+  s.marioJumpWait = 10;
+  s.marioChase = 0;
+  s.marioIgnore = 0;
+  s.marioDecision = 30;
+  s.marioTarget = null;
+  s.marioHuntItem = false;
+  s.marioGoal = "";
+  s.brickTarget = null;
+  s.marioSeenAgo = 0;
+  s.marioStun = 0;
+  Body.setFrozen(s.mario.body, false);
+  standAt(s.mario, 400);
+  s.cameraX = 0;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioGoal, "crowd");
+  assert.ok(pack.some((n) => n.id === s.marioTarget));
+  const chosen = pack.find((n) => n.id === s.marioTarget)!;
+  assert.ok(Math.abs(chosen.body.position.x - s.mario.body.position.x) > 100);
+
+  s.marioReaction = 0;
+  s.marioJumpWait = 10;
+  s.marioLook = 30;
+  s.marioSeenAgo = 1;
+  s.fireballs = [];
+  const moving = s.mario.body.velocity.x;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioGoal, "crowd");
+  const shot = owned(s, "mario").at(-1);
+  assert.ok(shot, "a crowd goal with a free slot did not fire");
+  assert.equal(s.mario.grounded, true);
+  assert.ok(Math.abs(s.mario.body.velocity.x) > Math.abs(moving));
+  assert.ok(Math.abs(shot.vx) > Math.abs(s.mario.body.velocity.x));
+  assert.ok(
+    Math.abs(chosen.body.position.x - s.mario.body.position.x) > 100,
+    "he closed to stomp range before firing",
+  );
+});
+
+test("Fire Mario still prefers an easy stomp over a crowd", () => {
+  const s = game();
+  openRunway(s);
+  const idle = s.npcs[0]!;
+  const pack = s.npcs.slice(1, 7);
+  pack.forEach((n, i) => {
+    n.warned = true;
+    n.state = "run";
+    n.wait = 0;
+    n.shell = "none";
+    n.starLeft = 0;
+    standAt(n, 640 + i * 30);
+  });
+  parkNpcs(s, [idle, ...pack], 5000);
+  stillNpc(idle, 470);
+  at(s, 2000);
+  s.setMarioStage(2);
+  s.marioActive = true;
+  s.marioPause = 0;
+  s.marioReaction = 0;
+  s.marioLook = 0;
+  s.marioJumpWait = 0;
+  s.marioChase = 0;
+  s.marioIgnore = 0;
+  s.marioDecision = 30;
+  s.marioTarget = null;
+  s.marioHuntItem = false;
+  s.marioGoal = "";
+  s.brickTarget = null;
+  s.marioSeenAgo = 0;
+  s.marioStun = 0;
+  Body.setFrozen(s.mario.body, false);
+  standAt(s.mario, 400);
+  s.cameraX = 0;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioGoal, "stomp");
+  assert.equal(s.marioTarget, idle.id);
+  assert.equal(s.mario.grounded, true);
+
+  s.marioReaction = 0;
+  s.marioJumpWait = 0;
+  s.marioLook = 30;
+  s.step(dt, emptyInput());
+  assert.equal(s.marioGoal, "stomp");
+  assert.equal(s.marioTarget, idle.id);
+  assert.equal(s.mario.grounded, false);
+  assert.ok(s.mario.body.velocity.y < 0);
+});
+
+test("the player's fireball speed stays 6", () => {
+  const s = game();
+  give(s, s.player, "flower");
+  s.player.facing = 1;
+  tick(s, dt, { fire: true });
+  const right = owned(s, "player").at(-1);
+  assert.ok(right);
+  assert.equal(right.vx, 6);
+  s.fireballs = [];
+  s.player.facing = -1;
+  tick(s, dt, { fire: true });
+  const left = owned(s, "player").at(-1);
+  assert.ok(left);
+  assert.equal(left.vx, -6);
+});
+
 test("an airborne easy stomp is not stolen by a loose item", () => {
   const s = game();
   const n = s.npcs[0];

@@ -411,7 +411,7 @@ A heard warning still retargets him at the player outside this order, and reads
 back as `shout`.
 
 Mario can walk and run. He uses running to pursue crowds and evade star holders.
-Fire Mario fires aggressively while still trying to stomp targets.
+Fire Mario runs and shoots in the same action while chasing. Starting a shot does not zero his horizontal speed or cancel the run. The shot is faster than his current run, including the crowd bonus, so it pulls ahead. He fires ahead whenever one of his two slots is free, on a chase and especially on a crowd goal, and he does not wait until he is close enough to stomp. A stomp jump does not stop the shot. He still stomps when the existing rule says to. Fire does not change the hunt order. The player's fireball speed stays 6.
 
 In water rooms (areas 00, 01, and 02) there is no stomp and no feet comparison.
 Mario overlap hurts the player and an NPC from any direction. That hurt reuses

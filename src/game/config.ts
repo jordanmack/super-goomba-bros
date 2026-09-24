@@ -114,6 +114,9 @@ export const TUNING = {
   marioCrowdLimit: 5,
   marioCrowdRange: 800,
   marioCrowdSpeedBonus: 2,
+  // Added to Mario's current run pace so the shot stays ahead of that run,
+  // including the crowd bonus. The player's shot does not use this.
+  marioFireLead: 1,
   starSeconds: 10,
   mushroomScale: 2,
   giantScale: 3,

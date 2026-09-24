@@ -5421,6 +5421,13 @@ export class Simulation {
     Body.setFrozen(this.mario.body, true);
   }
 
+  private marioPace() {
+    return (
+      (this.marioRunning ? 5.2 + this.marioPressure * 0.8 : 2.8) +
+      this.marioPressure * T.marioCrowdSpeedBonus
+    );
+  }
+
   private updateMario(dt: number) {
     if (!this.marioActive) {
       if (this.marioEntered) return;
@@ -5611,17 +5618,14 @@ export class Simulation {
           this.jump(this.mario);
         }
       }
-      if (
-        this.marioStage === 2 &&
-        this.marioSeenAgo < 0.8 &&
-        (this.mario.grounded || water) &&
-        this.canThrowFireball("mario")
-      ) {
+      if (this.marioStage === 2 && this.canThrowFireball("mario")) {
+        // Lead the run he is already on, including the crowd bonus.
+        // A new shot does not change his horizontal speed.
         this.fireballs.push({
           id: this.nextId++,
           x: m.x,
           y: m.y,
-          vx: direction * 5,
+          vx: direction * (this.marioPace() + T.marioFireLead),
           age: 0,
           owner: "mario",
           vy: 0,
@@ -5666,9 +5670,7 @@ export class Simulation {
       );
       if (nearbyBrick && this.random() < 0.3) this.brickTarget = nearbyBrick.id;
     }
-    const speed =
-      (this.marioRunning ? 5.2 + this.marioPressure * 0.8 : 2.8) +
-      this.marioPressure * T.marioCrowdSpeedBonus;
+    const speed = this.marioPace();
     const desired =
       this.marioReaction > 0 ||
       (this.marioPause > 0 && !this.wallAhead(this.mario, direction))
