@@ -73,12 +73,19 @@ settings unless a rule below explicitly fixes their relationship.
   non-goal enterable pipe is rescued and does not arrive in the destination.
   Goal pipes still carry NPCs through. Pipe travel does not rescue the player.
 - Stages whose route starts off the main area (1-2, 2-2, 4-2, 7-2) play that
-  overworld pipe strip as a script on first arrival. After the WORLD n-n intro,
-  walk, jump, and pipe input are ignored. The player auto-walks into the pipe
-  and emerges at the start of main, then gets control. Pause and Mute still
-  work. TIME does not run, and Mario does not spawn or hunt, until control on
-  main. The script is not a death. Death with lives left, Pause Restart, and
-  other retries of that stage skip the strip and spawn at the start of main.
+  overworld pipe strip as a script on first arrival, like SMB1's entrance 7
+  cutscene. After the WORLD n-n intro, walk, jump, run, and pipe input are
+  ignored. The player auto-walks right at 1.5 px/frame (`MaxRightXSpdData`
+  $0c). Pipe contact plays the pipe sound once. The player slides at 1 px/frame
+  onto the pipe's own column and holds there, and the strip stays for 160
+  frames from contact (`AreaChangeTimerData` $a0). Then the player stands at
+  the start of main, with no second pipe sound and no world card, and gets
+  control. The strip plays only the 144-frame ground lead-in
+  (`PipeIntroMusic`), the opening 2.4 s of the overworld recording, then stays
+  silent until main's own music starts. Pause and Mute still work. TIME does
+  not run, and Mario does not spawn or hunt, until control on main. The script
+  is not a death. Death with lives left, Pause Restart, and other retries of
+  that stage skip the strip and spawn at the start of main.
 - Warp-zone pipes skip to that world's first stage: 1-2 columns 178/182/186 go
   to worlds 4/3/2; 4-2 column 214 starts world 5 (WarpZoneNumbers control 5);
   the 4-2 vine bonus `2f` down pipes at columns 50/54/58 start worlds 8/7/6

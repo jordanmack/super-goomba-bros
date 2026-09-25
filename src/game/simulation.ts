@@ -41,6 +41,7 @@ import {
   stageTimer,
   terrainRects,
   areaMusicKey,
+  PIPE_INTRO_MUSIC,
   vineDestination,
   vineExitColumn,
 } from "./levels.ts";
@@ -180,6 +181,11 @@ export type Actor = {
     destLevel?: number;
     clip?: PipeClip;
     escape?: boolean;
+    // Pipe-intro cutscene: slide speed, frames left before the area changes,
+    // and no second pipe sound on arrival.
+    speed?: number;
+    wait?: number;
+    quiet?: boolean;
   };
   navVx?: number;
   navDelay?: number;
@@ -489,6 +495,8 @@ export class Simulation {
   // Starman recording. Cloud areas use that same track with no star.
   musicKey() {
     const room = this.activeRoom;
+    if (this.pipeIntro && room.data.id !== this.level.main)
+      return PIPE_INTRO_MUSIC;
     const star =
       (this.player.alive && this.player.starLeft > 0) ||
       (this.marioActive && this.mario.alive && this.mario.starLeft > 0);
@@ -744,6 +752,18 @@ export class Simulation {
       ),
       escape: escape || undefined,
     };
+    if (actor === this.player && this.pipeIntro && dir === "right") {
+      // SMB1 EnterSidePipe slides until the sprite sits on the pipe's 16px
+      // column, then holds until ChangeAreaTimer runs out.
+      const travel = actor.pipeTravel;
+      travel.remaining = Math.max(
+        0,
+        left - (actor.body.position.x - vis.w / 2),
+      );
+      travel.speed = T.introPipeSlide;
+      travel.wait = T.introPipeFrames;
+      travel.quiet = true;
+    }
     actor.idleDrop = undefined;
     actor.facing = dir === "down" ? actor.facing : 1;
     actor.navVx = undefined;
@@ -756,10 +776,10 @@ export class Simulation {
     return true;
   }
   private updatePipeTravel(dt: number) {
-    const step = T.pipeSpeed * dt * 60;
     for (const actor of [this.player, ...this.npcs, this.mario]) {
       const travel = actor.pipeTravel;
       if (!travel) continue;
+      const step = (travel.speed ?? T.pipeSpeed) * dt * 60;
       const move = Math.min(step, travel.remaining);
       const p = actor.body.position;
       if (travel.dir === "down")
@@ -770,7 +790,8 @@ export class Simulation {
         Body.setPosition(actor.body, { x: p.x + move, y: p.y });
       else Body.setPosition(actor.body, { x: p.x - move, y: p.y });
       travel.remaining -= move;
-      if (travel.remaining > 0) continue;
+      if (travel.wait !== undefined) travel.wait -= dt * 60;
+      if (travel.remaining > 0 || (travel.wait ?? 0) > 0) continue;
       if (travel.phase === "enter" && travel.escape) {
         actor.pipeTravel = undefined;
         this.save(actor);
@@ -826,12 +847,12 @@ export class Simulation {
           arrival: travel.arrival,
           clip,
         };
-        if (actor === this.player) this.events.push("pipe");
+        if (actor === this.player && !travel.quiet) this.events.push("pipe");
         return;
       }
       this.standAt(actor, target, this.pipeSpawnX(target, travel.destPage));
       this.finishPipeArrival(actor, true);
-      if (actor === this.player) this.events.push("pipe");
+      if (actor === this.player && !travel.quiet) this.events.push("pipe");
       return;
     }
     const spawnX =
@@ -841,7 +862,7 @@ export class Simulation {
     if (travel.arrival === "stand") {
       this.standAt(actor, target, spawnX);
       this.finishPipeArrival(actor, true);
-      if (actor === this.player) this.events.push("pipe");
+      if (actor === this.player && !travel.quiet) this.events.push("pipe");
       return;
     }
     const top =
@@ -852,7 +873,7 @@ export class Simulation {
     });
     actor.facing = 1;
     this.finishPipeArrival(actor, false);
-    if (actor === this.player) this.events.push("pipe");
+    if (actor === this.player && !travel.quiet) this.events.push("pipe");
   }
   private limitBorrowedArrival(actor: Actor, room: Room, page: number) {
     const id = room.data.id;
@@ -5020,7 +5041,8 @@ export class Simulation {
         const dx = Number(play.right) - Number(play.left);
         const p = this.player.body.position;
         const water = this.activeRoom.data.type === "water";
-        if (water) this.playerPace = T.walkSpeed;
+        if (this.pipeIntro) this.playerPace = T.introWalkSpeed;
+        else if (water) this.playerPace = T.walkSpeed;
         else if (this.player.grounded)
           this.playerPace = play.run ? T.runSpeed : T.walkSpeed;
         this.move(this.player, dx * this.playerPace);

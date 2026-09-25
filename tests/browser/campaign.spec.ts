@@ -174,6 +174,58 @@ test("Pause and Mute still work during the 1-2 scripted pipe strip", async ({
   await expect(page.getByRole("heading", { name: "PAUSED" })).toBeHidden();
 });
 
+test("the 1-2 pipe strip plays only the ground lead-in, then silence, then underground music", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.sim.marioReturn = 1e6;
+    g.sim.nextLevel();
+  });
+  await skipIntro(page);
+  const state = () =>
+    page.evaluate(() => {
+      const g = (window as any).__game;
+      const music = g.audio.music;
+      return {
+        area: g.sim.player.areaId,
+        pipeIntro: g.sim.pipeIntro,
+        key: music?.key ?? null,
+        marker: music?.currentMarker?.name ?? null,
+        start: music?.currentMarker?.start ?? null,
+        duration: music?.currentMarker?.duration ?? null,
+        playing: !!music?.isPlaying,
+      };
+    });
+  await expect.poll(async () => (await state()).marker).toBe("leadIn");
+  const leadIn = await state();
+  expect(leadIn).toMatchObject({
+    area: "29",
+    pipeIntro: true,
+    key: "overworld",
+    start: 1.02,
+    playing: true,
+  });
+  expect(leadIn.duration).toBeCloseTo(2.4, 6);
+  // After 2.4 s the strip is still running, holding in the pipe, in silence.
+  await expect
+    .poll(async () => {
+      const now = await state();
+      return now.area === "29" && now.pipeIntro && !now.playing;
+    }, { timeout: 6000 })
+    .toBe(true);
+  expect((await state()).key).toBe("overworld");
+  await expect
+    .poll(async () => {
+      const now = await state();
+      return `${now.area} ${now.key} ${now.playing}`;
+    }, { timeout: 8000 })
+    .toBe("40 underground true");
+});
+
 test("a short touch on Pipe travels to the bonus area and changes its music", async ({
   browser,
 }) => {

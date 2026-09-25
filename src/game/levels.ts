@@ -56,6 +56,10 @@ export function themeFor(area: Area) {
 const AREA_TRACKS = new Set(["overworld", "underground", "water", "castle"]);
 
 // Cloud bonus areas use SMB1 CloudMusic, which is the star recording.
+// SMB1 PipeIntroMusic is only GroundLevelLeadInHdr: 144 frames on square 2,
+// then silence until the next area's music.
+export const PIPE_INTRO_MUSIC = "leadIn";
+
 export function areaMusicKey(areaType: string, cloud: boolean, star: boolean) {
   if (star || cloud) return "starman";
   return AREA_TRACKS.has(areaType) ? areaType : "overworld";

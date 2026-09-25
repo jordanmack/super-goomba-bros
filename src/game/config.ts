@@ -76,6 +76,12 @@ export const TUNING = {
   areaSpacing: 20000,
   pipeCooldown: 0.8,
   pipeSpeed: 2,
+  // SMB1 pipe-intro cutscene (entrance 6/7), at 2x. The walk is capped by
+  // MaxRightXSpdData $0c, EnterSidePipe slides at $08, and ChangeAreaTimer is
+  // AreaChangeTimerData $a0 on page 0, counted from pipe contact.
+  introWalkSpeed: 1.5,
+  introPipeSlide: 1,
+  introPipeFrames: 160,
   // NES RightPlatform sets Enemy_X_Speed to $10 (1 px/frame) on contact.
   // 2x tiles use 2 px/frame, the same scale as shellSpeed and vineClimbSpeed.
   rightLiftSpeed: 2,

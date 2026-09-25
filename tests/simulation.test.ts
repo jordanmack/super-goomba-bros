@@ -23,6 +23,7 @@ import { MAP_TOP, PHRASES, TUNING as T, VIEW_HEIGHT, blockDrawY, jumpArc } from 
 import { firstEmptySpawnCell, spawnCellCenter } from "../src/game/spawn-cell.ts";
 import {
   CAMPAIGN,
+  PIPE_INTRO_MUSIC,
   areaData,
   areaGaps,
   isCannonTile,
@@ -5274,11 +5275,66 @@ test("an intro pipe stands at the dest page without a nearby-floor search", () =
   assert.equal(s.activeRoom.data.id, s.level.main);
   while (s.player.pipeTravel && frames++ < 360) s.step(dt, emptyInput());
   assert.equal(s.player.pipeTravel, undefined);
-  assert.ok(s.events.filter((event) => event === "pipe").length >= 2);
+  assert.equal(s.events.filter((event) => event === "pipe").length, 1);
   assert.ok(
     Math.abs(s.player.body.position.x - (s.activeRoom.offset + 100)) < 8,
   );
   assert.equal(s.player.grounded, true);
+});
+
+test("the pipe-intro cutscene walks slowly, holds in the pipe for 160 frames, and plays only the lead-in", () => {
+  for (const [id, music] of [
+    ["1-2", "underground"],
+    ["2-2", "water"],
+    ["4-2", "underground"],
+    ["7-2", "water"],
+  ] as const) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === id);
+    s.reset();
+    s.marioReturn = 1e6;
+    assert.equal(s.pipeIntro, true, id);
+    const strip = s.activeRoom;
+    assert.equal(strip.data.id, "29");
+    assert.equal(s.musicKey(), PIPE_INTRO_MUSIC, id);
+    const pipe = strip.data.pipes[0]!;
+    const face = strip.offset + pipe.column * 32;
+    const pipeEvents = () => s.events.filter((e) => e === "pipe").length;
+    const mash = { left: true, jump: true, run: true, down: true };
+    let contact = -1;
+    let aligned = false;
+    let lastX = s.player.body.position.x;
+    for (let frame = 0; frame < 600 && s.activeRoom === strip; frame++) {
+      s.step(dt, { ...emptyInput(), ...mash });
+      const x = s.player.body.position.x;
+      if (contact < 0 && s.player.pipeTravel) {
+        contact = frame;
+        assert.equal(pipeEvents(), 1, `${id} pipe sound on contact`);
+      } else if (contact < 0 && s.player.grounded && x > lastX)
+        assert.ok(Math.abs(x - lastX - T.introWalkSpeed) < 1e-6, `${id} ${x}`);
+      else if (contact >= 0 && s.activeRoom === strip) {
+        const travel = s.player.pipeTravel!;
+        assert.ok(x - lastX <= T.introPipeSlide + 1e-6, `${id} slide`);
+        if (aligned) assert.equal(x, lastX, `${id} hold`);
+        if (travel.remaining === 0) {
+          aligned = true;
+          // The 32px sprite sits on the pipe's own column, past the lip.
+          assert.ok(Math.abs(x - 16 - face) < 1e-6, `${id} aligned`);
+        }
+        assert.equal(s.musicKey(), PIPE_INTRO_MUSIC);
+      }
+      lastX = x;
+      if (s.activeRoom !== strip) {
+        assert.equal(frame - contact, T.introPipeFrames, `${id} hold length`);
+      }
+    }
+    assert.ok(contact > 0, id);
+    assert.equal(s.activeRoom.data.id, s.level.main, id);
+    assert.equal(pipeEvents(), 1, `${id} no second pipe sound`);
+    assert.equal(s.mode, "playing");
+    assert.equal(s.pipeIntro, false);
+    assert.equal(s.musicKey(), music, id);
+  }
 });
 
 test("1-2 after nextLevel from 1-1 goes through 29 without applying input", () => {

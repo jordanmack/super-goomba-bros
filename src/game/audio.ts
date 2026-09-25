@@ -1,6 +1,7 @@
 import { victoryCue, type GameEvent } from "./simulation";
 import type Phaser from "phaser";
 import { CANNON_BLAST, MIX, TUNING as T, pickWarningChirp } from "./config";
+import { PIPE_INTRO_MUSIC } from "./levels";
 import overworld from "../assets/audio/overworld.mp3?inline";
 import starman from "../assets/audio/starman.mp3?inline";
 import underground from "../assets/audio/underground.mp3?inline";
@@ -71,6 +72,13 @@ const MUSIC_LOOPS: Record<
   },
   castle: { intro: 0.52 - 529 / 44100, start: 8.52 - 529 / 44100, duration: 8 },
 };
+// The overworld recording opens with the 144-frame ground lead-in, the only
+// phrase SMB1 plays for the pipe-intro cutscene.
+export const PIPE_INTRO_LEAD_IN = {
+  key: "overworld",
+  start: MUSIC_LOOPS.overworld.intro,
+  duration: 144 / 60,
+} as const;
 export const EFFECTS: Record<GameEvent, keyof typeof RECORDINGS> = {
   jump: "jump",
   bump: "bump",
@@ -111,6 +119,8 @@ export class GameAudio {
     [];
   private victoryLooping = false;
   private musicResume: { key: string; seek: number } | null = null;
+  private musicLeadIn = false;
+  private leadInDone = false;
   private tally: Phaser.Sound.WebAudioSound | null = null;
   random: () => number;
 
@@ -360,13 +370,24 @@ export class GameAudio {
 
   update(music = true, theme = "overworld", hurry = false) {
     if (!this.available) return;
-    const key = theme in MUSIC_LOOPS ? theme : "overworld";
-    if (this.music && (this.music.key !== key || !music)) this.stopMusic();
+    const leadIn = theme === PIPE_INTRO_MUSIC;
+    if (!leadIn) this.leadInDone = false;
+    const key = leadIn
+      ? PIPE_INTRO_LEAD_IN.key
+      : theme in MUSIC_LOOPS
+        ? theme
+        : "overworld";
+    if (
+      this.music &&
+      (this.music.key !== key || this.musicLeadIn !== leadIn || !music)
+    )
+      this.stopMusic();
     if (!music) this.musicResume = null;
     const rate = hurry ? T.hurryRate : 1;
     if (this.music) this.music.rate = rate;
     if (
       !music ||
+      (leadIn && this.leadInDone) ||
       this.victoryLooping ||
       this.music ||
       this.cue ||
@@ -381,6 +402,22 @@ export class GameAudio {
       rate,
     }) as Phaser.Sound.WebAudioSound;
     this.music = track;
+    this.musicLeadIn = leadIn;
+    if (leadIn) {
+      // One pass, then silence until the next area's music. It never loops.
+      this.musicResume = null;
+      track.addMarker({
+        name: "leadIn",
+        start: PIPE_INTRO_LEAD_IN.start,
+        duration: PIPE_INTRO_LEAD_IN.duration,
+        config: { volume: MIX.musicVolume },
+      });
+      track.once("complete", () => {
+        if (this.music === track) this.leadInDone = true;
+      });
+      track.play("leadIn");
+      return;
+    }
     const loop = MUSIC_LOOPS[key];
     track.addMarker({
       name: "loop",
