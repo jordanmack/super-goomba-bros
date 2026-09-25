@@ -1501,6 +1501,8 @@ export class Simulation {
     this.bulletBills = [];
     this.cannonLfsr.fill(0);
     this.cannonLfsr[0] = 0xa5;
+    // The frame counter restarts too, so no stage has stepped them yet.
+    this.podobooStepped = -1;
     this.frenzyTimer = 0;
     this.cheepHeights = 0;
     this.items = [];
