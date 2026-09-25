@@ -2740,24 +2740,6 @@ test("small Mario still detects a spring 26px off-centre", () => {
   assert.equal(s.activeRoom.onSpring(s.mario), true);
 });
 
-test("warning cooldown and one-count still hold", () => {
-  const s = game();
-  const n = s.npcs[0];
-  Body.setPosition(n.body, { x: 400, y: 415 });
-  at(s, n.body.position.x - 40);
-  tick(s, dt);
-  assert.equal(s.warned, 1);
-  assert.ok(s.events.includes("warn"));
-  s.events.length = 0;
-  tick(s, dt);
-  assert.equal(s.warned, 1);
-  assert.equal(s.events.includes("warn"), false);
-  s.cooldown = 0;
-  tick(s, dt);
-  assert.equal(s.warned, 1);
-  assert.equal(s.events.includes("warn"), false);
-});
-
 test("Mario still hears shouts beyond the warning radius", () => {
   const s = game();
   s.marioActive = true;
@@ -3247,7 +3229,6 @@ test("warnings count nearby groups once, never rescue them", () => {
   s.warn();
   assert.equal(s.warned, 2);
   assert.equal(s.saved, 0);
-  s.cooldown = 0;
   s.warn();
   assert.equal(s.warned, 2);
   s.kill(s.npcs[0]);
@@ -3274,48 +3255,9 @@ test("an unwarned NPC in range is warned the same step with no cooldown delay", 
   assert.equal(a.warned, true);
   assert.equal(b.warned, false);
   assert.equal(s.warned, 1);
-  assert.ok(s.cooldown > dt);
   at(s, b.body.position.x);
   tick(s, dt);
   assert.equal(b.warned, true);
-  assert.equal(s.warned, 2);
-});
-
-test("warning cooldown and distance limit", () => {
-  const s = game();
-  const a = s.npcs[0];
-  const b = s.npcs[1];
-  parkNpcs(s, [a, b]);
-  a.idleWalking = false;
-  a.wait = 99;
-  b.idleWalking = false;
-  b.wait = 99;
-  Body.setPosition(a.body, { x: 200, y: 415 });
-  Body.setPosition(b.body, { x: 200 + T.warningRange + 40, y: 415 });
-  Body.setVelocity(a.body, { x: 0, y: 0 });
-  Body.setVelocity(b.body, { x: 0, y: 0 });
-  assert.equal(T.warningRange, 96);
-  at(s, 40);
-  s.warn();
-  assert.equal(s.warned, 0);
-  at(s, a.body.position.x);
-  s.warn();
-  assert.equal(a.warned, true);
-  assert.equal(b.warned, false);
-  assert.equal(s.warned, 1);
-  assert.ok(s.cooldown > 0);
-  at(s, b.body.position.x);
-  s.warn();
-  assert.equal(b.warned, true);
-  assert.equal(s.warned, 2);
-  at(
-    s,
-    a.body.position.x -
-      T.warningRange -
-      (s.player.body.width + a.body.width) / 2 -
-      12,
-  );
-  tick(s, dt);
   assert.equal(s.warned, 2);
 });
 

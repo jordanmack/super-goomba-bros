@@ -708,13 +708,6 @@ p {
 .control-right {
   min-width: 57px;
 }
-.cooldown {
-  position: absolute;
-  inset: auto 0 0;
-  height: 4px;
-  background: #b25a45;
-  transform-origin: left;
-}
 .overlay {
   position: absolute;
   inset: 0;

@@ -111,7 +111,6 @@ type Snapshot = {
     y: number;
     lines: { id: number; text: string }[];
   }[];
-  cooldown: number;
   timeLeft: number;
   tallyPhase: TallyPhase;
   marioKills: number;
@@ -133,7 +132,6 @@ const initial: Snapshot = {
   flower: false,
   door: true,
   shouts: [],
-  cooldown: 0,
   timeLeft: 400,
   tallyPhase: "",
   marioKills: 0,
@@ -435,7 +433,6 @@ export default function App() {
               !!sim.activeRoom.data.goal &&
               sim.activeRoom.data.goal.kind !== "pipe",
             shouts,
-            cooldown: sim.cooldown,
             timeLeft: sim.timeLeft,
             tallyPhase: sim.tallyPhase,
             marioKills: sim.marioKills,

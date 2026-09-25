@@ -1450,8 +1450,6 @@ export class Simulation {
   coins = 0;
   score = 0;
   phase = 0;
-  cooldown = 0;
-  audible = 0;
   shouts: Shout[] = [];
   get bubble() {
     return this.shouts.at(-1)?.text ?? "";
@@ -1627,8 +1625,6 @@ export class Simulation {
       this.warned =
       this.saved =
       this.phase =
-      this.cooldown =
-      this.audible =
         0;
     this.shouts = [];
     this.score = score;
@@ -3687,8 +3683,6 @@ export class Simulation {
   }
   warn() {
     if (this.mode !== "playing") return;
-    this.cooldown = T.warningCooldown;
-    this.audible = T.warningSound;
     const p = this.player.body.position;
     this.shouts.push({
       id: this.nextId++,
@@ -4788,11 +4782,7 @@ export class Simulation {
         !(falling && this.fallingOntoNpc(n, playerBottom)) &&
         this.withinWarningRange(n),
     );
-    if (nearby) {
-      this.warn();
-      // The automatic voice cue should not delay the player's next action.
-      this.audible = 0;
-    }
+    if (nearby) this.warn();
   }
 
   private bouncePlayerOffNpcs(
@@ -5570,8 +5560,6 @@ export class Simulation {
       if (!this.timerStarted && this.onMainControl()) this.timerStarted = true;
       if (this.timerStarted) this.tickTimer(dt);
     }
-    this.cooldown = Math.max(0, this.cooldown - dt);
-    this.audible = Math.max(0, this.audible - dt);
     for (const shout of this.shouts) shout.left = Math.max(0, shout.left - dt);
     this.shouts = this.shouts.filter((shout) => shout.left > 0);
     for (const a of [this.player, ...this.npcs, this.mario]) {

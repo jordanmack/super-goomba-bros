@@ -128,8 +128,6 @@ export const TUNING = {
   gameoverSeconds: 3.15,
   warningRange: 96,
   hearingRange: 440,
-  warningCooldown: 1.3,
-  warningSound: 0.35,
   bubbleTime: 2.1,
   exclaimTime: 0.7,
   fasterAt: 30,
