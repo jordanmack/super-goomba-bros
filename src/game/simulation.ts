@@ -475,7 +475,13 @@ export type Hammer = {
   facing: number;
   age: number;
   windup: number;
+  // Frames since it appeared, in the hand or in the air. It spins on these.
+  spin: number;
 };
+/** A hammer's quarter-turn, 0-3. It turns every 2 frames. */
+export function hammerTurn(hammer: Hammer) {
+  return Math.floor(hammer.spin / 2) % 4;
+}
 export type MushroomKind = "mushroom" | "mushroom3x" | "mushroom8x";
 export type ItemKind = "star" | "flower" | "oneUp" | MushroomKind;
 export const isMushroom = (kind: ItemKind): kind is MushroomKind =>
@@ -1968,11 +1974,13 @@ export class Simulation {
         facing: bro.facing,
         age: 0,
         windup: T.hammerWindupFrames,
+        spin: 0,
       });
     }
     const keep: Hammer[] = [];
     for (const hammer of this.hammers) {
       hammer.age += dt;
+      hammer.spin += frames;
       if (hammer.windup > 0) {
         const bro = this.hammerBros.find(
           (item) => item.id === hammer.broId && item.alive,

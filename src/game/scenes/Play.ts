@@ -13,6 +13,7 @@ import atlas from "../../assets/smb/metatiles.json";
 import {
   actorArt,
   actorSpriteBox,
+  hammerTurn,
   actorWalkMoving,
   fireworkFrame,
   itemDrawY,
@@ -332,10 +333,12 @@ export class Play extends Phaser.Scene {
         8,
       ).setFlipX(bro.facing > 0);
     }
+    // Four quarter-turns of the one hammer crop, forward in its facing. The
+    // spin sets its direction, so it is not mirrored.
     for (const hammer of sim.hammers)
       if (hammer.areaId === room.data.id)
-        image(hammer.x, hammer.y, 32, 32, "hammer", 10).setFlipX(
-          hammer.vx < 0 || (hammer.vx === 0 && hammer.facing < 0),
+        image(hammer.x, hammer.y, 32, 32, "hammer", 10).setRotation(
+          (hammer.facing < 0 ? -1 : 1) * hammerTurn(hammer) * (Math.PI / 2),
         );
     for (const lakitu of sim.lakitus) {
       if (!lakitu.alive || lakitu.areaId !== room.data.id) continue;

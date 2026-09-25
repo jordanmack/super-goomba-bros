@@ -361,7 +361,9 @@ not demote him again. The player and rescue NPCs stay unhurt, and the hit
 does not add to DIED. Mario's stomp defeats the Bro. The player does not stomp
 or rescue him. He shouts through the existing shout system, in short lines
 about holding Mario off, defending the kingdom, and protecting the people and
-the king. The Bro and the hammer use art from the enemy sheet.
+the king. The Bro and the hammer use art from the enemy sheet. The hammer
+spins, in the hand and in the air, through four quarter-turns of its one crop,
+a turn every 2 frames, forward in its facing and never mirrored.
 
 Unwarned Goombas patrol near their start at their own randomized speed:
 they walk, pause, turn, and step off safe surfaces. They avoid lethal gaps and

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Simulation, emptyInput } from "../src/game/simulation.ts";
+import { Simulation, emptyInput, hammerTurn } from "../src/game/simulation.ts";
 import type { Actor, HammerBro, ItemKind } from "../src/game/simulation.ts";
 import { Body } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
@@ -265,6 +265,40 @@ test("a Hammer Bro walks and jumps, and a hammer arcs without breaking a brick",
   arc.physics.clear();
 });
 
+test("a hammer spins a quarter-turn every 2 frames, in the hand and in the air", () => {
+  const s = start(3, 1);
+  const bro = broAt(s, 116);
+  assert.ok(bro);
+  park(s);
+  bro.jumpTimer = 400;
+  bro.walkTimer = 400;
+  bro.throwTimer = 0;
+  bro.shoutWait = 300;
+  meetMario(s, bro, 180, bro.body.position.y - 120);
+  step(s);
+  const hammer = s.hammers.find((item) => item.broId === bro.id);
+  assert.ok(hammer, "hammer in the hand");
+  assert.ok(hammer.windup > 0);
+  const turns: number[] = [hammerTurn(hammer)];
+  let thrown = false;
+  for (let frame = 0; frame < 24; frame++) {
+    step(s);
+    turns.push(hammerTurn(hammer));
+    thrown ||= hammer.windup <= 0;
+  }
+  assert.ok(thrown, "the spin runs on into the throw");
+  // Each quarter-turn holds for 2 frames, then the next, through all four.
+  const changes = turns.filter((turn, i) => i && turn !== turns[i - 1]);
+  assert.ok(changes.length >= 11 && changes.length <= 13, `${changes.length} turns`);
+  for (let i = 1; i < turns.length; i++)
+    assert.ok(
+      turns[i] === turns[i - 1] || turns[i] === (turns[i - 1]! + 1) % 4,
+      "quarter-turns in order",
+    );
+  assert.deepEqual([...new Set(turns)].sort(), [0, 1, 2, 3]);
+  s.physics.clear();
+});
+
 test("Mario's stomp defeats the Bro, and the player does not stomp or rescue him", () => {
   const s = start(3, 1);
   const bro = broAt(s, 116);
@@ -325,6 +359,7 @@ test("Mario's stomp defeats the Bro, and the player does not stomp or rescue him
     facing: -1,
     age: 0,
     windup: 8,
+    spin: 0,
   });
   step(hunt);
   assert.equal(prey.alive, false);
@@ -423,6 +458,7 @@ test("a hammer or Bro hurts Mario only, and he shouts", () => {
     facing: -1,
     age: 0,
     windup: 8,
+    spin: 0,
   });
   step(wind);
   assert.equal(wind.marioStage, 2, "a hammer still in the hand does not hit");
