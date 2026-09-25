@@ -288,11 +288,11 @@ export const BOWSER_PHRASES = [
 ];
 
 export const HAMMER_BRO_PHRASES = [
-  "Hold Mario off! The kingdom stands!",
-  "Stand fast! I defend the kingdom!",
-  "Protect the people! Mario stops here!",
-  "For the king! I will hold the plumber!",
-  "The king is safe! Mario shall not pass!",
+  "Run! I will hold the plumber here!",
+  "Go! My hammers keep Mario back!",
+  "Flee! I stand for the Mushroom Kingdom!",
+  "Get clear! I will not let Mario pass!",
+  "Run, friends! I answer to the king!",
 ];
 
 export const WARNING_CHIRPS = [

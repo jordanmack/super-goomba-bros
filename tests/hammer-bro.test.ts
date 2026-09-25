@@ -378,34 +378,22 @@ test("Mario's stomp defeats the Bro, and the player does not stomp or rescue him
 });
 
 test("a hammer or Bro hurts Mario only, and he shouts", () => {
-  const joined = HAMMER_BRO_PHRASES.join(" ");
-  assert.notDeepEqual([...HAMMER_BRO_PHRASES], [...BOWSER_PHRASES]);
-  assert.match(joined, /Mario/);
-  assert.match(joined, /kingdom/);
-  assert.match(joined, /people/);
-  assert.match(joined, /\bking\b/);
+  assert.deepEqual(
+    [...HAMMER_BRO_PHRASES],
+    [
+      "Run! I will hold the plumber here!",
+      "Go! My hammers keep Mario back!",
+      "Flee! I stand for the Mushroom Kingdom!",
+      "Get clear! I will not let Mario pass!",
+      "Run, friends! I answer to the king!",
+    ],
+  );
   for (const line of HAMMER_BRO_PHRASES)
     assert.equal(
       (BOWSER_PHRASES as readonly string[]).includes(line),
       false,
       line,
     );
-
-  const voice = start(3, 1);
-  const voiceBro = broAt(voice, 116);
-  assert.ok(voiceBro);
-  park(voice);
-  voiceBro.shoutWait = 0;
-  meetMario(voice, voiceBro);
-  const shoutX = voiceBro.body.position.x;
-  step(voice);
-  const line = voice.shouts.find(
-    (shout) =>
-      (HAMMER_BRO_PHRASES as readonly string[]).includes(shout.text) &&
-      Math.abs(shout.x - shoutX) < 2,
-  );
-  assert.ok(line, "Bro shouted a defender line from his own spot");
-  voice.physics.clear();
 
   const overlap = start(3, 1);
   const overlapBro = broAt(overlap, 116);
@@ -535,6 +523,96 @@ test("a hammer or Bro hurts Mario only, and he shouts", () => {
   assert.equal(both.player.scale, T.hugeScale);
   assert.equal(shrinks(both), before + 1);
   both.physics.clear();
+});
+
+// #221: a Bro shouts when the player or a rescue NPC passes, not Mario.
+test("a Bro shouts his lines in order when the player or an NPC passes", () => {
+  const s = start(3, 1);
+  const bro = broAt(s, 116);
+  assert.ok(bro);
+  for (const n of s.npcs) s.physics.remove(n.body);
+  s.npcs = [];
+  const x = bro.body.position.x;
+  // 3-1's other Bro stands close by, so keep to this one's bubbles.
+  const lines = () =>
+    s.shouts.filter(
+      (shout) =>
+        (HAMMER_BRO_PHRASES as readonly string[]).includes(shout.text) &&
+        Math.abs(shout.x - x) < 2,
+    );
+  // Mario alone close by does not start it.
+  meetMario(s, bro, -120);
+  s.marioActive = false;
+  bro.shoutWait = 0;
+  step(s, 5);
+  assert.equal(lines().length, 0, "nobody passing");
+  // The player within bowserShoutRange does, from above the Bro, with the
+  // warn event, and without the rescue random stream.
+  Body.setPosition(s.player.body, {
+    x: x - T.bowserShoutRange + 20,
+    y: bro.body.position.y,
+  });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  let calls = 0;
+  const random = s.random;
+  s.random = () => {
+    calls++;
+    return random();
+  };
+  const events = s.events.length;
+  step(s);
+  s.random = random;
+  assert.equal(calls, 0);
+  assert.equal(lines().length, 1);
+  const first = lines()[0]!;
+  assert.ok(Math.abs(first.x - x) < 2);
+  assert.ok(first.y < bro.body.bounds.min.y);
+  assert.ok(s.events.slice(events).includes("warn"));
+  // The next lines follow the pool in order, one per cooldown, each with its
+  // own bubble time.
+  const said = [first.text];
+  for (let i = 0; i < 4; i++) {
+    for (let f = 0; f < 60 * T.bowserShoutCooldown + 2; f++) {
+      Body.setPosition(s.player.body, {
+        x: x - T.bowserShoutRange + 20,
+        y: bro.body.position.y,
+      });
+      Body.setVelocity(s.player.body, { x: 0, y: 0 });
+      step(s);
+    }
+    said.push(lines().at(-1)!.text);
+  }
+  const at = HAMMER_BRO_PHRASES.indexOf(first.text as never);
+  assert.deepEqual(
+    said,
+    [0, 1, 2, 3, 4].map((i) => HAMMER_BRO_PHRASES[(at + i) % 5]),
+  );
+  s.physics.clear();
+
+  // A living rescue NPC passing starts it too. A dead Bro never shouts.
+  const t = start(3, 1);
+  const other = broAt(t, 116)!;
+  const walker = t.npcs[0]!;
+  for (const n of t.npcs.slice(1)) t.physics.remove(n.body);
+  t.npcs = [walker];
+  Body.setPosition(walker.body, {
+    x: other.body.position.x - 100,
+    y: other.body.position.y,
+  });
+  Body.setVelocity(walker.body, { x: 0, y: 0 });
+  other.shoutWait = 0;
+  step(t);
+  assert.ok(
+    t.shouts.some((shout) =>
+      (HAMMER_BRO_PHRASES as readonly string[]).includes(shout.text),
+    ),
+  );
+  t.shouts = [];
+  other.alive = false;
+  other.shoutWait = 0;
+  step(t, 10);
+  assert.equal(t.shouts.length, 0);
+  t.physics.clear();
 });
 
 test("Hammer Bro and hammer crops are the enemy-sheet frames", () => {

@@ -463,6 +463,9 @@ export type HammerBro = {
   throwTimer: number;
   walkTimer: number;
   shoutWait: number;
+  // Next line of HAMMER_BRO_PHRASES. It steps through the pool in order, off
+  // the rescue random stream.
+  shoutLine: number;
 };
 export type Hammer = {
   id: number;
@@ -1843,6 +1846,7 @@ export class Simulation {
         throwTimer: 0,
         walkTimer: T.hammerBroWalkFrames,
         shoutWait: 0,
+        shoutLine: this.hammerBros.length % HAMMER_BRO_PHRASES.length,
       });
     }
   }
@@ -1909,6 +1913,28 @@ export class Simulation {
         this.physics.remove(bro.body);
         continue;
       }
+      // He shouts when the player or a rescue NPC passes, awake or not, in
+      // the bubble Bowser uses.
+      bro.shoutWait = Math.max(0, bro.shoutWait - dt);
+      if (
+        bro.shoutWait === 0 &&
+        this.passerbyNear(
+          bro.areaId,
+          bro.body.position.x,
+          bro.body.position.y,
+        )
+      ) {
+        this.shouts.push({
+          id: this.nextId++,
+          text: HAMMER_BRO_PHRASES[bro.shoutLine]!,
+          left: T.bubbleTime,
+          x: bro.body.position.x,
+          y: bro.body.bounds.min.y - 24,
+        });
+        this.events.push("warn");
+        bro.shoutWait = T.bowserShoutCooldown;
+        bro.shoutLine = (bro.shoutLine + 1) % HAMMER_BRO_PHRASES.length;
+      }
       // Spawned at load, but idle until Mario is close. Otherwise every Bro
       // jumps and walks off before he arrives. Timers stay put, the same way
       // an offscreen throw does. A jump already in the air finishes; zeroing
@@ -1920,20 +1946,6 @@ export class Simulation {
       bro.grounded = this.broOnGround(bro);
       const marioLeft = this.mario.body.position.x < bro.body.position.x;
       bro.facing = marioLeft ? -1 : 1;
-      if (bro.shoutWait > 0) bro.shoutWait -= dt;
-      else {
-        this.shouts.push({
-          id: this.nextId++,
-          text: HAMMER_BRO_PHRASES[
-            Math.floor(this.random() * HAMMER_BRO_PHRASES.length)
-          ]!,
-          left: T.bubbleTime,
-          x: bro.body.position.x,
-          y: bro.body.bounds.min.y - 24,
-        });
-        this.events.push("warn");
-        bro.shoutWait = T.bowserShoutCooldown;
-      }
       if (bro.walkTimer > 0) bro.walkTimer -= frames;
       const chase = bro.walkTimer <= 0;
       const shimmy =
@@ -8060,11 +8072,16 @@ export class Simulation {
   }
 
   private bowserShouldShout(b: Bowser) {
+    return this.passerbyNear(b.areaId, b.x, b.y);
+  }
+
+  // The player or a living rescue NPC in that area within bowserShoutRange.
+  private passerbyNear(areaId: string, x: number, y: number) {
     const near = (a: Actor) =>
       a.alive &&
       !a.saved &&
-      (a.areaId ?? this.level.main) === b.areaId &&
-      Math.hypot(a.body.position.x - b.x, a.body.position.y - b.y) <=
+      (a.areaId ?? this.level.main) === areaId &&
+      Math.hypot(a.body.position.x - x, a.body.position.y - y) <=
         T.bowserShoutRange;
     if (near(this.player)) return true;
     return this.npcs.some(near);

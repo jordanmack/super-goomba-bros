@@ -359,9 +359,14 @@ Mario only. It drops him one power stage. A star ignores the hit. A lone 8x
 ignores it. When both sides are 8x, Mario demotes once and that overlap does
 not demote him again. The player and rescue NPCs stay unhurt, and the hit
 does not add to DIED. Mario's stomp defeats the Bro. The player does not stomp
-or rescue him. He shouts through the existing shout system, in short lines
-about holding Mario off, defending the kingdom, and protecting the people and
-the king. The Bro and the hammer use art from the enemy sheet. The hammer
+or rescue him. When the player or a living rescue NPC in his area comes
+within `bowserShoutRange` (240 px), he shouts in the same bubble as Bowser,
+above himself, with the `warn` event and Bowser's cooldown, awake or not. He
+does not shout for Mario alone or while dead. His lines come in this order,
+starting at his spawn order, without the rescue random stream: "Run! I will
+hold the plumber here!", "Go! My hammers keep Mario back!", "Flee! I stand for
+the Mushroom Kingdom!", "Get clear! I will not let Mario pass!", and "Run,
+friends! I answer to the king!" Each speaker's line expires on its own. The Bro and the hammer use art from the enemy sheet. The hammer
 spins, in the hand and in the air, through four quarter-turns of its one crop,
 a turn every 2 frames, forward in its facing and never mirrored.
 
