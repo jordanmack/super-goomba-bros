@@ -112,12 +112,13 @@ export const TUNING = {
   // fishHopPace and its thirds lands farthest along on a floor.
   fishHopSpeed: 7.2,
   fishHopPace: 3,
-  // Mario's water pace keeps the land shape with smaller numbers. Idle is
-  // 2.8 + 0.2 * crowd pressure, chasing 3.2 + 0.4 * crowd pressure.
-  marioSwimPace: 2.8,
-  marioSwimCrowdBonus: 0.2,
-  marioSwimChasePace: 3.2,
-  marioSwimChaseCrowdBonus: 0.4,
+  // Mario always swims at his water chase pace: 3.2 + 0.4 * crowd
+  // pressure, just above the player's 3.
+  marioSwimPace: 3.2,
+  marioSwimCrowdBonus: 0.4,
+  // Below Fire in water he holds this far to the player's side, or
+  // less on a view too narrow to show that.
+  marioStalkGap: 192,
   deathSequenceSeconds: 2.8,
   deathHopSpeed: 420,
   deathHopDelay: 0.15,

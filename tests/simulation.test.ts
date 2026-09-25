@@ -11169,155 +11169,67 @@ test("a stopped water shell settles on the floor instead of hovering", () => {
   assert.equal(n.wakeLeft > 0, true);
 });
 
-test("water overlap from above, below, and the side hurts the player", () => {
-  for (const offset of [
-    { name: "above", x: 0, y: -18 },
-    { name: "below", x: 0, y: 18 },
-    { name: "side", x: 18, y: 0 },
-  ] as const) {
-    const s = waterGame();
-    parkNpcs(s, []);
-    const x = openWaterX(s);
-    at(s, x, 240);
-    waterStillMario(s);
-    Body.setPosition(s.mario.body, {
-      x: x + offset.x,
-      y: 240 + offset.y,
-    });
-    Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-    Body.setVelocity(s.player.body, { x: 0, y: 0 });
-    assert.equal(s.player.alive, true, offset.name);
-    tick(s, dt);
-    assert.equal(s.player.alive, false, offset.name);
-    assert.equal(s.mario.alive, true, offset.name);
-    assert.equal(s.marioStage, 1, offset.name);
-  }
+test("Mario overlap in water hurts nobody from any side at any stage", () => {
+  for (const stage of [1, 2] as const)
+    for (const offset of [
+      { name: "above", x: 0, y: -18 },
+      { name: "below", x: 0, y: 18 },
+      { name: "side", x: 18, y: 0 },
+    ] as const) {
+      const s = waterGame();
+      parkNpcs(s, []);
+      const x = openWaterX(s);
+      at(s, x, 240);
+      waterStillMario(s);
+      s.setMarioStage(stage);
+      Body.setPosition(s.mario.body, {
+        x: x + offset.x,
+        y: 240 + offset.y,
+      });
+      Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+      Body.setVelocity(s.player.body, { x: 0, y: 0 });
+      for (let i = 0; i < 20; i++) {
+        at(s, x, 240);
+        Body.setPosition(s.mario.body, {
+          x: x + offset.x,
+          y: 240 + offset.y,
+        });
+        s.step(dt, emptyInput());
+      }
+      const name = `${offset.name} at stage ${stage}`;
+      assert.equal(s.player.alive, true, name);
+      assert.equal(s.mario.alive, true, name);
+      assert.equal(s.marioStage, stage, name);
+    }
 });
 
-test("a player on the seabed is hurt by Mario contact in water", () => {
-  const s = waterGame();
-  parkNpcs(s, []);
-  const x = openWaterX(s, 400);
-  const floor = floorTopBelow(s, x, 120);
-  assert.ok(floor !== undefined);
-  at(s, x, floor! - s.player.body.height / 2);
-  Body.setVelocity(s.player.body, { x: 0, y: 0 });
-  tick(s, 0.1);
-  assert.equal(s.player.grounded, true);
-  waterStillMario(s);
-  Body.setPosition(s.mario.body, {
-    x,
-    y: s.player.body.position.y - 10,
-  });
-  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  tick(s, dt);
-  assert.equal(s.player.alive, false);
-});
-
-test("Mario swimming through water NPCs hurts at most one per 0.15s lock", () => {
+test("Mario swimming through water NPCs or falling on a Koopa hurts none", () => {
   const s = waterGame();
   const pack = s.npcs.filter((n) => n.kind !== "fish").slice(0, 3);
+  const koopa = pack.find((n) => n.kind === "koopa");
+  assert.ok(koopa);
   parkNpcs(s, pack);
   const x = openWaterX(s);
   const y = 240;
   for (const n of pack) {
-    Body.setPosition(n.body, { x, y });
-    Body.setVelocity(n.body, { x: 0, y: 0 });
+    n.shell = "none";
     n.idleWalking = false;
     n.wait = 99;
     n.swimPath = [{ x, y }];
   }
   at(s, 4000);
   waterStillMario(s);
-  Body.setPosition(s.mario.body, { x, y });
-  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  const hold = () => {
-    for (const n of pack.filter((npc) => npc.alive)) {
+  for (let i = 0; i < 30; i++) {
+    for (const n of pack) {
       Body.setPosition(n.body, { x, y });
       Body.setVelocity(n.body, { x: 0, y: 0 });
     }
-    Body.setPosition(s.mario.body, { x, y });
-    Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  };
-  hold();
-  tick(s, dt);
-  assert.equal(pack.filter((n) => !n.alive).length, 1);
-  for (let i = 0; i < 8; i++) {
-    hold();
+    Body.setPosition(s.mario.body, { x, y: y - 10 });
+    Body.setVelocity(s.mario.body, { x: 0, y: 4 });
     s.step(dt, emptyInput());
   }
-  assert.equal(pack.filter((n) => !n.alive).length, 1);
-  for (let i = 0; i < 12; i++) {
-    hold();
-    s.step(dt, emptyInput());
-    if (pack.filter((n) => !n.alive).length >= 2) break;
-  }
-  assert.equal(pack.filter((n) => !n.alive).length, 2);
-});
-
-test("water contact does not hurt the player while marioStun is active", () => {
-  const s = waterGame();
-  parkNpcs(s, []);
-  const x = openWaterX(s);
-  at(s, x, 240);
-  waterStillMario(s);
-  s.marioStun = T.marioStunSeconds;
-  Body.setPosition(s.mario.body, { x, y: 240 });
-  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  tick(s, dt);
-  assert.equal(s.player.alive, true);
-  assert.equal(s.mario.alive, true);
-});
-
-test("water contact still hurts during Mario's observe delay", () => {
-  const s = waterGame();
-  parkNpcs(s, []);
-  const x = openWaterX(s);
-  at(s, x, 240);
-  waterStillMario(s);
-  s.marioReaction = T.marioReaction;
-  Body.setPosition(s.mario.body, { x, y: 240 });
-  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  tick(s, dt);
-  assert.equal(s.player.alive, false);
-});
-
-test("a falling Mario on a walking water Koopa does not create a shell", () => {
-  const s = waterGame();
-  const n = troopa(s);
-  parkNpcs(s, [n]);
-  const x = openWaterX(s);
-  Body.setPosition(n.body, { x, y: 260 });
-  Body.setVelocity(n.body, { x: 0, y: 0 });
-  n.shell = "none";
-  n.idleWalking = false;
-  n.wait = 99;
-  at(s, 4000);
-  waterStillMario(s);
-  Body.setPosition(s.mario.body, { x, y: 230 });
-  Body.setVelocity(s.mario.body, { x: 0, y: 4 });
-  tick(s, dt);
-  assert.equal(n.shell, "none");
-  assert.equal(n.alive, false);
-});
-
-test("a water body hit does not create a shell", () => {
-  const s = waterGame();
-  const n = troopa(s);
-  parkNpcs(s, [n]);
-  const x = openWaterX(s);
-  Body.setPosition(n.body, { x, y: 240 });
-  Body.setVelocity(n.body, { x: 0, y: 0 });
-  n.shell = "none";
-  n.idleWalking = false;
-  n.wait = 99;
-  at(s, 4000);
-  waterStillMario(s);
-  Body.setPosition(s.mario.body, { x, y: 240 });
-  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  tick(s, dt);
-  assert.equal(n.shell, "none");
-  assert.equal(n.alive, false);
+  assert.ok(pack.every((n) => n.alive));
+  assert.equal(koopa.shell, "none");
 });
 
 test("star and 8x still defeat on water contact", () => {
@@ -11403,7 +11315,7 @@ test("in water, Goombas and Koopas sink and stroke like the player; fish and she
   assert.ok(!s.events.includes("splat"));
 });
 
-test("water Mario keeps the land pace shape with the smaller water numbers", () => {
+test("water Mario always swims at the chase pace", () => {
   const s = waterGame();
   const pace = (running: boolean, pressure: number) => {
     s.marioRunning = running;
@@ -11411,14 +11323,12 @@ test("water Mario keeps the land pace shape with the smaller water numbers", () 
     return (s as unknown as { marioSwimPace(): number }).marioSwimPace();
   };
   const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
-  assert.ok(near(pace(false, 0), 2.8));
-  assert.ok(near(pace(false, 1), 3.0));
+  assert.ok(near(pace(false, 0), 3.2));
   assert.ok(near(pace(true, 0), 3.2));
   assert.ok(near(pace(true, 0.5), 3.4));
-  assert.ok(near(pace(true, 1), 3.6));
-  // He pulls ahead of the player's water pace only while chasing.
-  assert.ok(pace(false, 1) <= T.walkSpeed);
-  assert.ok(pace(true, 0) > T.walkSpeed);
+  assert.ok(near(pace(false, 1), 3.6));
+  // Just above the player's water pace, so he can keep up.
+  assert.ok(pace(false, 0) > T.walkSpeed);
 });
 
 // Hold right and stroke every half second, so the player stays mid-water.
@@ -11428,59 +11338,204 @@ const swimRight = (frame: number) => ({
   jump: frame % 30 === 0,
 });
 
-function waterChase(running: boolean) {
-  const s = waterGame();
-  parkNpcs(s, []);
-  const x = openWaterX(s);
-  at(s, x + 40, 240);
-  waterStillMario(s);
-  s.marioPause = 0;
-  s.marioReaction = 0;
-  s.marioChase = running ? 6 : 0;
-  s.marioTarget = running ? s.player.id : null;
-  s.marioRunning = running;
-  Body.setPosition(s.mario.body, { x, y: 240 });
+// An active Mario at (x, y) in the player's water room.
+function waterMario(s: Simulation, stage: 0 | 1 | 2, x: number, y: number) {
+  s.marioActive = true;
+  s.mario.alive = true;
+  s.marioStun = 0;
+  Body.setFrozen(s.mario.body, false);
+  s.setMarioStage(stage);
+  s.mario.areaId = s.player.areaId;
+  Body.setPosition(s.mario.body, { x, y });
   Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  return s;
 }
 
-test("a chasing water Mario eases up to 3.2 and closes on a swimming player", () => {
-  const s = waterChase(true);
+// The play scene sets the camera before each step. These tests do it here.
+function viewedStep(s: Simulation, input: Input) {
+  s.cameraX = s.playScrollX();
+  s.step(dt, input);
+}
+
+function marioInView(s: Simulation) {
+  const b = s.mario.body.bounds;
+  return b.max.x > s.cameraX && b.min.x < s.cameraX + s.viewWidth;
+}
+
+test("below Fire a water Mario eases to 3.2 and holds the stalk gap in view", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  at(s, 400, 300);
+  waterMario(s, 1, 150, 380);
   const speeds: number[] = [];
-  const gap = () => s.player.body.position.x - s.mario.body.position.x;
-  let eased = 0;
-  for (let f = 1; f <= 80; f++) {
-    s.step(dt, swimRight(f));
+  const gaps: number[] = [];
+  for (let f = 1; f <= 60 * 10; f++) {
+    viewedStep(s, swimRight(f));
     speeds.push(s.mario.body.velocity.x);
-    if (f === 30) eased = gap();
+    assert.equal(s.marioGoal, "stalk", `frame ${f}`);
+    assert.ok(s.player.alive);
+    if (f > 60 * 4) {
+      assert.ok(marioInView(s), `frame ${f} out of view`);
+      gaps.push(s.player.body.position.x - s.mario.body.position.x);
+    }
   }
   // He eases in at the land acceleration, 0.16 a frame with no crowd.
   assert.ok(Math.abs(speeds[0]! - 0.16) < 1e-6, `first ${speeds[0]}`);
   for (let i = 1; i < 20; i++)
     assert.ok(speeds[i]! - speeds[i - 1]! <= 0.16 + 1e-6);
   const top = Math.max(...speeds);
-  assert.ok(Math.abs(top - T.marioSwimChasePace) < 1e-6, `top ${top}`);
-  assert.equal(s.player.body.velocity.x, T.walkSpeed);
-  // At full chase pace he gains 0.2px a frame on the player.
-  assert.ok(gap() < eased - 5, `gap ${eased} then ${gap()}`);
-  assert.ok(s.player.alive);
+  assert.ok(Math.abs(top - T.marioSwimPace) < 1e-6, `top ${top}`);
+  // He closes at 0.2px a frame, then keeps pace behind the player.
+  const settled = gaps.slice(-120);
+  assert.ok(
+    settled.every((gap) => Math.abs(gap - T.marioStalkGap) < 8),
+    `gaps ${Math.min(...settled)} to ${Math.max(...settled)}`,
+  );
 });
 
-test("a swimming player pulls away from a water Mario that is not chasing", () => {
-  const s = waterChase(false);
-  const start = s.player.body.position.x - s.mario.body.position.x;
-  let top = 0;
-  for (let f = 1; f <= 60; f++) {
-    s.step(dt, swimRight(f));
-    top = Math.max(top, Math.abs(s.mario.body.velocity.x));
+test("a narrow view shortens the stalk gap so Mario stays in it", () => {
+  const s = waterGame();
+  s.viewWidth = 500;
+  const point = (s as unknown as {
+    stalkPoint(m: { x: number; y: number }): { x: number; y: number };
+  }).stalkPoint({ x: 0, y: 0 });
+  assert.equal(s.player.body.position.x - point.x, 500 * T.cameraAnchor - 64);
+});
+
+test("below Fire a water Mario stays out of a flower player's shots", () => {
+  for (const chase of [false, true]) {
+    const s = waterGame();
+    parkNpcs(s, []);
+    s.player.flower = true;
+    at(s, 900, 380);
+    waterMario(s, 1, 600, 380);
+    let shots = 0;
+    for (let f = 1; f <= 60 * 15; f++) {
+      const toward = Math.sign(
+        s.mario.body.position.x - s.player.body.position.x,
+      );
+      // The player turns to Mario, walks at him if chasing, and fires.
+      const move = f > 180 && (chase || f % 40 === 0);
+      const before = s.fireballs.length;
+      viewedStep(s, {
+        ...emptyInput(),
+        left: move && toward < 0,
+        right: move && toward > 0,
+        fire: f > 180 && f % 15 === 0,
+      });
+      if (s.fireballs.length > before) shots++;
+      if (f > 180)
+        assert.ok(
+          s.mario.body.bounds.max.y <
+            s.player.body.position.y - 6 - 24 + 1e-6,
+          `frame ${f}: Mario's feet ${s.mario.body.bounds.max.y}, player ${s.player.body.position.y}`,
+        );
+    }
+    assert.ok(shots > 8, `${shots} shots`);
+    assert.equal(s.marioStage, 1, chase ? "chased" : "still");
+    assert.ok(s.marioActive && s.mario.alive);
   }
-  assert.ok(top <= T.marioSwimPace + 1e-6, `top ${top}`);
-  const later = s.player.body.position.x - s.mario.body.position.x;
-  assert.ok(later > start + 8, `start ${start} later ${later}`);
-  assert.ok(s.player.alive);
 });
 
-test("a giant player cannot hurt Mario by water contact", () => {
+test("a water Mario's lowest center clears a flower's shots and a moving shell", () => {
+  const s = waterGame();
+  const n = troopa(s);
+  parkNpcs(s, [n]);
+  at(s, 600, 300);
+  waterMario(s, 1, 400, 200);
+  const safe = () => (s as unknown as { marioSafeY(): number }).marioSafeY();
+  const reach = s.mario.body.height / 2 + 8 + 4;
+  assert.equal(safe(), Infinity);
+  s.player.flower = true;
+  assert.equal(safe(), 300 - 6 - 24 - reach);
+  s.player.flower = false;
+  Body.setPosition(n.body, { x: 600, y: 400 });
+  n.shell = "moving";
+  assert.equal(safe(), n.body.bounds.min.y - reach);
+  Body.setPosition(n.body, { x: 800, y: 400 });
+  assert.equal(safe(), Infinity);
+});
+
+test("a shout does not turn a stalking water Mario", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  at(s, 400, 300);
+  waterMario(s, 1, 350, 300);
+  s.warn();
+  assert.equal(s.marioTarget, null);
+  assert.notEqual(s.marioGoal, "shout");
+  viewedStep(s, emptyInput());
+  assert.equal(s.marioGoal, "stalk");
+});
+
+test("at the Fire mark a water Mario below Fire swims off left and returns as Fire", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  at(s, 600, 300);
+  waterMario(s, 1, 408, 300);
+  s.elapsed = T.fireballsAt - 1;
+  s.marioReturn = 0;
+  let left = -1;
+  let back = -1;
+  let leaving = -1;
+  for (let f = 1; f <= 60 * 12 && back < 0; f++) {
+    const was = s.marioActive;
+    viewedStep(s, swimRight(f));
+    if (s.elapsed < T.fireballsAt) assert.equal(s.marioGoal, "stalk");
+    else if (s.marioActive && left < 0) {
+      assert.equal(s.marioGoal, "leave");
+      if (leaving < 0) leaving = f;
+      // He eases from his stalking pace into a swim to the left.
+      if (f > leaving + 2 * (T.marioSwimPace / 0.16))
+        assert.ok(s.mario.body.velocity.x < 0, `frame ${f}`);
+    }
+    if (was && !s.marioActive) {
+      left = f;
+      assert.ok(s.mario.body.bounds.max.x < s.cameraX, "left the view");
+      assert.equal(s.marioStage, 1);
+      assert.ok(s.marioReturn >= 2.5 && s.marioReturn <= 5);
+    }
+    if (!was && s.marioActive) back = f;
+  }
+  assert.ok(left > 60 && left < 60 * 4, `left at frame ${left}`);
+  assert.ok(back > left, `back at frame ${back}`);
+  assert.equal(s.marioStage, 2);
+  assert.ok(!marioInView(s), "he returns off camera");
+});
+
+test("a water Mario waits to leave while the view is at the room's left edge", () => {
+  const s = waterGame();
+  parkNpcs(s, []);
+  at(s, 300, 300);
+  waterMario(s, 1, 150, 300);
+  s.elapsed = T.fireballsAt + 1;
+  for (let f = 0; f < 60 * 2; f++) viewedStep(s, emptyInput());
+  assert.equal(s.cameraX, 0);
+  assert.equal(s.marioGoal, "stalk");
+  assert.ok(s.marioActive);
+});
+
+test("Fire Mario in water shoots so the shot falls onto the player", () => {
+  for (const hover of [false, true]) {
+    const s = waterGame();
+    parkNpcs(s, []);
+    at(s, 700, 300);
+    waterMario(s, 2, 300, 380);
+    s.elapsed = T.fireballsAt + 10;
+    let shots = 0;
+    let f = 0;
+    for (; f < 60 * 12 && s.player.alive; f++) {
+      const before = s.fireballs.filter((b) => b.owner === "mario").length;
+      // Resting on the seabed, or stroking to the top and sinking.
+      viewedStep(s, { ...emptyInput(), jump: hover && f % 40 === 0 });
+      if (s.fireballs.filter((b) => b.owner === "mario").length > before)
+        shots++;
+    }
+    assert.equal(s.player.alive, false, hover ? "hovering" : "resting");
+    assert.ok(shots > 0 && shots <= 12, `${shots} shots`);
+  }
+});
+
+test("a giant player cannot hurt Mario by water contact, and he does not hurt them", () => {
   const s = waterGame();
   parkNpcs(s, []);
   waterGrant(s, s.player, "mushroom");
@@ -11494,7 +11549,7 @@ test("a giant player cannot hurt Mario by water contact", () => {
   tick(s, dt);
   assert.equal(s.marioStage, 1);
   assert.ok(s.mario.alive);
-  assert.equal(s.player.scale, 1);
+  assert.equal(s.player.scale, T.mushroomScale);
 });
 
 test("a moving water shell still kills on overlap", () => {

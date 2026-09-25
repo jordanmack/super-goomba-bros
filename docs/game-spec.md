@@ -495,8 +495,8 @@ random stream, so one seed replays the same path.
   moving platform. Mario, an unwarned patrol, a swimmer, Lakitu, and a shell
   do not use these choices.
 Swimmers, including warned fish, route around coral and pipes toward the rescue
-door. They do not route around actors. Mario swimming through a pack hurts at
-most one NPC per 0.15s reaction lock; that lock is the bound, not a water dash.
+door. They do not route around actors. Mario swimming through a pack hurts no
+one; water has no body hit.
 NPCs keep moving and can collect items
 outside the camera view, including while the player is in another area.
 
@@ -708,29 +708,59 @@ back as `shout`.
 Mario can walk and run. He uses running to pursue crowds and evade star holders.
 Fire Mario runs and shoots in the same action while chasing. Starting a shot does not zero his horizontal speed or cancel the run. The shot is faster than his current run, including the crowd bonus, so it pulls ahead. He fires ahead when one of his two slots is free and at least 200 ms have passed since his last throw, at every size, on a chase and especially on a crowd goal, and he does not wait until he is close enough to stomp. Below 8x he does not throw when a solid ahead would remove the shot on a side hit before it could reach the player or a living NPC; a floor that only bounces it does not stop him, and a shot that would leave the view unhit is still thrown. At 8x he throws into pipes and walls, since those shots smash. The player's fire button keeps the two-slot rule with no delay and no solid check. A stomp jump does not stop the shot. He still stomps when the existing rule says to. Fire does not change the hunt order. The player's fireball speed stays 6.
 
-In water rooms (areas 00, 01, and 02) there is no stomp and no feet comparison.
-Mario overlap hurts the player and an NPC from any direction. That hurt reuses
-the existing 0.15s one-hit lock, so a swim-through hits at most one character
-per beat. Skip the player hurt while the player has a star, is 8x, is
-mid-shrink, or `marioStun` is active. The player cannot hurt Mario by contact
-at any size; 2x and 3x are a damage buffer, not a weapon. A water body hit
-never creates a new shell. A moving shell still kills on overlap. Fireballs,
-star, and a lone 8x stay direction-free as on land. Two 8x bodies do not hit
-by water overlap. Goombas, Koopas out of a shell, and Mario swim with the
-player's water motion: they sink under `swimGravity`, the fall is capped at
-`swimFallSpeed` as it is for the player, and an upward stroke sets
-`swimImpulse`. They stroke when their swim path needs them to rise, and
-otherwise sink. Sideways motion is separate from the stroke and the sink.
-Their strokes make no sound. Goombas and Koopas swim sideways at the player's
-water pace (`walkSpeed`). Mario's water pace keeps his land shape with
-smaller numbers, where p is crowd pressure from 0 to 1: 2.8 + 0.2p when not
-chasing and 3.2 + 0.4p when chasing. He eases into it with his land
-acceleration. He is faster than a swimming player only while chasing. An
-unwarned Goomba or Koopa still walks the floor. Warned Bloopers and swimming
-Cheep Cheeps keep their SMB1 pattern, aimed at the goal pipe. Shells in water sink until
-they meet the floor, then travel along it. A stopped shell rests on the floor.
-A kick above the floor does not teleport down. `shellWake` and `shellShake`
-are unchanged.
+In water rooms (areas 00, 01, and 02) there is no stomp, no feet comparison,
+and no body hit. Mario overlapping the player or an NPC hurts neither
+side, at every power stage, and he never steers into anyone. Fireballs, star,
+and a lone 8x stay direction-free as on land: player and NPC star contact
+still defeats him, and a lone 8x body still hits by contact. Two 8x bodies do
+not hit by water overlap. A moving shell still kills on overlap. Goombas,
+Koopas out of a shell, and Mario swim with the player's water motion: they
+sink under `swimGravity`, the fall is capped at `swimFallSpeed` as it is for
+the player, and an upward stroke sets `swimImpulse`. They stroke when their
+swim path needs them to rise, and otherwise sink. Sideways motion is separate
+from the stroke and the sink. Their strokes make no sound. Goombas and Koopas
+swim sideways at the player's water pace (`walkSpeed`). Mario always swims at
+his chase pace, 3.2 + 0.4p where p is crowd pressure from 0 to 1, just above
+the player's 3, and eases into it with his land acceleration. He heads
+straight for his goal when his whole body has a clear line to it, and
+otherwise takes the swim path. His goal stays inside the room and under the
+water top.
+An unwarned Goomba or Koopa still walks the floor. Warned Bloopers and
+swimming Cheep Cheeps keep their SMB1 pattern, aimed at the goal pipe. Shells
+in water sink until they meet the floor, then travel along it. A stopped shell
+rests on the floor. A kick above the floor does not teleport down. `shellWake`
+and `shellShake` are unchanged.
+
+In water, Mario below Fire does not hunt (`marioGoal` `stalk`). He holds
+`marioStalkGap` (192 px) from the player on whichever side he is on, matching
+the player's pace, so he keeps up and stays in view. A view too narrow for
+that uses its anchor share less 64 px, at least 96 px. A shout does not turn
+him. Once the stage timer passes `fireballsAt` (or on a Lakitu stage), he
+would return as Fire, so he swims left (`leave`) and, when his body is past
+the view's left edge, leaves on the existing return timer and comes back as
+Fire. While the view sits at the room's left edge, so he could not leave
+unseen, he keeps stalking. A Fire Mario hit down a stage in water leaves the
+same way.
+
+Every water goal keeps him out of danger. The player's shot starts at the
+player's center with no rise and falls, and a floor bounce lifts it about
+24 px, so while the player has a flower his lowest point, the dip before a
+stroke included, stays above the player's center by the shot's radius plus
+24 px. A moving shell within 320 px keeps that dip above the shell's top. At
+the water top, where he cannot rise above a player there, the gap is his
+cover. He still flees a visible star holder.
+
+Fire Mario in water hunts with the existing goal order, but only with shots.
+A shot falls 0.28 px/frame² from his center, so for each standoff from 224 px
+down to 48 px it reaches the target's center from one height; at the water
+top a shorter standoff still hits while the shot falls within the target's
+box. He takes the longest standoff that hits and keeps him out of the player's
+shots, on his side of the target, and holds 80 px under that height, so each
+stroke tops out there. He throws only when a traced shot, with each target
+carried along at its sideways speed and falling unless it stands, would hit
+the player or a living NPC that the shot can hurt (not a star holder, a lone
+8x, or a Buzzy Beetle), with the existing two slots and 200 ms gap. With no
+target he stalks.
 
 His power stages are small, big, and fire. A smaller player's fireball or
 giant stomp reduces one stage: fire to big, big to small, then small to

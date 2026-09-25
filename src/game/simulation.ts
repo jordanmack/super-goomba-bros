@@ -340,7 +340,11 @@ export type MarioGoal =
   | "chase"
   | "notice"
   // A heard warning retargets him at the player outside the priority order.
-  | "shout";
+  | "shout"
+  // In water below Fire he follows the player in view, then swims off
+  // left once he would return as Fire.
+  | "stalk"
+  | "leave";
 export type TallyPhase =
   | ""
   | "time"
@@ -654,6 +658,17 @@ const PANIC_LEAP = 0.35;
 // many frames ahead to see whether a solid would eat it first.
 const MARIO_THROW_GAP = 0.2;
 const MARIO_SHOT_LOOKAHEAD = 120;
+// The standoffs Fire Mario tries in water, longest first.
+const MARIO_WATER_STANDOFFS = [224, 192, 160, 128, 96, 64, 48];
+// He aims to dip this far under the height a shot must start from. Each
+// stroke from that dip tops out near that height, where he lingers.
+const MARIO_FIRE_HOVER = 80;
+// The safe height's margin over the top of a threat, and how near a moving
+// shell has to be to count.
+const MARIO_SAFE_PAD = 4;
+// A shot's floor bounce, vy -3.8 under 0.28px/frame², rises about 24px.
+const MARIO_SHOT_BOUNCE = 24;
+const MARIO_SHELL_WATCH = 320;
 // Frames and px either side a patrol's landing is looked for.
 const PATROL_LOOKAHEAD = 240;
 // Unwarned patrols turn this far short of the goal.
@@ -1468,7 +1483,6 @@ export class Simulation {
   marioGoal: MarioGoal = "";
   marioAim = 0;
   marioReaction = 0;
-  waterHitLock = 0;
   marioLook = 0;
   marioSeenAgo = 0;
   marioJumpWait = 0;
@@ -1651,7 +1665,6 @@ export class Simulation {
     this.marioGoal = "";
     this.marioAim =
       this.marioReaction =
-      this.waterHitLock =
       this.marioLook =
       this.marioSeenAgo =
       this.marioJumpWait =
@@ -3702,7 +3715,7 @@ export class Simulation {
       n.wait = n.reaction;
       this.warned++;
     }
-    if (this.marioActive) {
+    if (this.marioActive && !this.marioStalks()) {
       const d = Math.abs(p.x - this.mario.body.position.x);
       if (d < T.hearingRange && this.random() < 1 - d / T.hearingRange) {
         this.investigate(this.player, 2);
@@ -4861,15 +4874,6 @@ export class Simulation {
     });
   }
 
-  private hurtFromWaterContact(a: Actor) {
-    if (a === this.player && this.marioStun !== 0) return;
-    if (this.waterHitLock > 0) return;
-    if (this.hurt(a)) {
-      this.waterHitLock = 0.15;
-      this.marioReaction = 0.15;
-    }
-  }
-
   private playerLandStomp(
     a: Actor,
     playerBottom: number,
@@ -4979,11 +4983,8 @@ export class Simulation {
           this.defeatMario(false);
         continue;
       }
-      if (this.inWater(a)) {
-        if (a.kind === "koopa" && a.shell !== "none") continue;
-        this.hurtFromWaterContact(a);
-        continue;
-      }
+      // Water has no body hit either way.
+      if (this.inWater(a)) continue;
       if (a !== this.player) continue;
       if (!a.grounded && !this.mario.grounded) {
         const dy = a.body.bounds.max.y - this.mario.body.bounds.max.y;
@@ -5571,7 +5572,6 @@ export class Simulation {
     }
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.audible = Math.max(0, this.audible - dt);
-    this.waterHitLock = Math.max(0, this.waterHitLock - dt);
     for (const shout of this.shouts) shout.left = Math.max(0, shout.left - dt);
     this.shouts = this.shouts.filter((shout) => shout.left > 0);
     for (const a of [this.player, ...this.npcs, this.mario]) {
@@ -5591,8 +5591,8 @@ export class Simulation {
         a.body.gravityScale = strokes ? T.swimGravity : 0;
         if (strokes)
           a.body.velocity.y = Math.min(T.swimFallSpeed, a.body.velocity.y);
-        if (a.body.position.y < MAP_TOP + 64 + a.body.height / 2) {
-          a.body.position.y = MAP_TOP + 64 + a.body.height / 2;
+        if (a.body.position.y < this.swimCeiling(a)) {
+          a.body.position.y = this.swimCeiling(a);
           a.body.velocity.y = Math.max(0, a.body.velocity.y);
         }
       }
@@ -6679,6 +6679,18 @@ export class Simulation {
       this.swimSideways(actor, 0, ease);
       return;
     }
+    this.steerSwim(actor, aim, pace, ease);
+  }
+
+  // The highest center a swimmer reaches: water stops 64px under the map top.
+  private swimCeiling(a: Actor) {
+    return MAP_TOP + 64 + a.body.height / 2;
+  }
+
+  // Head straight for `aim`: the sideways pace eases toward it, and a stroke
+  // comes when the aim is above where the current rise tops out.
+  private steerSwim(actor: Actor, aim: Point, pace: number, ease?: number) {
+    const p = actor.body.position;
     const dx = aim.x - p.x;
     this.swimSideways(actor, Math.sign(dx) * Math.min(pace, Math.abs(dx)), ease);
     if (Math.abs(dx) > 1) actor.facing = Math.sign(dx);
@@ -6714,27 +6726,29 @@ export class Simulation {
         solid.bounds.max.y >= minY - hh &&
         solid.bounds.min.y <= maxY + hh,
     );
-    const corners = [
+    for (let i = last; i > 0; i--)
+      if (this.swimLineClear(actor, near, path[i])) return path[i];
+    return path[0];
+  }
+
+  // Whether the whole body can move to `q` in a straight line past `solids`.
+  private swimLineClear(actor: Actor, solids: Body[], q: Point) {
+    const p = actor.body.position;
+    const hw = actor.body.width / 2 - 1,
+      hh = actor.body.height / 2 - 1;
+    return [
       [-hw, -hh],
       [hw, -hh],
       [-hw, hh],
       [hw, hh],
-    ];
-    for (let i = last; i > 0; i--) {
-      const q = path[i];
-      if (
-        corners.every(
-          ([ox, oy]) =>
-            !rayBlocked(
-              near,
-              { x: p.x + ox, y: p.y + oy },
-              { x: q.x + ox, y: q.y + oy },
-            ),
-        )
-      )
-        return q;
-    }
-    return path[0];
+    ].every(
+      ([ox, oy]) =>
+        !rayBlocked(
+          solids,
+          { x: p.x + ox, y: p.y + oy },
+          { x: q.x + ox, y: q.y + oy },
+        ),
+    );
   }
 
   // The player's upward stroke without the player's sound.
@@ -7273,11 +7287,214 @@ export class Simulation {
     );
   }
 
-  // The land shape with the water numbers. He pulls ahead only on a chase.
+  // In water he always swims at the chase pace.
   private marioSwimPace() {
-    return this.marioRunning
-      ? T.marioSwimChasePace + this.marioPressure * T.marioSwimChaseCrowdBonus
-      : T.marioSwimPace + this.marioPressure * T.marioSwimCrowdBonus;
+    return T.marioSwimPace + this.marioPressure * T.marioSwimCrowdBonus;
+  }
+
+  // Where a swimmer's center is after each of `frames` frames if it does
+  // not stroke: its sideways speed holds, and it keeps falling under its own
+  // gravity, capped at the swim fall for the player's water motion. A
+  // standing one stays put.
+  private swimDrift(a: Actor, frames: number) {
+    const sink = (T.gravity * a.body.gravityScale) / 3600;
+    const cap = this.strokeSwimmer(a) ? T.swimFallSpeed : Infinity;
+    let vy = a.grounded ? 0 : a.body.velocity.y,
+      y = 0;
+    const out: Point[] = [];
+    for (let i = 1; i <= frames; i++) {
+      if (!a.grounded) {
+        vy = Math.min(cap, vy + sink);
+        y += vy;
+      }
+      out.push({ x: a.body.velocity.x * i, y });
+    }
+    return out;
+  }
+
+  // Frozen off camera until the return timer brings him back.
+  private marioLeaves() {
+    this.marioActive = false;
+    this.marioGoal = "";
+    this.marioReturn = 2.5 + this.random() * 2.5;
+    this.mario.navVx = undefined;
+    this.mario.navDelay = undefined;
+    this.mario.navHoldX = undefined;
+    Body.setFrozen(this.mario.body, true);
+  }
+
+  // Water has no stomp and no body hit, so Mario never dives at anyone
+  // there. Below Fire he keeps the player in view from one side. Once he
+  // would return as Fire, he swims off left, and the return timer brings him
+  // back as Fire. Fire Mario hunts with shots aimed to fall onto the target.
+  // Every goal keeps him out of the player's shots and off moving shells.
+  private updateSwimmingMario(
+    m: Point,
+    candidates: Actor[],
+    sees: (a: Actor) => boolean,
+    hearsCrowd: (a: Actor) => boolean,
+    runners: Set<number>,
+  ) {
+    this.marioRunning = true;
+    this.brickTarget = null;
+    if (this.marioStalks()) {
+      this.marioTarget = null;
+      this.marioHuntItem = false;
+      this.marioChase = 0;
+      const exit = this.cameraX - this.mario.body.width;
+      if (
+        this.marioArrivalStage() === 2 &&
+        exit - this.mario.body.width / 2 >= this.roomLeft(this.roomFor(this.mario))
+      ) {
+        this.marioGoal = "leave";
+        if (this.mario.body.bounds.max.x < this.cameraX) this.marioLeaves();
+        else this.swimMarioTo({ x: exit, y: m.y });
+        return;
+      }
+      this.marioGoal = "stalk";
+      this.swimMarioTo(this.stalkPoint(m));
+      return;
+    }
+    if (this.marioLook <= 0) {
+      this.marioLook = 0.22 + this.random() * 0.15;
+      this.pickMarioGoal(m, candidates, sees, hearsCrowd, runners);
+      this.brickTarget = null;
+    }
+    const item = this.marioHuntItem
+      ? this.items.find((i) => i.id === this.marioTarget)
+      : undefined;
+    if (item) {
+      this.swimMarioTo(item.body.position);
+      return;
+    }
+    const target =
+      this.marioChase > 0
+        ? candidates.find((a) => a.id === this.marioTarget)
+        : undefined;
+    if (!target) {
+      this.marioGoal = "stalk";
+      this.swimMarioTo(this.stalkPoint(m));
+      return;
+    }
+    const direction = Math.sign(target.body.position.x - m.x) || this.mario.facing;
+    const vx = direction * (this.marioPace() + T.marioFireLead);
+    this.swimMarioTo(this.firePoint(target, m, Math.abs(vx)));
+    this.mario.facing = direction;
+    if (
+      this.marioReaction === 0 &&
+      this.canThrowFireball("mario") &&
+      this.elapsed - this.marioThrowAt >= MARIO_THROW_GAP - 1e-9 &&
+      this.marioShotHits(m, vx)
+    ) {
+      this.fireballs.push({
+        id: this.nextId++,
+        x: m.x,
+        y: m.y,
+        vx,
+        age: 0,
+        owner: "mario",
+        vy: 0,
+        scale: fireballScaleFor(this.mario.scale),
+      });
+      this.marioThrowAt = this.elapsed;
+      this.events.push("fire");
+    }
+  }
+
+  // Below Fire in water he does not hunt, so a shout does not turn him.
+  private marioStalks() {
+    return this.marioStage < 2 && this.inWater(this.mario);
+  }
+
+  // Straight at the goal when the whole body has a clear line, else along
+  // the swim path. The goal stays inside the room, under the water top, and
+  // out of any threat.
+  private swimMarioTo(goal: Point) {
+    const a = this.mario;
+    const room = this.roomFor(a);
+    const half = a.body.width / 2;
+    const to = {
+      x: Math.max(
+        this.roomLeft(room) + half,
+        Math.min(room.offset + room.data.width * 32 - half, goal.x),
+      ),
+      y: Math.max(this.swimCeiling(a), Math.min(goal.y, this.marioSafeY())),
+    };
+    const pace = this.marioSwimPace(),
+      ease = this.marioAcceleration();
+    if (this.swimLineClear(a, room.solids, to)) {
+      a.swimPath = undefined;
+      this.steerSwim(a, to, pace, ease);
+    } else this.strokeSwim(a, to, pace, ease);
+  }
+
+  // The lowest center Mario takes in water. A flower's shot starts at the
+  // player's center and falls, and a floor bounce lifts it at most
+  // MARIO_SHOT_BOUNCE above where it started. A moving shell keeps to the
+  // floor. He stays above both, with room for the dip before his next
+  // stroke.
+  private marioSafeY() {
+    const reach =
+      this.mario.body.height / 2 + SWIM_STROKE_MARGIN + MARIO_SAFE_PAD;
+    const p = this.player;
+    let y = Infinity;
+    if (
+      p.flower &&
+      p.alive &&
+      !p.saved &&
+      !this.inPipe(p) &&
+      p.areaId === this.mario.areaId
+    )
+      y =
+        p.body.position.y -
+        6 * fireballScaleFor(p.scale) -
+        MARIO_SHOT_BOUNCE -
+        reach;
+    for (const n of this.npcs)
+      if (
+        n.alive &&
+        n.shell === "moving" &&
+        n.areaId === this.mario.areaId &&
+        Math.abs(n.body.position.x - this.mario.body.position.x) <
+          MARIO_SHELL_WATCH
+      )
+        y = Math.min(y, n.body.bounds.min.y - reach);
+    return y;
+  }
+
+  // Beside the player at the stalk gap, on whichever side Mario is on.
+  private stalkPoint(m: Point) {
+    const p = this.player.body.position;
+    const side = Math.sign(m.x - p.x) || -1;
+    const gap = Math.max(
+      96,
+      Math.min(T.marioStalkGap, this.viewWidth * T.cameraAnchor - 64),
+    );
+    return { x: p.x + side * gap, y: p.y };
+  }
+
+  // A shot falls 0.28px/frame² from Mario's center, so at each standoff the
+  // target's center is reached from one height. Under the water top he
+  // starts at the top, which still hits while the shot falls within the
+  // target's box. He takes the longest standoff that hits and keeps him out
+  // of the player's shots, on his side of the target, else the longest.
+  private firePoint(target: Actor, m: Point, speed: number) {
+    const box = this.hurtBox(target);
+    const side = Math.sign(m.x - box.x) || -1;
+    const top = this.swimCeiling(this.mario);
+    const safe = this.marioSafeY();
+    const reach =
+      box.halfH + 6 * fireballScaleFor(this.mario.scale) - MARIO_SAFE_PAD;
+    let longest: Point | undefined;
+    for (const standoff of MARIO_WATER_STANDOFFS) {
+      const frames = standoff / speed;
+      const drop = (0.28 * frames * (frames + 1)) / 2;
+      const from = Math.max(top, box.y - drop);
+      const goal = { x: box.x + side * standoff, y: from + MARIO_FIRE_HOVER };
+      longest ??= goal;
+      if (from + drop - box.y < reach && goal.y <= safe) return goal;
+    }
+    return longest!;
   }
 
   private marioAcceleration() {
@@ -7366,13 +7583,7 @@ export class Simulation {
       m.x > this.cameraX + this.viewWidth + 240 ||
       m.x < this.cameraX - 650
     ) {
-      this.marioActive = false;
-      this.marioGoal = "";
-      this.marioReturn = 2.5 + this.random() * 2.5;
-      this.mario.navVx = undefined;
-      this.mario.navDelay = undefined;
-      this.mario.navHoldX = undefined;
-      Body.setFrozen(this.mario.body, true);
+      this.marioLeaves();
       return;
     }
     if (this.marioStun > 0) {
@@ -7421,6 +7632,10 @@ export class Simulation {
     const hearsCrowd = (a: Actor) =>
       runners.has(a.id) &&
       Math.abs(a.body.position.x - m.x) < 350 + this.marioPressure * 400;
+    if (water) {
+      this.updateSwimmingMario(m, candidates, sees, hearsCrowd, runners);
+      return;
+    }
     // Observe only at human-scale intervals. Aim at the last observed point,
     // Jumps keep their launch direction while targets can dodge.
     if (this.marioLook <= 0) {
@@ -7555,22 +7770,7 @@ export class Simulation {
         ? 0
         : direction * speed;
     // A jump commits to its takeoff velocity; Mario cannot steer after a dodge.
-    if (water) {
-      const target = candidates.find((a) => a.id === this.marioTarget);
-      const huntItem = this.marioHuntItem
-        ? this.items.find((item) => item.id === this.marioTarget)
-        : undefined;
-      if (this.marioReaction > 0 || this.marioPause > 0)
-        this.swimSideways(this.mario, 0, this.marioAcceleration());
-      else
-        this.strokeSwim(
-          this.mario,
-          target?.body.position ??
-            huntItem?.body.position ?? { x: m.x + direction * 200, y: m.y },
-          this.marioSwimPace(),
-          this.marioAcceleration(),
-        );
-    } else if (!this.mario.grounded && this.mario.navVx !== undefined) {
+    if (!this.mario.grounded && this.mario.navVx !== undefined) {
       this.move(this.mario, this.mario.navVx);
     } else if (this.mario.grounded) {
       const vx = this.mario.body.velocity.x;
@@ -7581,49 +7781,48 @@ export class Simulation {
       );
       if (desired) this.autoJump(this.mario, direction);
     }
-    if (!water)
-      for (const a of candidates) {
-        const p = a.body.position;
-        if (a.kind === "spike") continue;
-        if (
-          a.kind === "koopa" &&
-          a.shell !== "none"
-        )
+    for (const a of candidates) {
+      const p = a.body.position;
+      if (a.kind === "spike") continue;
+      if (
+        a.kind === "koopa" &&
+        a.shell !== "none"
+      )
+        continue;
+      if (
+        this.mario.body.velocity.y > 0.2 &&
+        m.y < p.y - 8 &&
+        this.overlapActors(this.mario, a)
+      ) {
+        if (a === this.player && !a.grounded && !this.mario.grounded) continue;
+        if (this.isHuge(a) || this.isHuge(this.mario)) {
+          // Landing is judged after the step, or a fast fall skips the head band.
+          if (
+            this.isHuge(a) &&
+            this.isHuge(this.mario) &&
+            !a.grounded &&
+            !this.mario.grounded &&
+            this.mario.body.bounds.max.y < a.body.bounds.max.y - 0.5
+          )
+            this.stompDemoteActor(a);
           continue;
-        if (
-          this.mario.body.velocity.y > 0.2 &&
-          m.y < p.y - 8 &&
-          this.overlapActors(this.mario, a)
-        ) {
-          if (a === this.player && !a.grounded && !this.mario.grounded) continue;
-          if (this.isHuge(a) || this.isHuge(this.mario)) {
-            // Landing is judged after the step, or a fast fall skips the head band.
-            if (
-              this.isHuge(a) &&
-              this.isHuge(this.mario) &&
-              !a.grounded &&
-              !this.mario.grounded &&
-              this.mario.body.bounds.max.y < a.body.bounds.max.y - 0.5
-            )
-              this.stompDemoteActor(a);
-            continue;
-          }
-          if (a.kind === "koopa") {
-            if (a.wings) this.clipWings(a);
-            else this.koopaStomp(a, this.mario);
-            Body.setVelocity(this.mario.body, {
-              x: this.mario.body.velocity.x,
-              y: -T.stompBounce,
-            });
-          } else if (!this.hurt(a)) continue;
-          this.marioTarget = null;
-          this.marioHuntItem = false;
-          this.marioGoal = "";
-          this.marioChase = 0;
-          this.marioLook = 0;
-          this.marioReaction = 0.15;
         }
+        if (a.kind === "koopa") {
+          if (a.wings) this.clipWings(a);
+          else this.koopaStomp(a, this.mario);
+          Body.setVelocity(this.mario.body, {
+            x: this.mario.body.velocity.x,
+            y: -T.stompBounce,
+          });
+        } else if (!this.hurt(a)) continue;
+        this.marioTarget = null;
+        this.marioHuntItem = false;
+        this.marioGoal = "";
+        this.marioChase = 0;
+        this.marioLook = 0;
+        this.marioReaction = 0.15;
       }
+    }
   }
 
   private stompDemoteActor(a: Actor) {
@@ -7644,10 +7843,34 @@ export class Simulation {
   // NPC before a solid's side removes it. A floor only bounces it, and a
   // shot that leaves the view unhit is not held back.
   private marioShotReaches(m: { x: number; y: number }, vx: number) {
-    const radius = 6 * fireballScaleFor(this.mario.scale);
     const targets = [this.player, ...this.npcs].filter(
       (a) => a.alive && !a.saved && !this.inPipe(a),
     );
+    return this.traceMarioShot(m, vx, targets, false) !== "blocked";
+  }
+
+  // In water a shot only goes when it would fall onto the player or a
+  // living NPC he can hurt, each carried along as swimDrift says. A Buzzy
+  // Beetle is fireproof.
+  private marioShotHits(m: Point, vx: number) {
+    const targets = [this.player, ...this.npcs].filter(
+      (a) =>
+        a.alive &&
+        !a.saved &&
+        !this.inPipe(a) &&
+        !this.invincible(a) &&
+        a.troopa !== "buzzy" &&
+        a.areaId === this.mario.areaId,
+    );
+    return this.traceMarioShot(m, vx, targets, true) === "hit";
+  }
+
+  // Flies a shot from m at vx, frame by frame as updateFireballs does. It is
+  // "hit" on overlapping a target, "blocked" on a solid's side, "gone" past
+  // the camera, and "spent" after the lookahead. With `lead`, each target
+  // moves as swimDrift says.
+  private traceMarioShot(m: Point, vx: number, targets: Actor[], lead: boolean) {
+    const radius = 6 * fireballScaleFor(this.mario.scale);
     const end = m.x + vx * MARIO_SHOT_LOOKAHEAD;
     const lo = Math.min(m.x, end) - radius - 8,
       hi = Math.max(m.x, end) + radius + 8;
@@ -7655,13 +7878,16 @@ export class Simulation {
       (s) => s.bounds.max.x > lo && s.bounds.min.x < hi,
     );
     const shot = { x: m.x, y: m.y } as Fireball;
+    const drift = lead
+      ? targets.map((a) => this.swimDrift(a, MARIO_SHOT_LOOKAHEAD))
+      : undefined;
     let vy = 0;
     for (let frame = 0; frame < MARIO_SHOT_LOOKAHEAD; frame++) {
       const oldY = shot.y;
       shot.x += vx;
       vy += 0.28;
       shot.y += vy;
-      if (this.fireballPastCamera(shot)) return true;
+      if (this.fireballPastCamera(shot)) return "gone";
       for (const s of solids) {
         if (
           shot.x + radius <= s.bounds.min.x ||
@@ -7673,12 +7899,22 @@ export class Simulation {
         if (vy > 0 && oldY + radius <= s.bounds.min.y + 2) {
           shot.y = s.bounds.min.y - radius;
           vy = -3.8;
-        } else return false;
+        } else return "blocked";
       }
-      if (targets.some((a) => this.overlapFireball(a, shot.x, shot.y, radius)))
-        return true;
+      if (
+        targets.some((a, i) => {
+          const d = drift?.[i][frame];
+          return this.overlapFireball(
+            a,
+            shot.x - (d?.x ?? 0),
+            shot.y - (d?.y ?? 0),
+            radius,
+          );
+        })
+      )
+        return "hit";
     }
-    return true;
+    return "spent";
   }
 
   private canThrowFireball(owner: "player" | "mario") {
