@@ -7,7 +7,6 @@ import {
   hugeHoldAt,
   hugeHoldFloor,
   hugeHoldVolume,
-  footingWidth,
   overlaps,
   rayBlocked,
 } from "./physics.ts";
@@ -377,6 +376,12 @@ export const fireballScaleFor = (scale: number) => scale;
 export const itemSpriteSize = (kind: ItemKind) =>
   kind === "mushroom8x" ? 48 : 32;
 /** Drawn sprite size for an actor at its currently shown scale. */
+// #209: a 3x body collides with floors, walls, and ceilings as a 2x body.
+// Its sprite and hurt box stay 3x.
+export function solidScale(scale: number) {
+  return scale === T.giantScale ? T.mushroomScale : scale;
+}
+
 export function actorSpriteBox(actor: Actor, shown: number) {
   const shelled = actor.kind === "koopa" && actor.shell !== "none";
   const h =
@@ -1511,7 +1516,7 @@ export class Simulation {
 
   private broOnGround(bro: HammerBro) {
     const bottom = bro.body.bounds.max.y;
-    const half = footingWidth(bro.body.width) / 2;
+    const half = bro.body.width / 2;
     return this.solids.some(
       (solid) =>
         !solid.headOnly &&
@@ -1964,9 +1969,8 @@ export class Simulation {
   }
   private ground(a: Actor) {
     const bottom = a.body.bounds.max.y;
-    const foot = footingWidth(a.body.width);
-    const footMin = a.body.position.x - foot / 2;
-    const footMax = a.body.position.x + foot / 2;
+    const footMin = a.body.bounds.min.x;
+    const footMax = a.body.bounds.max.x;
     const onLid = this.solids.some(
       (s) =>
         !s.headOnly &&
@@ -3160,7 +3164,8 @@ export class Simulation {
     const previous = a.scale;
     if (previous === nextScale) return;
     const feet = a.body.bounds.max.y;
-    Body.scale(a.body, nextScale / previous, nextScale / previous);
+    const ratio = solidScale(nextScale) / solidScale(previous);
+    Body.scale(a.body, ratio, ratio);
     a.scale = nextScale;
     Body.setPosition(a.body, {
       x: a.body.position.x,
@@ -4126,13 +4131,14 @@ export class Simulation {
   }
 
   private npcTop(n: Actor) {
-    return n.body.bounds.min.y;
+    const box = this.hurtBox(n);
+    return box.y - box.halfH;
   }
 
   private overlapNpcX(n: Actor) {
     return (
       Math.abs(this.player.body.position.x - n.body.position.x) <
-      (this.player.body.width + n.body.width) / 2
+      this.hurtBox(this.player).halfW + this.hurtBox(n).halfW
     );
   }
 
@@ -4205,14 +4211,40 @@ export class Simulation {
     );
   }
 
+  // Actor contact and hits use the hurt box. At 3x that is the drawn 72x84,
+  // bigger than the 2x solid body. Both share the feet and center x.
+  hurtBox(a: Actor) {
+    const b = a.body;
+    if (a.scale !== T.giantScale)
+      return {
+        x: b.position.x,
+        y: b.position.y,
+        halfW: b.width / 2,
+        halfH: b.height / 2,
+      };
+    const halfW = (b.width / T.mushroomScale) * (T.giantScale / 2);
+    const halfH = (b.height / T.mushroomScale) * (T.giantScale / 2);
+    return { x: b.position.x, y: b.bounds.max.y - halfH, halfW, halfH };
+  }
+
   private overlapActors(a: Actor, b: Actor) {
-    return this.overlapBody(a.body, b.body);
+    const p = this.hurtBox(a),
+      q = this.hurtBox(b);
+    return (
+      Math.abs(p.x - q.x) < p.halfW + q.halfW &&
+      Math.abs(p.y - q.y) < p.halfH + q.halfH
+    );
   }
 
   private overlapFireball(a: Actor, x: number, y: number, radius: number) {
+    return this.overlapHurt(a, x, y, radius);
+  }
+
+  private overlapHurt(a: Actor, x: number, y: number, half: number) {
+    const box = this.hurtBox(a);
     return (
-      Math.abs(a.body.position.x - x) < a.body.width / 2 + radius &&
-      Math.abs(a.body.position.y - y) < a.body.height / 2 + radius
+      Math.abs(box.x - x) < box.halfW + half &&
+      Math.abs(box.y - y) < box.halfH + half
     );
   }
 
@@ -6528,8 +6560,7 @@ export class Simulation {
       a.alive &&
       !a.saved &&
       !this.inPipe(a) &&
-      Math.abs(a.body.position.x - b.x) < a.body.width / 2 + half &&
-      Math.abs(a.body.position.y - b.y) < a.body.height / 2 + half
+      this.overlapHurt(a, b.x, b.y, half)
     );
   }
 
@@ -6733,15 +6764,8 @@ export class Simulation {
     for (const a of actors) {
       if (!a.alive || a.saved || this.inPipe(a)) continue;
       const room = this.roomFor(a);
-      if (
-        !this.firebarBlocks(
-          room,
-          a.body.position.x,
-          a.body.position.y,
-          a.body.width / 2,
-          a.body.height / 2,
-        )
-      )
+      const box = this.hurtBox(a);
+      if (!this.firebarBlocks(room, box.x, box.y, box.halfW, box.halfH))
         continue;
       if (a === this.mario) {
         if (this.marioStun > 0) continue;

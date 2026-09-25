@@ -9,6 +9,7 @@ import {
   emptyInput,
   fireworkFrame,
   pipeClip,
+  solidScale,
   victoryCue,
 } from "../src/game/simulation.ts";
 import { MAP_TOP, PHRASES, TUNING as T, VIEW_HEIGHT, blockDrawY, jumpArc } from "../src/game/config.ts";
@@ -1799,15 +1800,22 @@ test("player and NPC bodies scale with mushroom size; Mario small is half of big
       give(s, s.player, mushroomKind(scale));
       give(s, n, mushroomKind(scale));
     }
-    assert.equal(s.player.body.width, goomba.w * scale);
-    assert.equal(s.player.body.height, goomba.h * scale);
-    assert.equal(n.body.width, goomba.w * scale);
-    assert.equal(n.body.height, goomba.h * scale);
+    // #209: 3x collides as a 2x body. Its hurt box stays 3x.
+    const solid = solidScale(scale);
+    assert.equal(s.player.body.width, goomba.w * solid);
+    assert.equal(s.player.body.height, goomba.h * solid);
+    assert.equal(n.body.width, goomba.w * solid);
+    assert.equal(n.body.height, goomba.h * solid);
+    for (const a of [s.player, n]) {
+      const box = s.hurtBox(a);
+      assert.equal(box.halfW * 2, goomba.w * scale);
+      assert.equal(box.halfH * 2, goomba.h * scale);
+    }
     assert.ok(Math.abs(s.player.body.bounds.max.y - playerFeet) < 0.01);
     assert.ok(Math.abs(n.body.bounds.max.y - npcFeet) < 0.01);
     if (scale > 1) {
       assert.ok(s.player.transformLeft > 0);
-      assert.equal(s.player.body.width, goomba.w * scale);
+      assert.equal(s.player.body.width, goomba.w * solid);
     }
   }
   const s = game();
@@ -5655,7 +5663,7 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
   at(
     down,
     (entry.column + entry.width / 2) * 32,
-    MAP_TOP + entry.row * 32 - 14 * down.player.scale,
+    MAP_TOP + entry.row * 32 - down.player.body.height / 2,
   );
   down.step(dt, { ...emptyInput(), down: true });
   assert.equal(down.player.pipeTravel?.phase, "enter");
@@ -9568,16 +9576,16 @@ test("a side pipe opens only at its mouth hole, walking right", () => {
   assert.equal(tryAt(-half, top + 32, { right: true }), false, "rim only");
   assert.equal(tryAt(-half, top - 8, { right: true }), false, "air above");
   assert.equal(tryAt(-half, top + 34, { right: true }), true, "foot in hole");
-  // A 3x body sticks out above the rim and still enters.
+  // An 8x body sticks out far above the rim and still enters a goal pipe.
   const tall = goalPipeSim();
-  give(tall.s, tall.s.player, "mushroom3x");
+  give(tall.s, tall.s.player, "mushroom8x");
   const tallHalf = tall.s.player.body.width / 2;
   assert.ok(tall.s.player.body.height > 64);
   tall.s.physics.clear();
   assert.equal(
-    tryAt(-tallHalf, top + 64, { right: true }, "mushroom3x"),
+    tryAt(-tallHalf, top + 64, { right: true }, "mushroom8x"),
     true,
-    "3x at mouth",
+    "8x at mouth",
   );
 });
 

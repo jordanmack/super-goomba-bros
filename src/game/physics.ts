@@ -98,15 +98,6 @@ export class Body {
   }
 }
 
-// Actor bodies start at 24 wide. Only 3x (72) stands on a narrower foot.
-const ACTOR_WIDTH = 24;
-
-export function footingWidth(width: number) {
-  return width === ACTOR_WIDTH * TUNING.giantScale
-    ? TUNING.giantFooting
-    : width;
-}
-
 export function overlaps(body: Body, solids: Body[], tolerance = 0) {
   const a = body.bounds;
   return solids.filter((solid) => {
@@ -441,40 +432,6 @@ function blocksLowCeiling(mover: ArcadeMover, solid: ArcadeBox) {
   return prevBottom > solid.y;
 }
 
-// Arcade can still stand a body whose previous feet are within this band of a
-// solid top. Past it, the overlap is deeper than the stand bias. A wall whose
-// top is above the feet is outside the band, so it keeps the full body width.
-const FOOT_STAND_BAND = 6;
-
-// True when this pair must not support the body. Wall and ceiling pairs stay
-// on the full width. A run step is wider than the gap between a 60px foot and
-// a 64px hole, so a foot that only arrives from the side while the feet are
-// already at that top does not count. Dropping onto the foot from above does.
-function standingFootMisses(
-  mover: ArcadeMover,
-  solidValue: object,
-  bodyWidth: number,
-) {
-  const foot = footingWidth(bodyWidth);
-  if (foot >= bodyWidth) return false;
-  const solid = asArcadeBox(solidValue);
-  if (!solid || !solid.checkCollision.up) return false;
-  if (mover.velocity.y < 0) return false;
-  const prevBottom = mover.prev.y + mover.height;
-  if (prevBottom > solid.y + FOOT_STAND_BAND) return false;
-  const half = foot / 2;
-  const overlapsAt = (x: number) =>
-    x + half > solid.x && x - half < solid.x + solid.width;
-  const center = mover.x + mover.width / 2;
-  const prevCenter = mover.prev.x + mover.width / 2;
-  // A rejected lip leaves the feet below the top. Do not catch that lip on
-  // the next frame just because the foot has slid over it.
-  if (prevBottom > solid.y + 0.25) return true;
-  if (!overlapsAt(center)) return true;
-  if (overlapsAt(prevCenter)) return false;
-  return !(prevBottom < solid.y - 0.5);
-}
-
 function sameTakeoffFace(
   wrapper: { wallRiseFaceX?: number; wallRiseFromLeft: boolean },
   solidValue: object,
@@ -695,7 +652,6 @@ export class PhysicsWorld {
               )
             )
               return false;
-            if (standingFootMisses(native, solid, wrapper.width)) return false;
             return true;
           }
           const top = (solid as Phaser.Physics.Arcade.StaticBody).y;

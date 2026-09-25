@@ -1,4 +1,4 @@
-import { Body, PhysicsWorld, footingWidth, overlaps } from "./physics.ts";
+import { Body, PhysicsWorld, overlaps } from "./physics.ts";
 import {
   areaData,
   areaGaps,
@@ -455,9 +455,8 @@ export class Room {
   private ridersOn(platform: Platform, actors: Actor[]) {
     const body = platform.body;
     return actors.filter((a) => {
-      const foot = footingWidth(a.body.width);
-      const footMin = a.body.position.x - foot / 2;
-      const footMax = a.body.position.x + foot / 2;
+      const footMin = a.body.bounds.min.x;
+      const footMax = a.body.bounds.max.x;
       return (
         a.alive &&
         !a.saved &&

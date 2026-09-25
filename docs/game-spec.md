@@ -117,11 +117,14 @@ farther, matching SMB1 (about five tiles for the small player), so original
 gaps stay reachable. Normal and giant
 forms use the same jump physics; giant only reaches higher because the body
 is taller. Goomba and NPC bodies are 24 by 28 times scale. Scales are 1x,
-2x, 3x, and 8x. There is no 4x. A 3x body is 72 wide. Walls, ceilings, and
-overlap use that full width. Only the standing foot is narrower
-(`giantFooting` in tuning), so a 3x player or NPC falls through a two-tile
-(64px) gap. A one-tile (32px) gap still holds it. 1x, 2x, and 8x stand on
-their full width. Jump does not repeat from a held press. Walking off a ledge keeps
+2x, 3x, and 8x. There is no 4x. A 3x player or NPC is drawn at 3x and takes
+hits with a 3x hurt box, 72 by 84, but it touches floors, walls, and ceilings
+with the 2x solid shape, 48 by 56. Both share the feet and center. So any hole
+or low opening a 2x body passes, down, up, or under, a 3x body passes too: it
+falls through a two-tile (64px) gap, and a one-tile (32px) gap still holds it.
+Contact with Mario, other actors, fireballs, firebars, and Bullet Bills uses
+the hurt box. 1x, 2x, and 8x use one shape for both. Mario has no 3x. Jump
+does not repeat from a held press. Walking off a ledge keeps
 the last ground
 pace. Releasing direction stops horizontal motion. Player and NPCs both walk,
 run, and running-jump. An NPC does not jump faster than its current ground

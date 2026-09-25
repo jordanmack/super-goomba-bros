@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Body, footingWidth, overlaps } from "../src/game/physics.ts";
+import { Body, overlaps } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
 import { TUNING as T } from "../src/game/config.ts";
 import {
   Simulation as RulesSimulation,
+  actorSpriteBox,
   emptyInput,
 } from "../src/game/simulation.ts";
 import type { ItemKind, Actor } from "../src/game/simulation.ts";
@@ -87,149 +88,106 @@ function drop(
   return { sim, actor, floorY, fell, held };
 }
 
-test("a 3x body falls through a two-tile gap and a one-tile gap holds it", () => {
-  const width = 24 * T.giantScale;
-  const height = 28 * T.giantScale;
-  assert.equal(width, 72);
-  assert.ok(footingWidth(width) < width);
-  assert.ok(footingWidth(width) < TILE * 2);
-  assert.ok(footingWidth(width) > TILE);
+// #209: 3x keeps a 72x84 sprite-sized hurt box but collides as a 2x body.
+const SOLID_3X = { w: 24 * T.mushroomScale, h: 28 * T.mushroomScale };
 
-  const through = drop(width, height, TILE * 2);
-  assert.equal(through.actor.width, 72);
+test("a 3x body has a 2x solid shape and a 3x hurt box", () => {
+  const s = new Simulation();
+  s.reset();
+  give(s, s.player, "mushroom3x");
+  assert.equal(s.player.scale, T.giantScale);
+  assert.equal(s.player.body.width, SOLID_3X.w);
+  assert.equal(s.player.body.height, SOLID_3X.h);
+  const box = s.hurtBox(s.player);
+  assert.equal(box.halfW * 2, 24 * T.giantScale);
+  assert.equal(box.halfH * 2, 28 * T.giantScale);
+  assert.equal(box.x, s.player.body.position.x);
+  assert.equal(box.y + box.halfH, s.player.body.bounds.max.y);
+  const sprite = actorSpriteBox(s.player, s.player.scale);
+  assert.deepEqual(sprite, { w: 32 * T.giantScale, h: 32 * T.giantScale });
+  s.physics.clear();
+});
+
+test("a 3x body falls through a two-tile hole and a one-tile gap holds it", () => {
+  const through = drop(SOLID_3X.w, SOLID_3X.h, TILE * 2);
   assert.equal(through.fell, true, `feet ${through.actor.bounds.max.y}`);
   assert.equal(through.held, false);
   through.sim.clear();
 
-  const held = drop(width, height, TILE);
-  assert.equal(held.actor.width, 72);
+  const held = drop(SOLID_3X.w, SOLID_3X.h, TILE);
   assert.equal(held.fell, false, `feet ${held.actor.bounds.max.y}`);
   assert.equal(held.held, true);
   held.sim.clear();
 });
 
-test("a walking 3x body does not bridge a two-tile gap", () => {
-  const width = 24 * T.giantScale;
-  const height = 28 * T.giantScale;
-  const world = physics();
-  const floorY = 300;
-  const gap = TILE * 2;
-  const left = world.rectangle(200, floorY + 80, 400, 160, true);
-  const right = world.rectangle(
-    left.bounds.max.x + gap + 200,
-    floorY + 80,
-    400,
-    160,
-    true,
-  );
-  assert.equal(right.bounds.min.x - left.bounds.max.x, gap);
-  const body = world.rectangle(
-    left.bounds.max.x - width / 2 - 4,
-    floorY - height / 2,
-    width,
-    height,
-  );
-  assert.equal(overlaps(body, [left]).length, 0);
-  Body.setVelocity(body, { x: T.runSpeed, y: 0 });
-  let fell = false;
-  let bridged = false;
-  for (let i = 0; i < 180; i++) {
-    world.step(dt);
-    Body.setVelocity(body, { x: T.runSpeed, y: body.velocity.y });
-    if (body.bounds.max.y > floorY + TILE) {
-      fell = true;
-      break;
-    }
-    if (
-      body.position.x > right.bounds.min.x &&
-      Math.abs(body.bounds.max.y - floorY) < 3
-    ) {
-      bridged = true;
+test("a 3x body jumps back up through a two-tile hole and walks under a 2x opening", () => {
+  const { w: width, h: height } = SOLID_3X;
+  // A two-tile hole in a ceiling slab directly above the body.
+  const up = physics();
+  const ceilBottom = 200;
+  const hole = TILE * 2;
+  const cx = 400;
+  up.rectangle(cx - hole / 2 - 100, ceilBottom - 16, 200, 32, true);
+  up.rectangle(cx + hole / 2 + 100, ceilBottom - 16, 200, 32, true);
+  const jumper = up.rectangle(cx, ceilBottom + 40 + height / 2, width, height);
+  Body.setVelocity(jumper, { x: 0, y: -14 });
+  let through = false;
+  for (let i = 0; i < 40; i++) {
+    up.step(dt);
+    if (jumper.bounds.max.y < ceilBottom - 32) {
+      through = true;
       break;
     }
   }
-  assert.equal(fell, true, `feet ${body.bounds.max.y} x ${body.position.x}`);
-  assert.equal(bridged, false);
-  assert.equal(body.width, 72);
-  world.clear();
+  assert.equal(through, true, `head ${jumper.bounds.min.y}`);
+  up.clear();
+
+  // An opening 2 px taller than a 2x body. The old 84px 3x body is blocked.
+  const low = physics();
+  const floorY = 400;
+  low.rectangle(400, floorY + 40, 800, 80, true);
+  const opening = height + 2;
+  const lintel = low.rectangle(
+    500,
+    floorY - opening - 40,
+    200,
+    80,
+    true,
+  );
+  const walker = low.rectangle(300, floorY - height / 2, width, height);
+  for (let i = 0; i < 150; i++) {
+    Body.setVelocity(walker, { x: T.walkSpeed, y: walker.velocity.y });
+    low.step(dt);
+  }
+  assert.ok(
+    walker.bounds.min.x > lintel.bounds.max.x,
+    `stopped at ${walker.position.x}`,
+  );
+  assert.ok(Math.abs(walker.bounds.max.y - floorY) < 1);
+  low.clear();
 });
 
-test("3x wall, ceiling, and overlap stay the full 72 width", () => {
-  const width = 24 * T.giantScale;
-  const height = 28 * T.giantScale;
-  const world = physics();
-  const floorY = 400;
-  const wallLeft = 520;
-  const floor = world.rectangle(360, floorY + 40, 400, 80, true);
-  const wall = world.rectangle(wallLeft + 16, floorY - 80, 32, 160, true);
-  const body = world.rectangle(
-    wallLeft - width / 2 - 12,
-    floorY - height / 2,
-    width,
-    height,
-  );
-  assert.equal(overlaps(body, [wall, floor]).length, 0);
-  assert.ok(body.bounds.max.x < wall.bounds.min.x);
-  Body.setVelocity(body, { x: T.walkSpeed, y: 0 });
-  for (let i = 0; i < 40; i++) world.step(dt);
-  assert.equal(body.width, 72);
-  assert.ok(
-    Math.abs(body.bounds.max.x - wall.bounds.min.x) <= 1,
-    `wall gap ${wall.bounds.min.x - body.bounds.max.x}`,
-  );
-  assert.ok(body.bounds.max.x <= wall.bounds.min.x + 0.2);
-
-  const shoulder = new Body(
-    body.bounds.max.x - 2,
-    body.position.y,
-    4,
-    10,
-    true,
-  );
-  const outside = new Body(body.bounds.max.x + 8, body.position.y, 4, 10, true);
-  assert.equal(overlaps(body, [shoulder]).length, 1);
-  assert.equal(overlaps(body, [outside]).length, 0);
-  const foot = footingWidth(body.width);
-  const footMax = body.position.x + foot / 2;
-  assert.ok(shoulder.bounds.min.x >= footMax);
-
-  const ceilWorld = physics();
-  const jumper = ceilWorld.rectangle(400, 320, width, height);
-  const ceilBottom = jumper.bounds.min.y - 16;
-  const slab = ceilWorld.rectangle(
-    jumper.bounds.max.x - 2,
-    ceilBottom - 16,
-    4,
-    32,
-    true,
-  );
-  assert.ok(slab.bounds.min.x > jumper.position.x + foot / 2);
-  assert.ok(slab.bounds.max.x <= jumper.bounds.max.x + 0.01);
-  assert.equal(overlaps(jumper, [slab]).length, 0);
-  Body.setVelocity(jumper, { x: 0, y: -6 });
-  let bonked = false;
-  for (let i = 0; i < 30; i++) {
-    ceilWorld.step(dt);
-    if (jumper.bounds.min.y <= slab.bounds.max.y + 1) {
-      bonked = true;
-      break;
-    }
-  }
-  assert.equal(jumper.width, 72);
-  assert.equal(bonked, true);
-  assert.ok(
-    jumper.bounds.min.y >= slab.bounds.max.y - 1,
-    `head ${jumper.bounds.min.y} ceil ${slab.bounds.max.y}`,
-  );
-  world.clear();
-  ceilWorld.clear();
+test("a hit on the outer 3x hurt box still counts", () => {
+  const s = new Simulation();
+  s.reset();
+  s.marioReturn = 1e6;
+  give(s, s.player, "mushroom3x");
+  const p = s.player.body;
+  // Beside the 2x solid shape, inside the 3x hurt box.
+  const x = p.position.x + p.width / 2 + 8;
+  assert.ok(x - p.position.x < s.hurtBox(s.player).halfW);
+  s.fireballs = [
+    { id: 9401, x, y: p.bounds.max.y - 70, vx: 0, vy: 0, age: 0, owner: "mario" },
+  ];
+  s.step(dt, emptyInput());
+  assert.ok(s.player.scale < T.giantScale, "the 3x player took the hit");
+  s.physics.clear();
 });
 
 test("1x, 2x, and 8x still stand on their full width", () => {
   for (const scale of [1, T.mushroomScale, T.hugeScale]) {
     const width = 24 * scale;
     const height = 28 * scale;
-    assert.equal(footingWidth(width), width);
     const holds = drop(width, height, width - 8, scale === T.hugeScale);
     assert.equal(holds.fell, false, `scale ${scale} feet ${holds.actor.bounds.max.y}`);
     assert.equal(holds.held, true, `scale ${scale} was not held`);
@@ -245,7 +203,7 @@ test("a 3x body stays on a rising lift", () => {
   const s = new Simulation();
   s.reset();
   give(s, s.player, "mushroom3x");
-  assert.equal(s.player.body.width, 72);
+  assert.equal(s.player.body.width, SOLID_3X.w);
   const room = s.activeRoom;
   const origin = { x: room.offset + 180, y: 120 };
   const pad = s.physics.rectangle(origin.x, origin.y, 96, 16, true);
@@ -306,15 +264,16 @@ test("a 3x body stays on a rising lift", () => {
   s.physics.clear();
 });
 
-test("a 3x NPC uses the same footing and falls through a two-tile gap", () => {
+test("a 3x NPC uses the same solid shape and hurt box and falls through a two-tile hole", () => {
   const s = new Simulation();
   s.reset();
   const npc = s.npcs[0]!;
   give(s, npc, "mushroom3x");
   assert.equal(npc.scale, T.giantScale);
-  assert.equal(npc.body.width, 72);
-  assert.equal(footingWidth(npc.body.width), T.giantFooting);
-  assert.equal(footingWidth(s.player.body.width), s.player.body.width);
+  assert.equal(npc.body.width, SOLID_3X.w);
+  assert.equal(npc.body.height, SOLID_3X.h);
+  assert.equal(s.hurtBox(npc).halfW * 2, 24 * T.giantScale);
+  assert.equal(s.hurtBox(npc).halfH * 2, 28 * T.giantScale);
 
   const through = drop(
     npc.body.width,
@@ -325,7 +284,6 @@ test("a 3x NPC uses the same footing and falls through a two-tile gap", () => {
     s.physics,
   );
   assert.equal(through.fell, true, `npc feet ${npc.body.bounds.max.y}`);
-  assert.equal(npc.body.width, 72);
   const held = drop(
     npc.body.width,
     npc.body.height,
@@ -337,6 +295,5 @@ test("a 3x NPC uses the same footing and falls through a two-tile gap", () => {
   );
   assert.equal(held.held, true, `npc feet ${npc.body.bounds.max.y}`);
   assert.equal(held.fell, false);
-  assert.equal(npc.body.width, 72);
   s.physics.clear();
 });
