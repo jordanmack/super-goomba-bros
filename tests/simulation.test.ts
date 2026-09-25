@@ -14264,6 +14264,14 @@ function holdBall(ball: Fireball) {
   Object.assign(ball, { x: 700, y: T.groundY - 300, vx: 0, vy: 0 });
 }
 
+// #222: Mario throws at most once per 200 ms. Wait that out with his balls
+// parked, so the next throw is limited only by his power and his slots.
+function waitThrowGap(s: Simulation, balls: Fireball[]) {
+  stillMario(s);
+  tick(s, 0.2);
+  for (const ball of balls) holdBall(ball);
+}
+
 test("an 8x Fire Mario's thrown fireball is scale 8 and smashes a brick", () => {
   const s = game();
   parkNpcs(s, []);
@@ -14351,11 +14359,13 @@ test("Mario's scale-8 shot keeps its size after his 8x ends", () => {
   assert.equal(s.mario.flower, true);
   assert.ok(s.fireballs.includes(big));
   assert.equal(big.scale, T.hugeScale, "the shot in flight kept its size");
+  waitThrowGap(s, [big]);
   const [normal] = marioThrow(s, 400);
   assert.equal(normal?.scale, 1, "a later shot is normal again");
   assert.equal(big.scale, T.hugeScale);
   assert.equal(owned(s, "mario").length, T.fireballSlots);
-  holdBall(big);
+  waitThrowGap(s, [big, normal!]);
+  assert.equal(owned(s, "mario").length, T.fireballSlots);
   assert.deepEqual(marioThrow(s, 400), [], "a third Mario shot appeared");
   s.physics.clear();
 
@@ -14372,6 +14382,8 @@ test("Mario's scale-8 shot keeps its size after his 8x ends", () => {
   assert.equal(expiry.mario.flower, false);
   assert.ok(expiry.fireballs.includes(kept));
   assert.equal(kept.scale, T.hugeScale);
+  waitThrowGap(expiry, [kept]);
+  assert.ok(expiry.fireballs.includes(kept));
   assert.deepEqual(marioThrow(expiry, 400), []);
   expiry.physics.clear();
 });
