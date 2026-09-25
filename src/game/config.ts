@@ -74,6 +74,9 @@ export const TUNING = {
   // Balance-pair lift speed, px/s.
   platformSpeed: 64,
   areaSpacing: 20000,
+  // Play camera: the player's center sits this far into the view while they
+  // head right, and at 1 minus this while they head left.
+  cameraAnchor: 0.36,
   pipeCooldown: 0.8,
   pipeSpeed: 2,
   // SMB1 pipe-intro cutscene (entrance 6/7), at 2x. The walk is capped by

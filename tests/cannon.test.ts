@@ -285,7 +285,7 @@ test("a barrel outside the visible camera reloads with no bill and no blast", ()
     ),
   );
   assert.equal(cam, cannon.x + 24);
-  at(s, cam + width * 0.36, T.groundY - 14);
+  at(s, cam + width * T.cameraAnchor, T.groundY - 14);
   cannon.timer = 0;
   for (const other of room.cannons) if (other !== cannon) other.timer = 10_000;
   s.bulletBills = [];
@@ -340,7 +340,7 @@ test("shared-slot barrels take turns, including a later column beside an earlier
     for (const c of pair) c.timer = 0;
     for (const c of others) c.timer = 10_000;
     s.bulletBills = [];
-    at(s, cam + width * 0.36, T.groundY - 14);
+    at(s, cam + width * T.cameraAnchor, T.groundY - 14);
     tick(s, dt);
     for (const bill of s.bulletBills) {
       const source = pair.find(

@@ -153,6 +153,18 @@ not the land jump cue. NPCs and Mario do not gain a swim sound from that press.
 Gravity is reduced and the
 player stays below the top of the playfield. Pipes have a short re-entry delay.
 
+The play camera is a hard lock on the player's center with no easing. While
+the player heads right, the center sits at 36% of the view width from the
+left. Pressing Left alone scrolls the camera on that same update so the center
+sits at 64%, which keeps 64% of the view ahead in the direction of travel.
+Right alone returns it to 36%. With neither or both held, the last anchor
+stays, so releasing a key never moves the camera. Every stage start, a death
+restart included, begins at 36%, and the scripted pipe-intro walk counts as
+Right. The scroll is clamped to the room and to any left limit, so near either
+end the player leaves the anchor. The title camera does not use this rule.
+Cannons, the Cheep Cheep frenzy, swimmers, Lakitu, and Bullet Bill checks
+read the same scroll as the drawn camera.
+
 On-screen layouts switch from a header button: Compact, NES, or hidden.
 Compact is the default and does not persist across sessions. Compact Up may also jump. NES D-pad Up does not
 jump. A is jump. B is run (hold) and fire (press, flower required). NES Start

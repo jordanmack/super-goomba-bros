@@ -1103,6 +1103,18 @@ export class Simulation {
       ? this.leftLimit.x
       : room.offset;
   }
+  /** Play scroll: a hard lock on the player's center, clamped to the room. */
+  playScrollX(room = this.activeRoom, width = this.viewWidth) {
+    const anchor =
+      this.cameraLead < 0 ? 1 - T.cameraAnchor : T.cameraAnchor;
+    return Math.max(
+      this.roomLeft(room),
+      Math.min(
+        room.offset + room.data.width * 32 - width,
+        this.player.body.position.x - width * anchor,
+      ),
+    );
+  }
   private holdLeftLimit() {
     const limit = this.leftLimit;
     if (!limit) return;
@@ -1449,6 +1461,8 @@ export class Simulation {
   cameraY = 0;
   cameraZoom = 1;
   viewWidth = 960;
+  // Last held left/right: 1 keeps the player at T.cameraAnchor, -1 at 1 minus it.
+  cameraLead: 1 | -1 = 1;
   // Set when a pipe rises into another stage's area, like the 1-2, 2-2, 4-2,
   // and 7-2 goal pipes onto page 11 of 1-1's area 25. Nothing in that area
   // scrolls or moves back left of the arrival page.
@@ -1617,6 +1631,7 @@ export class Simulation {
     this.cameraX = 0;
     this.cameraY = 0;
     this.cameraZoom = 1;
+    this.cameraLead = 1;
     this.fireballs = [];
     this.bulletBills = [];
     this.cannonLfsr.fill(0);
@@ -5564,6 +5579,8 @@ export class Simulation {
       const play = this.pipeIntro
         ? { ...emptyInput(), right: true }
         : input;
+      const lead = Number(play.right) - Number(play.left);
+      if (lead) this.cameraLead = lead > 0 ? 1 : -1;
       if (this.onVine(this.player)) {
         this.updateClimb(this.player, play, dt);
         this.player.jumpHeld = play.jump;
@@ -7742,15 +7759,8 @@ export class Simulation {
   }
 
   private viewWindow(room = this.activeRoom) {
-    const width = this.viewWidth;
-    const cam = Math.max(
-      this.roomLeft(room),
-      Math.min(
-        room.offset + room.data.width * 32 - width,
-        this.player.body.position.x - width * 0.36,
-      ),
-    );
-    return { left: cam - 32, right: cam + width + 32 };
+    const cam = this.playScrollX(room);
+    return { left: cam - 32, right: cam + this.viewWidth + 32 };
   }
 
   private stepCannonLfsr() {

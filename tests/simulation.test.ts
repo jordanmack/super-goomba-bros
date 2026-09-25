@@ -3563,16 +3563,61 @@ test("player death hops then falls, and pit deaths skip the hop", () => {
 });
 
 function followCamera(s: Simulation) {
-  const room = s.activeRoom;
-  const width = s.viewWidth;
-  s.cameraX = Math.max(
-    room.offset,
-    Math.min(
-      room.offset + room.data.width * 32 - width,
-      s.player.body.position.x - width * 0.36,
-    ),
-  );
+  s.cameraX = s.playScrollX();
 }
+
+test("the play camera holds 36% heading right and 64% heading left", () => {
+  const s = game();
+  const width = s.viewWidth;
+  const view = () =>
+    (s as unknown as { viewWindow(): { left: number; right: number } })
+      .viewWindow();
+  const share = () => (s.player.body.position.x - s.playScrollX()) / width;
+  const near = (value: number, expected: number, why: string) =>
+    assert.ok(Math.abs(value - expected) < 1e-9, `${why}: ${value}`);
+  assert.equal(s.cameraLead, 1);
+  at(s, s.activeRoom.offset + 2000);
+  tick(s, 0.2, { right: true });
+  near(share(), 0.36, "walking right");
+  s.step(dt, { ...emptyInput(), left: true });
+  near(share(), 0.64, "the turn left scrolls on the same update");
+  tick(s, 0.3, { left: true });
+  near(share(), 0.64, "walking left");
+  assert.equal(view().left, s.playScrollX() - 32);
+  assert.equal(view().right, s.playScrollX() + width + 32);
+  tick(s, 0.3);
+  near(share(), 0.64, "release keeps the last anchor");
+  tick(s, 0.2, { left: true, right: true });
+  near(share(), 0.64, "both keys keep the last anchor");
+  s.step(dt, { ...emptyInput(), right: true });
+  near(share(), 0.36, "the turn right scrolls on the same update");
+  tick(s, 0.3, { right: true });
+  near(share(), 0.36, "walking right again");
+
+  s.step(dt, { ...emptyInput(), left: true });
+  at(s, s.activeRoom.offset + 100);
+  assert.equal(s.playScrollX(), s.roomLeft(s.activeRoom), "room edge wins");
+  s.reset();
+  assert.equal(s.cameraLead, 1, "a new stage starts at 36%");
+
+  const intro = new Simulation(() => 0.5);
+  intro.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  intro.reset();
+  intro.marioReturn = 1e6;
+  let scripted = 0;
+  for (
+    let frame = 0;
+    frame < 60 * 20 && (intro.mode === "intro" || intro.pipeIntro);
+    frame++
+  ) {
+    intro.step(dt, { ...emptyInput(), left: true });
+    if (!intro.pipeIntro) continue;
+    scripted++;
+    assert.equal(intro.cameraLead, 1, "the scripted pipe walk heads right");
+  }
+  assert.ok(scripted > 0);
+  intro.physics.clear();
+});
 
 function world12Main() {
   const s = game();

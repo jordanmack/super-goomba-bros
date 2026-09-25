@@ -366,15 +366,8 @@ test("title cheat start continues the campaign in order through later stages", (
 });
 
 function followCamera(sim: Simulation, width = 960) {
-  const room = sim.activeRoom;
   sim.viewWidth = width;
-  sim.cameraX = Math.max(
-    sim.roomLeft(room),
-    Math.min(
-      room.offset + room.data.width * 32 - width,
-      sim.player.body.position.x - width * 0.36,
-    ),
-  );
+  sim.cameraX = sim.playScrollX();
 }
 
 test("Mario spawns and stays inside the player's coin-room screen", () => {

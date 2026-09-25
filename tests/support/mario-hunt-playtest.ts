@@ -152,17 +152,10 @@ function seeded(seed: number) {
   };
 }
 
-// Mirrors the scroll rule in Play.renderState, which owns the camera at runtime.
+// The scroll rule Play.renderState applies at runtime.
 function aimCamera(s: Simulation) {
-  const room = s.activeRoom;
   s.viewWidth = VIEW;
-  s.cameraX = Math.max(
-    room.offset,
-    Math.min(
-      room.offset + room.data.width * 32 - VIEW,
-      s.player.body.position.x - VIEW * 0.36,
-    ),
-  );
+  s.cameraX = s.playScrollX();
 }
 
 function openStage(id: string, seed: number, holdMario = true) {
