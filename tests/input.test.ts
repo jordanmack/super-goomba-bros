@@ -13,9 +13,12 @@ import {
 } from "../src/game/sonami.ts";
 import {
   backTitlePick,
+  cheatBindingsShown,
+  cheatKeysLive,
   cheatTrayOpen,
   closeTitlePick,
   initialTitleCheat,
+  nextCheatPick,
   openWorldPick,
   selectWorld,
   titleStartAllowed,
@@ -23,19 +26,27 @@ import {
   unlockTitleCheat,
 } from "../src/game/title-cheat.ts";
 import {
+  bindingLabel,
+  bindingPressed,
   capturePadBinding,
+  CHEAT_PAD_ACTIONS,
   defaultPadMap,
   GAMEPAD_DEADZONE,
+  isCheatPadAction,
   loadPadMap,
   mappedHolds,
   padActivity,
   pickActivePad,
+  PAD_MAP_ACTIONS,
+  PAD_REMAP_LABELS,
   parsePadMap,
   savePadMap,
   type PadSnapshot,
 } from "../src/game/gamepad-map.ts";
 import {
   AREA_TOP_ROW,
+  CHEAT_ITEM_LABELS,
+  CHEAT_ITEMS,
   firstEmptySpawnCell,
   spawnCellBlocked,
   spawnCellCenter,
@@ -276,6 +287,88 @@ test("invalid or missing pad maps fall back to defaults", () => {
   assert.deepEqual(loadPadMap(mem).jump, { type: "button", index: 2 });
   storage.set("sgb-gamepad-map", "{not json");
   assert.deepEqual(loadPadMap(mem), defaultPadMap());
+});
+
+test("tray pad actions default to X and Y, fill older saved maps, and remap", () => {
+  const map = defaultPadMap();
+  assert.deepEqual(map.cheatNext, { type: "button", index: 2 });
+  assert.deepEqual(map.cheatDrop, { type: "button", index: 3 });
+  assert.equal(bindingLabel(map.cheatNext), "X (West)");
+  assert.equal(bindingLabel(map.cheatDrop), "Y (North)");
+  assert.equal(PAD_REMAP_LABELS.cheatNext, "Change power-up");
+  assert.equal(PAD_REMAP_LABELS.cheatDrop, "Drop power-up");
+  assert.deepEqual([...CHEAT_PAD_ACTIONS], ["cheatNext", "cheatDrop"]);
+  for (const action of CHEAT_PAD_ACTIONS)
+    assert.ok((PAD_MAP_ACTIONS as readonly string[]).includes(action));
+  assert.deepEqual(
+    PAD_MAP_ACTIONS.filter((action) => !isCheatPadAction(action)),
+    ["jump", "run", "left", "right", "down", "pause"],
+  );
+  assert.equal(bindingPressed(snap([2]), map.cheatNext), true);
+  assert.equal(bindingPressed(snap([2]), map.cheatDrop), false);
+  const x = mappedHolds(snap([2]), map);
+  assert.equal(x.jump || x.run, false);
+  assert.equal(bindingPressed(snap([3]), map.cheatDrop), true);
+  assert.equal(bindingPressed(snap([3]), map.cheatNext), false);
+  // A map saved before these rows existed keeps its rows and gains X and Y.
+  const older = parsePadMap({
+    jump: { type: "button", index: 5 },
+    run: { type: "button", index: 1 },
+    left: { type: "hat", dir: "left" },
+    right: { type: "hat", dir: "right" },
+    down: { type: "hat", dir: "down" },
+    pause: { type: "button", index: 9 },
+  });
+  assert.deepEqual(older.jump, { type: "button", index: 5 });
+  assert.deepEqual(older.cheatNext, map.cheatNext);
+  assert.deepEqual(older.cheatDrop, map.cheatDrop);
+  const custom = parsePadMap({ ...map, cheatDrop: { type: "button", index: 5 } });
+  assert.equal(bindingPressed(snap([5]), custom.cheatDrop), true);
+  assert.equal(bindingPressed(snap([3]), custom.cheatDrop), false);
+});
+
+test("the tray highlight cycles Star to 1-up and tray input needs live play", () => {
+  const labels = [];
+  let pick = 0;
+  for (let i = 0; i <= CHEAT_ITEMS.length; i++) {
+    labels.push(CHEAT_ITEM_LABELS[CHEAT_ITEMS[pick]!]);
+    pick = nextCheatPick(pick, CHEAT_ITEMS.length);
+  }
+  assert.deepEqual(labels, ["Star", "2x", "3x", "8x", "Flower", "1-up", "Star"]);
+
+  const on = toggleUnlimited(unlockTitleCheat(initialTitleCheat()));
+  const live = { mode: "playing", paused: false, helpOpen: false, inPipe: false };
+  assert.equal(cheatKeysLive(on, live), true);
+  assert.equal(cheatKeysLive(on, { ...live, paused: true }), false);
+  assert.equal(cheatKeysLive(on, { ...live, helpOpen: true }), false);
+  assert.equal(cheatKeysLive(on, { ...live, inPipe: true }), false);
+  for (const mode of ["title", "intro", "dead", "gameover", "finishing"])
+    assert.equal(cheatKeysLive(on, { ...live, mode }), false, mode);
+  assert.equal(cheatKeysLive(toggleUnlimited(on), live), false);
+  assert.equal(
+    cheatKeysLive(toggleUnlimited(initialTitleCheat()), live),
+    false,
+    "Unlimited without the unlock",
+  );
+
+  assert.equal(cheatBindingsShown(initialTitleCheat()), false);
+  assert.equal(cheatBindingsShown(unlockTitleCheat(initialTitleCheat())), false);
+  assert.equal(cheatBindingsShown(on), true);
+});
+
+test("tray keys are U and I, and J and K keep Run and Jump", () => {
+  const controls = readFileSync(
+    new URL("../src/game/controls.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(controls, /KeyU: "cheatNext"/);
+  assert.match(controls, /KeyI: "cheatDrop"/);
+  assert.match(controls, /KeyJ: "run"/);
+  assert.match(controls, /KeyK: "jump"/);
+  assert.match(controls, /\{ action: "Change power-up", keys: "U" \}/);
+  assert.match(controls, /\{ action: "Drop power-up", keys: "I" \}/);
+  // Key repeat never fires a tray action again.
+  assert.match(controls, /if \(pressed && !e\.repeat && this\.playing\(\)\) this\.hooks\.onCheat\(cheat\);/);
 });
 
 test("pickActivePad prefers sticky then activity then first connected", () => {

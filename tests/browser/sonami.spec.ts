@@ -185,6 +185,136 @@ test("tray click while playing hangs a blinking item in the sky", async ({
   expect(item.count).toBeGreaterThan(before);
 });
 
+test("U changes the highlighted tray item and I drops it, once per press", async ({
+  page,
+}) => {
+  await waitGame(page);
+  await page.getByRole("button", { name: "Key bindings" }).click();
+  const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
+  await expect(dialog.getByText("Change power-up")).toHaveCount(0);
+  await expect(dialog.getByText("Drop power-up")).toHaveCount(0);
+  await page.getByRole("button", { name: "CLOSE" }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await unlockTitle(page);
+  await page.getByRole("button", { name: "Key bindings" }).click();
+  await expect(dialog.getByText("Change power-up")).toHaveCount(0);
+  await page.getByRole("button", { name: "CLOSE" }).click();
+  await unlimitedButton(page).click();
+  await page.getByRole("button", { name: "Key bindings" }).click();
+  const keyRow = (name: string) =>
+    dialog.locator(".bindings > div", {
+      has: page.locator("dt", { hasText: name }),
+    });
+  await expect(keyRow("Change power-up").locator("dd")).toHaveText("U");
+  await expect(keyRow("Drop power-up").locator("dd")).toHaveText("I");
+  await expect(
+    dialog.getByRole("button", { name: /Change power-up/ }),
+  ).toContainText("X (West)");
+  await expect(
+    dialog.getByRole("button", { name: /Drop power-up/ }),
+  ).toContainText("Y (North)");
+  await page.getByRole("button", { name: "CLOSE" }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.sim.marioReturn = 1e6;
+    (window as any).__audioEvents = [];
+    const original = g.audio.event.bind(g.audio);
+    g.audio.event = (event: string) => {
+      (window as any).__audioEvents.push(event);
+      original(event);
+    };
+  });
+  const tray = page.getByRole("toolbar", { name: "Power-up tray" });
+  const current = tray.locator('[aria-current="true"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAttribute("aria-label", "Star");
+  await page.keyboard.press("KeyU");
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  // A held key repeats keydown; only the first press counts.
+  await page.keyboard.down("KeyU");
+  await page.keyboard.down("KeyU");
+  await page.keyboard.down("KeyU");
+  await page.keyboard.up("KeyU");
+  await expect(current).toHaveAttribute("aria-label", "3x");
+  for (const label of ["8x", "Flower", "1-up", "Star", "2x"]) {
+    await page.keyboard.press("KeyU");
+    await expect(current).toHaveAttribute("aria-label", label);
+  }
+
+  const items = () =>
+    page.evaluate(() =>
+      (window as any).__game.sim.items.map((item: any) => ({
+        kind: item.kind,
+        drop: item.drop,
+        hold: item.hold > 0,
+      })),
+    );
+  const before = (await items()).length;
+  await page.keyboard.down("KeyI");
+  await page.keyboard.down("KeyI");
+  await page.keyboard.up("KeyI");
+  const dropped = (await items()).slice(before);
+  expect(dropped).toEqual([{ kind: "mushroom", drop: true, hold: true }]);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__audioEvents))
+    .toContain("appear");
+  await expect(current).toHaveAttribute("aria-label", "2x");
+
+  // A click still drops its own item and leaves the highlight alone.
+  await page.getByRole("button", { name: "Flower", exact: true }).click();
+  const clicked = (await items()).slice(before + 1);
+  expect(clicked.map((item: { kind: string }) => item.kind)).toEqual([
+    "flower",
+  ]);
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+
+  const count = async () => (await items()).length;
+  const settled = await count();
+  await page.keyboard.press("Escape");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.paused))
+    .toBe(true);
+  await page.keyboard.press("KeyU");
+  await page.keyboard.press("KeyI");
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  expect(await count()).toBe(settled);
+  await page.keyboard.press("Escape");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__game.paused))
+    .toBe(false);
+
+  await page.getByRole("button", { name: "Key bindings" }).click();
+  await page.keyboard.press("KeyU");
+  await page.keyboard.press("KeyI");
+  await page.getByRole("button", { name: "CLOSE" }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  expect(await count()).toBe(settled);
+
+  await page.evaluate(() => {
+    (window as any).__game.sim.playerInPipe = () => true;
+  });
+  await page.keyboard.press("KeyU");
+  await page.keyboard.press("KeyI");
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  expect(await count()).toBe(settled);
+  await page.evaluate(() => {
+    delete (window as any).__game.sim.playerInPipe;
+  });
+
+  // Back to the title and in again: the tray opens on Star.
+  await page.evaluate(() => (window as any).__game.sim.reset("title"));
+  await expect(tray).toHaveCount(0);
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await expect(current).toHaveAttribute("aria-label", "Star");
+});
+
 test("tray click while paused does not spawn", async ({ page }) => {
   await waitGame(page);
   await unlockTitle(page);

@@ -56,6 +56,30 @@ export function cheatTrayOpen(cheat: TitleCheat, mode: string) {
   return cheat.unlocked && cheat.unlimited && mode !== "title";
 }
 
+/** Help lists the tray keys and pad rows only while the tray is enabled. */
+export function cheatBindingsShown(cheat: TitleCheat) {
+  return cheat.unlocked && cheat.unlimited;
+}
+
+/** Change steps Star, 2x, 3x, 8x, Flower, 1-up, then back to Star. */
+export function nextCheatPick(pick: number, count: number) {
+  return (pick + 1) % count;
+}
+
+/** Tray keys and pad buttons act only in live play with the tray open. */
+export function cheatKeysLive(
+  cheat: TitleCheat,
+  state: { mode: string; paused: boolean; helpOpen: boolean; inPipe: boolean },
+) {
+  return (
+    cheatTrayOpen(cheat, state.mode) &&
+    state.mode === "playing" &&
+    !state.paused &&
+    !state.helpOpen &&
+    !state.inPipe
+  );
+}
+
 export function startTitleCampaign(
   sim: { levelIndex: number; lives: number; reset: (mode: "intro") => void },
   levelIndex: number,

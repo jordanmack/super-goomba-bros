@@ -1,7 +1,15 @@
 export const GAMEPAD_DEADZONE = 0.35;
 export const PAD_MAP_KEY = "sgb-gamepad-map";
 
-export type PadMapAction = "jump" | "run" | "left" | "right" | "down" | "pause";
+export type PadMapAction =
+  | "jump"
+  | "run"
+  | "left"
+  | "right"
+  | "down"
+  | "pause"
+  | "cheatNext"
+  | "cheatDrop";
 export type PadBinding =
   | { type: "button"; index: number }
   | { type: "hat"; dir: "up" | "down" | "left" | "right" };
@@ -13,7 +21,20 @@ export const PAD_MAP_ACTIONS = [
   "right",
   "down",
   "pause",
+  "cheatNext",
+  "cheatDrop",
 ] as const satisfies readonly PadMapAction[];
+
+// Unlimited power-ups tray actions. Help lists their rows only while the tray
+// is enabled.
+export const CHEAT_PAD_ACTIONS = [
+  "cheatNext",
+  "cheatDrop",
+] as const satisfies readonly PadMapAction[];
+export type CheatPadAction = (typeof CHEAT_PAD_ACTIONS)[number];
+export function isCheatPadAction(action: PadMapAction): action is CheatPadAction {
+  return (CHEAT_PAD_ACTIONS as readonly PadMapAction[]).includes(action);
+}
 
 export const HAT_BUTTON = {
   up: 12,
@@ -29,6 +50,8 @@ export const DEFAULT_PAD_MAP: Record<PadMapAction, PadBinding> = {
   right: { type: "hat", dir: "right" },
   down: { type: "hat", dir: "down" },
   pause: { type: "button", index: 9 },
+  cheatNext: { type: "button", index: 2 },
+  cheatDrop: { type: "button", index: 3 },
 };
 
 export const GAMEPAD_BINDINGS = [
@@ -47,6 +70,8 @@ export const PAD_REMAP_LABELS: Record<PadMapAction, string> = {
   right: "Right",
   down: "Down",
   pause: "Pause",
+  cheatNext: "Change power-up",
+  cheatDrop: "Drop power-up",
 };
 
 export type PadSnapshot = {
@@ -92,6 +117,8 @@ export function defaultPadMap(): Record<PadMapAction, PadBinding> {
     right: { ...DEFAULT_PAD_MAP.right },
     down: { ...DEFAULT_PAD_MAP.down },
     pause: { ...DEFAULT_PAD_MAP.pause },
+    cheatNext: { ...DEFAULT_PAD_MAP.cheatNext },
+    cheatDrop: { ...DEFAULT_PAD_MAP.cheatDrop },
   };
 }
 

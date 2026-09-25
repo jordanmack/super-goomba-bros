@@ -324,3 +324,84 @@ test("gamepad mapping, Start on title, auto-hide, remap persist, and disconnect"
     }),
   ).toContainText("X (West)");
 });
+
+test("pad X changes the tray item, Y drops it, and both remap and reset", async ({
+  page,
+}) => {
+  await waitReady(page);
+  const injected = await injectPad(page);
+  test.skip(!injected, "gamepad inject failed in this environment");
+  for (const button of [12, 12, 13, 13, 14, 15, 14, 15, 1, 0]) {
+    await setPad(page, [button]);
+    await setPad(page, []);
+  }
+  await page.getByRole("button", { name: "Unlimited power-ups OFF" }).click();
+  await setPad(page, [9]);
+  await setPad(page, []);
+  await skipIntro(page);
+  await page.evaluate(() => {
+    (window as any).__game.sim.marioReturn = 1e6;
+  });
+  const tray = page.getByRole("toolbar", { name: "Power-up tray" });
+  const current = tray.locator('[aria-current="true"]');
+  await expect(current).toHaveAttribute("aria-label", "Star");
+  await setPad(page, [2]);
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  // Holding X across frames does not repeat.
+  await setPad(page, [2]);
+  await setPad(page, [2]);
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  await setPad(page, []);
+  await setPad(page, [2]);
+  await setPad(page, []);
+  await expect(current).toHaveAttribute("aria-label", "3x");
+
+  const kinds = () =>
+    page.evaluate(() =>
+      (window as any).__game.sim.items.map((item: any) => item.kind),
+    );
+  const before = (await kinds()).length;
+  await setPad(page, [3]);
+  await setPad(page, [3]);
+  await setPad(page, []);
+  expect((await kinds()).slice(before)).toEqual(["mushroom3x"]);
+
+  const dialog = page.getByRole("dialog", { name: "KEY BINDINGS" });
+  await page.getByRole("button", { name: "Key bindings" }).click();
+  await dialog.getByRole("button", { name: /Drop power-up/ }).click();
+  await setPad(page, [5]);
+  await expect(
+    dialog.getByRole("button", { name: /Drop power-up/ }),
+  ).toContainText("RB");
+  // Close with RB still held: that press must not drop on the way out.
+  await page.getByRole("button", { name: "CLOSE" }).click();
+  await setPad(page, [5]);
+  expect((await kinds()).slice(before)).toEqual(["mushroom3x"]);
+  await setPad(page, []);
+  await setPad(page, [3]);
+  await setPad(page, []);
+  expect((await kinds()).slice(before)).toEqual(["mushroom3x"]);
+  await setPad(page, [5]);
+  await setPad(page, []);
+  expect((await kinds()).slice(before)).toEqual([
+    "mushroom3x",
+    "mushroom3x",
+  ]);
+
+  await page.getByRole("button", { name: "Key bindings" }).click();
+  await dialog.getByRole("button", { name: "RESET GAMEPAD" }).click();
+  await expect(
+    dialog.getByRole("button", { name: /Change power-up/ }),
+  ).toContainText("X (West)");
+  await expect(
+    dialog.getByRole("button", { name: /Drop power-up/ }),
+  ).toContainText("Y (North)");
+  await page.getByRole("button", { name: "CLOSE" }).click();
+  await setPad(page, [3]);
+  await setPad(page, []);
+  expect((await kinds()).slice(before)).toEqual([
+    "mushroom3x",
+    "mushroom3x",
+    "mushroom3x",
+  ]);
+});

@@ -725,6 +725,9 @@ export class Simulation {
   private inPipe(actor: Actor) {
     return !!actor.pipeTravel;
   }
+  playerInPipe() {
+    return this.inPipe(this.player);
+  }
   private onVine(actor: Actor) {
     return !!actor.climbing;
   }

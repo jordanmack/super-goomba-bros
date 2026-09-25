@@ -2,7 +2,9 @@ import type Phaser from "phaser";
 import { emptyInput } from "./simulation";
 import type { Input, Mode, TallyPhase } from "./simulation";
 import {
+  bindingPressed,
   capturePadBinding,
+  CHEAT_PAD_ACTIONS,
   GAMEPAD_DEADZONE,
   defaultPadMap,
   loadPadMap,
@@ -11,6 +13,7 @@ import {
   pickActivePad,
   sameBinding,
   savePadMap,
+  type CheatPadAction,
   type PadBinding,
   type PadMapAction,
   type PadSnapshot,
@@ -31,6 +34,7 @@ export type ControlHooks = {
   onGamepadUse: () => void;
   onPadMapChange: (map: Record<PadMapAction, PadBinding>) => void;
   onRemapChange: (target: PadMapAction | null) => void;
+  onCheat: (action: CheatPadAction) => void;
 };
 type ControlState = {
   input: Input;
@@ -66,6 +70,15 @@ export const KEY_BINDINGS = [
   { action: "Shoot with a flower", keys: "Shift, Z, or J (press)" },
   { action: "Pause", keys: "Escape" },
 ] as const;
+// Unlimited power-ups tray keys. Help lists them only while the tray is enabled.
+const CHEAT_KEYS: Record<string, CheatPadAction> = {
+  KeyU: "cheatNext",
+  KeyI: "cheatDrop",
+};
+export const CHEAT_KEY_BINDINGS = [
+  { action: "Change power-up", keys: "U" },
+  { action: "Drop power-up", keys: "I" },
+] as const;
 
 // Phaser owns pointer and key events. DOM listeners only guard browser gestures,
 // recover interrupted native touches, and capture mouse/pen outside the controls.
@@ -85,6 +98,8 @@ export class GameControls {
   private padIndex: number | null = null;
   private gamepadUsed = false;
   private padNeedRelease = new Set<PadAction>();
+  // Last seen state of the tray buttons; null until a pad is polled.
+  private cheatDown: Record<CheatPadAction, boolean> | null = null;
 
   constructor(
     input: Phaser.Input.InputPlugin,
@@ -173,6 +188,11 @@ export class GameControls {
         const step = sonamiStepFromKey(e.code);
         if ((step || this.sonamiIndex > 0) && this.feedSonami(step)) return;
       }
+      const cheat = CHEAT_KEYS[e.code];
+      if (cheat) {
+        if (pressed && !e.repeat && this.playing()) this.hooks.onCheat(cheat);
+        return;
+      }
       const action = KEYS[e.code],
         id = `key:${e.code}`;
       if (!action) return;
@@ -206,6 +226,7 @@ export class GameControls {
       this.clearPadHolds();
       this.prevPad = null;
       this.padIndex = null;
+      this.cheatDown = null;
     });
 
     const clearAndInterrupt = () => {
@@ -328,11 +349,13 @@ export class GameControls {
       if (this.padIndex !== null) this.clearPadHolds();
       this.prevPad = null;
       this.padIndex = null;
+      this.cheatDown = null;
       return;
     }
     if (this.padIndex !== null && this.padIndex !== snap.index) {
       this.clearPadHolds();
       this.prevPad = null;
+      this.cheatDown = null;
     }
     if (padActivity(snap)) this.padIndex = snap.index;
     if (!this.gamepadUsed && padActivity(snap)) {
@@ -348,6 +371,7 @@ export class GameControls {
         else this.applyRemap(this.state.remapTarget, captured);
       }
       this.prevPad = snap;
+      this.trackCheatPad(snap, false);
       return;
     }
     if (this.state.sim.mode === "title" && !this.state.helpOpen) {
@@ -364,6 +388,7 @@ export class GameControls {
     this.prevPad = snap;
     if (this.state.helpOpen) {
       this.clearPadHolds();
+      this.trackCheatPad(snap, false);
       return;
     }
     const holds = mappedHolds(snap, this.state.padMap, GAMEPAD_DEADZONE);
@@ -388,6 +413,7 @@ export class GameControls {
         this.state.sim.mode === "title" ||
         this.onEndingScreen(),
     );
+    this.trackCheatPad(snap, this.playing());
     this.sync();
   }
   clearPointerHolds() {
@@ -420,6 +446,19 @@ export class GameControls {
     this.state.remapTarget = null;
     this.latchPadHolds();
     this.hooks.onRemapChange(null);
+  }
+  // Tray buttons act once per press. A button already down when a pad first
+  // polls, when a dialog closes, or after a remap waits for its release.
+  private trackCheatPad(snap: PadSnapshot, live: boolean) {
+    const before = this.cheatDown;
+    const now = {
+      cheatNext: bindingPressed(snap, this.state.padMap.cheatNext),
+      cheatDrop: bindingPressed(snap, this.state.padMap.cheatDrop),
+    };
+    this.cheatDown = now;
+    if (!before || !live) return;
+    for (const action of CHEAT_PAD_ACTIONS)
+      if (now[action] && !before[action]) this.hooks.onCheat(action);
   }
   private feedSonami(step: ReturnType<typeof sonamiStepFromKey>) {
     this.sonamiIndex = advanceSonami(this.sonamiIndex, step);

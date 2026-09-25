@@ -182,8 +182,10 @@ The first gamepad button or stick use this session hides the on-screen pad.
 The header cycle still works. Unplug does not force the pad back.
 
 Help lists the keyboard and gamepad defaults. Remap Jump, Run, Left, Right,
-Down, and Pause by pressing a controller button or D-pad direction. Esc or the
-previous binding cancels. There is no separate Fire row; a Run press still
+Down, and Pause by pressing a controller button or D-pad direction. While the
+Konami unlock and Unlimited power-ups are both on, Help also lists the U and I
+tray keys and remap rows for Change power-up and Drop power-up. Otherwise those
+rows are absent. Esc or the previous binding cancels. There is no separate Fire row; a Run press still
 pulses fire. The map is the only localStorage setting. Invalid or missing maps
 fall back to the defaults. Reset to defaults is in Help.
 
@@ -196,6 +198,8 @@ fall back to the defaults. Reset to defaults is in Help.
 | Fire with a flower | Shift, Z, or J (press) | B (press) | B (East) press |
 | Pause | Escape | Pause; NES Start | Start |
 | Select | | NES Select | Unused |
+| Change tray power-up | U | | X (West) |
+| Drop tray power-up | I | Tray button | Y (North) |
 
 A header Key bindings button shows this keyboard list and the gamepad
 defaults in a dialog.
@@ -230,6 +234,17 @@ stays at that world position, and is not collectable until it lands. Then it
 falls straight down with no horizontal spawn drift. Any character can collect
 it after it lands. It plays the appear cue. Ignore clicks on the title, intro,
 GAME OVER, dead, or finishing screens, and while the player is in a pipe.
+
+One tray button is highlighted as the current item. The highlight starts on
+Star each time the tray opens. Change (U, or gamepad X) moves it Star, 2x, 3x,
+8x, Flower, 1-up, then back to Star. Drop (I, or gamepad Y) drops the
+highlighted item through the same path as a click. Each press acts once:
+holding the key or button, or key repeat, does nothing more, and a button still
+held after closing Help or a remap waits for its release. Change and Drop act
+only while the tray is open, the game is playing and not paused, Help is
+closed, and the player is not in a pipe; any other press does nothing. A click
+still drops that item and leaves the highlight where it is. Both pad buttons
+can be remapped in Help, and Reset gamepad restores X and Y.
 
 A side pipe is entered only by walking right into its mouth hole, the lower
 tile of the pipe end. There is no Hide or manual Warn button.

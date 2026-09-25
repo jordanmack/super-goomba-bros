@@ -32,15 +32,23 @@ import type {
 import { PhaserGame } from "./game/phaser-game";
 import { GameAudio } from "./game/audio";
 import { TUNING as T } from "./game/config";
-import { GameControls, KEY_BINDINGS, type PadAction } from "./game/controls";
+import {
+  CHEAT_KEY_BINDINGS,
+  GameControls,
+  KEY_BINDINGS,
+  type PadAction,
+} from "./game/controls";
 import { CAMPAIGN, campaignIndex } from "./game/levels";
 import {
   TITLE_STAGES,
   TITLE_WORLDS,
   backTitlePick,
+  cheatBindingsShown,
+  cheatKeysLive,
   cheatTrayOpen,
   closeTitlePick,
   initialTitleCheat,
+  nextCheatPick,
   openWorldPick,
   selectWorld,
   startTitleCampaign,
@@ -52,6 +60,7 @@ import {
   bindingLabel,
   defaultPadMap,
   GAMEPAD_BINDINGS,
+  isCheatPadAction,
   PAD_REMAP_LABELS,
   type PadBinding,
   type PadMapAction,
@@ -79,6 +88,8 @@ type Runtime = {
   ignoreEscapeUntilUp: boolean;
   padMap: Record<PadMapAction, PadBinding>;
   remapTarget: PadMapAction | null;
+  cheatPick: number;
+  cheatTrayWasOpen: boolean;
   clearInput: () => void;
   leaveEnding: () => void;
   controls?: GameControls;
@@ -167,6 +178,7 @@ export default function App() {
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({});
   const [padMap, setPadMap] = useState(defaultPadMap);
   const [remapTarget, setRemapTarget] = useState<PadMapAction | null>(null);
+  const [cheatPick, setCheatPick] = useState(0);
   const hidPad = useRef(false);
   const helpButton = useRef<HTMLButtonElement>(null);
   const helpCloseButton = useRef<HTMLButtonElement>(null);
@@ -223,6 +235,8 @@ export default function App() {
         ignoreEscapeUntilUp: false,
         padMap: defaultPadMap(),
         remapTarget: null,
+        cheatPick: 0,
+        cheatTrayWasOpen: false,
         clearInput: () => {},
         leaveEnding: () => {},
       };
@@ -297,6 +311,24 @@ export default function App() {
                 game.remapTarget = target;
                 setRemapTarget(target);
               },
+              onCheat: (action) => {
+                const live = cheatKeysLive(titleCheatRef.current, {
+                  mode: game.sim.mode,
+                  paused: game.paused,
+                  helpOpen: game.helpOpen,
+                  inPipe: game.sim.playerInPipe(),
+                });
+                if (!live) return;
+                if (action === "cheatDrop") {
+                  game.sim.dropCheatItem(CHEAT_ITEMS[game.cheatPick]!);
+                  return;
+                }
+                game.cheatPick = nextCheatPick(
+                  game.cheatPick,
+                  CHEAT_ITEMS.length,
+                );
+                setCheatPick(game.cheatPick);
+              },
             },
           );
           game.controls = controls;
@@ -333,6 +365,12 @@ export default function App() {
         lastShoutCount = 0;
       const update = (now: number, frameDelta: number) => {
         const delta = Math.min(0.1, frameDelta / 1000);
+        const trayOpen = cheatTrayOpen(titleCheatRef.current, sim.mode);
+        if (trayOpen && !game.cheatTrayWasOpen) {
+          game.cheatPick = 0;
+          setCheatPick(0);
+        }
+        game.cheatTrayWasOpen = trayOpen;
         controls?.poll();
         const frozen = game.paused || game.helpOpen;
         renderer.game.anims.globalTimeScale = frozen ? 0 : 1;
@@ -652,11 +690,14 @@ export default function App() {
           aria-label="Power-up tray"
           inert={paused || helpOpen || undefined}
         >
-          {CHEAT_ITEMS.map((kind) => (
+          {CHEAT_ITEMS.map((kind, index) => (
             <button
               key={kind}
               type="button"
-              className="cheat-item"
+              className={
+                index === cheatPick ? "cheat-item current" : "cheat-item"
+              }
+              aria-current={index === cheatPick ? "true" : undefined}
               aria-label={CHEAT_ITEM_LABELS[kind]}
               title={CHEAT_ITEM_LABELS[kind]}
               onClick={() => dropCheat(kind)}
@@ -1020,7 +1061,10 @@ export default function App() {
           <p className="level-label">KEYBOARD</p>
           <h2 id="help-title">KEY BINDINGS</h2>
           <dl className="bindings">
-            {KEY_BINDINGS.map((row) => (
+            {[
+              ...KEY_BINDINGS,
+              ...(cheatBindingsShown(titleCheat) ? CHEAT_KEY_BINDINGS : []),
+            ].map((row) => (
               <div key={row.action}>
                 <dt>{row.action}</dt>
                 <dd>{row.keys}</dd>
@@ -1037,25 +1081,30 @@ export default function App() {
             ))}
           </dl>
           <div className="remap-list">
-            {(Object.keys(PAD_REMAP_LABELS) as PadMapAction[]).map((action) => (
-              <button
-                key={action}
-                type="button"
-                className={
-                  remapTarget === action ? "remap-row listening" : "remap-row"
-                }
-                onClick={() =>
-                  runtime.current?.controls?.beginRemap(action)
-                }
-              >
-                <span>{PAD_REMAP_LABELS[action]}</span>
-                <span>
-                  {remapTarget === action
-                    ? "Press a button"
-                    : bindingLabel(padMap[action])}
-                </span>
-              </button>
-            ))}
+            {(Object.keys(PAD_REMAP_LABELS) as PadMapAction[])
+              .filter(
+                (action) =>
+                  cheatBindingsShown(titleCheat) || !isCheatPadAction(action),
+              )
+              .map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  className={
+                    remapTarget === action ? "remap-row listening" : "remap-row"
+                  }
+                  onClick={() =>
+                    runtime.current?.controls?.beginRemap(action)
+                  }
+                >
+                  <span>{PAD_REMAP_LABELS[action]}</span>
+                  <span>
+                    {remapTarget === action
+                      ? "Press a button"
+                      : bindingLabel(padMap[action])}
+                  </span>
+                </button>
+              ))}
           </div>
           <button
             type="button"
