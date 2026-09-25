@@ -26,6 +26,7 @@ import warning from "../assets/audio/warning.wav?inline";
 import worldClear from "../assets/audio/world_clear.wav?inline";
 import fireworks from "../assets/audio/fireworks.wav?inline";
 import bowserFire from "../assets/audio/bowserfire.wav?inline";
+import ending from "../assets/audio/ending.mp3?inline";
 
 export const RECORDINGS = {
   overworld,
@@ -52,6 +53,7 @@ export const RECORDINGS = {
   worldClear,
   fireworks,
   bowserFire,
+  ending,
 };
 const MUSIC_LOOPS: Record<
   string,
@@ -72,6 +74,10 @@ const MUSIC_LOOPS: Record<
   },
   castle: { intro: 0.52 - 529 / 44100, start: 8.52 - 529 / 44100, duration: 8 },
 };
+// SMB1 VictoryMusData is one 384-frame statement (6.4 s at the recording's
+// 60 Hz). The recording plays the first statement once from its note onset,
+// then loops the second, whose wrap lands on a phrase start.
+export const ENDING_LOOP = { intro: 0.52, start: 6.92, duration: 384 / 60 };
 // The overworld recording opens with the 144-frame ground lead-in, the only
 // phrase SMB1 plays for the pipe-intro cutscene.
 export const PIPE_INTRO_LEAD_IN = {
@@ -117,7 +123,9 @@ export class GameAudio {
   private cue: Phaser.Sound.WebAudioSound | null = null;
   private cueQueue: ("death" | "clear" | "gameover" | "warning" | "worldClear")[] =
     [];
-  private victoryLooping = false;
+  // The 8-4 card: world clear once, then the ending theme until it closes.
+  private victoryActive = false;
+  private victoryTheme: Phaser.Sound.WebAudioSound | null = null;
   private musicResume: { key: string; seek: number } | null = null;
   private musicLeadIn = false;
   private leadInDone = false;
@@ -201,9 +209,12 @@ export class GameAudio {
   resetMusic(preserveCue = false) {
     this.stopMusic();
     this.musicResume = null;
-    // Drop the victory loop before destroy so its complete handler cannot restart it.
+    // Drop the victory state before destroy so the fanfare's complete handler
+    // cannot start the ending theme.
     if (!preserveCue) {
-      this.victoryLooping = false;
+      this.victoryActive = false;
+      this.victoryTheme?.destroy();
+      this.victoryTheme = null;
       this.cueQueue = [];
       this.cue = null;
     }
@@ -224,7 +235,6 @@ export class GameAudio {
     name: keyof typeof RECORDINGS,
     complete?: () => void,
     volume = 1,
-    loop = false,
   ) {
     if (!this.game.cache.audio.exists(name)) return;
     const effect = this.manager.add(name) as Phaser.Sound.WebAudioSound;
@@ -234,7 +244,7 @@ export class GameAudio {
       complete?.();
       effect.destroy();
     });
-    effect.play({ volume, loop });
+    effect.play({ volume });
     return effect;
   }
   private playTally() {
@@ -260,36 +270,52 @@ export class GameAudio {
         this.cueQueue.push(name);
       return;
     }
-    const loop = this.victoryLooping && name === "worldClear";
-    const effect = this.play(
-      name,
-      () => {
-        if (this.cue !== effect) return;
-        this.cue = null;
-        if (loop && this.victoryLooping) {
-          this.playCue(name);
-          return;
-        }
-        const next = this.cueQueue.shift();
-        if (next) this.playCue(next);
-      },
-      1,
-      loop,
-    );
+    const effect = this.play(name, () => {
+      if (this.cue !== effect) return;
+      this.cue = null;
+      const next = this.cueQueue.shift();
+      if (next) this.playCue(next);
+      // The fanfare has finished whole, so the ending theme takes over.
+      else if (this.victoryActive) this.playVictoryTheme();
+    });
     this.cue = effect ?? null;
-    this.musicHoldUntil = loop
+    this.musicHoldUntil = this.victoryActive
       ? Number.POSITIVE_INFINITY
       : this.context.currentTime + (this.buffers.get(name)?.duration ?? 0);
   }
-  private beginVictoryLoop() {
-    if (this.victoryLooping || !this.available) return;
-    this.victoryLooping = true;
+  private beginVictory() {
+    if (this.victoryActive || !this.available) return;
+    this.victoryActive = true;
     this.playCue("worldClear");
     if (this.cue?.key !== "worldClear" && !this.cueQueue.includes("worldClear"))
-      this.victoryLooping = false;
+      this.victoryActive = false;
   }
-  private stopVictoryLoop() {
-    this.victoryLooping = false;
+  // One statement as the intro, then the next statement loops.
+  private playVictoryTheme() {
+    if (this.victoryTheme || !this.game.cache.audio.exists("ending")) return;
+    const theme = this.manager.add("ending", {
+      volume: MIX.musicVolume,
+    }) as Phaser.Sound.WebAudioSound;
+    this.victoryTheme = theme;
+    theme.addMarker({
+      name: "intro",
+      start: ENDING_LOOP.intro,
+      duration: ENDING_LOOP.start - ENDING_LOOP.intro,
+      config: { volume: MIX.musicVolume },
+    });
+    theme.addMarker({
+      name: "loop",
+      start: ENDING_LOOP.start,
+      duration: ENDING_LOOP.duration,
+      config: { loop: true, volume: MIX.musicVolume },
+    });
+    theme.once("complete", () => {
+      if (this.victoryTheme === theme) theme.play("loop");
+    });
+    theme.play("intro");
+  }
+  private stopVictory() {
+    this.victoryActive = false;
     this.cueQueue = this.cueQueue.filter((name) => name !== "worldClear");
     if (this.cue?.key === "worldClear") {
       const cue = this.cue;
@@ -297,15 +323,17 @@ export class GameAudio {
       this.effects.delete(cue);
       cue.destroy();
     }
+    this.victoryTheme?.destroy();
+    this.victoryTheme = null;
     if (this.musicHoldUntil === Number.POSITIVE_INFINITY) this.musicHoldUntil = 0;
   }
-  /** Keep world clear looping while the 8-4 card asks for it. */
-  syncVictory(loop: "" | "worldClear") {
-    if (!loop) {
-      if (this.victoryLooping) this.stopVictoryLoop();
+  /** World clear once, then the ending theme, while the 8-4 card asks for it. */
+  syncVictory(theme: "" | "ending") {
+    if (!theme) {
+      if (this.victoryActive) this.stopVictory();
       return;
     }
-    this.beginVictoryLoop();
+    this.beginVictory();
   }
   private playWarning() {
     if (!this.context || !this.masterGain || this.muted) return;
@@ -345,7 +373,7 @@ export class GameAudio {
       return;
     }
     if (victoryCue(event)) {
-      this.beginVictoryLoop();
+      this.beginVictory();
       return;
     }
     if (
@@ -388,7 +416,7 @@ export class GameAudio {
     if (
       !music ||
       (leadIn && this.leadInDone) ||
-      this.victoryLooping ||
+      this.victoryActive ||
       this.music ||
       this.cue ||
       this.cueQueue.length > 0 ||

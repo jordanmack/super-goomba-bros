@@ -158,16 +158,58 @@ test("Bowser flame cue is the Mayhem bowser-fire WAV, not fireball or fireworks"
   assert.notEqual(Buffer.compare(flame, fireworks), 0);
 });
 
-test("the 8-4 ending loops world clear and game over stays a one-shot", () => {
-  assert.deepEqual(victoryCue("ending"), { name: "worldClear", loop: true });
+// Frame count and sample rate of a CBR MPEG-1 Layer III file after its ID3v2 tag.
+function mp3Frames(bytes: Uint8Array) {
+  const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+  let offset = 0;
+  if (String.fromCharCode(...bytes.subarray(0, 3)) === "ID3")
+    offset =
+      10 +
+      ((bytes[6]! << 21) | (bytes[7]! << 14) | (bytes[8]! << 7) | bytes[9]!);
+  const rates = new Set<number>();
+  let frames = 0;
+  while (
+    offset + 4 <= bytes.length &&
+    bytes[offset] === 0xff &&
+    (bytes[offset + 1]! & 0xfe) === 0xfa
+  ) {
+    const kbps = bitrates[bytes[offset + 2]! >> 4]!;
+    const rate = [44100, 48000, 32000][(bytes[offset + 2]! >> 2) & 3]!;
+    rates.add(rate);
+    offset += Math.floor((144 * kbps * 1000) / rate) + ((bytes[offset + 2]! >> 1) & 1);
+    frames++;
+  }
+  return { frames, rates: [...rates], rest: bytes.length - offset };
+}
+
+test("the 8-4 ending plays world clear once, then loops one statement of the ending theme", () => {
+  assert.deepEqual(victoryCue("ending"), { fanfare: "worldClear", theme: "ending" });
   assert.equal(victoryCue("gameover"), null);
   assert.equal(victoryCue("win"), null);
   const audioSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "../src/game/audio.ts"),
     "utf8",
   );
-  assert.match(audioSrc, /victoryLooping && name === "worldClear"/);
-  assert.match(audioSrc, /play\(\{ volume, loop \}\)/);
+  // Cues are one-shots. The theme starts from the fanfare's complete handler.
+  assert.match(audioSrc, /effect\.play\(\{ volume \}\)/);
+  assert.match(audioSrc, /else if \(this\.victoryActive\) this\.playVictoryTheme\(\)/);
+  assert.match(audioSrc, /import ending from "\.\.\/assets\/audio\/ending\.mp3\?inline"/);
+  const loop = audioSrc.match(
+    /ENDING_LOOP = \{ intro: ([\d.]+), start: ([\d.]+), duration: 384 \/ 60 \}/,
+  );
+  assert.ok(loop, "ENDING_LOOP is one 384-frame VictoryMusData statement");
+  const intro = Number(loop[1]);
+  const start = Number(loop[2]);
+  const statement = 384 / 60;
+  // The intro is exactly one statement, so the loop starts on a phrase.
+  assert.ok(Math.abs(start - intro - statement) < 1e-9);
+  // The bundled file keeps the looped statement but not the other repeats.
+  const mp3 = mp3Frames(readFileSync(join(audioDir, "ending.mp3")));
+  assert.deepEqual(mp3.rates, [44100]);
+  assert.equal(mp3.rest, 128, "only the ID3v1 tag follows the frames");
+  const seconds = (mp3.frames * 1152) / 44100;
+  assert.ok(seconds >= start + statement, `${seconds} s ends before the loop`);
+  assert.ok(seconds < start + 2 * statement, `${seconds} s keeps unused repeats`);
   const appSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "../src/App.tsx"),
     "utf8",

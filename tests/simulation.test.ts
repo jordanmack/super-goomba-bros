@@ -11559,7 +11559,7 @@ test("leftover TIME and castle lines add to SCORE then auto-continue", () => {
   );
 });
 
-test("World 8-4 ending holds SCORE and looped world clear until title", () => {
+test("World 8-4 ending holds SCORE and the ending theme until title", () => {
   assert.deepEqual(ENDING_LINES, [
     "ONE SMALL GOOMBA STOOD BRAVE.",
     "HE HELD BACK THE EVIL MARIO BROTHERS.",
@@ -11597,8 +11597,8 @@ test("World 8-4 ending holds SCORE and looped world clear until title", () => {
   const score =
     1000 + 3 * T.timeScore + 2 * T.warnedScore;
   assert.equal(s.score, score);
-  assert.equal(s.victoryLoop, "worldClear");
-  assert.deepEqual(victoryCue("ending"), { name: "worldClear", loop: true });
+  assert.equal(s.victoryLoop, "ending");
+  assert.deepEqual(victoryCue("ending"), { fanfare: "worldClear", theme: "ending" });
   assert.equal(victoryCue("gameover"), null);
   assert.ok(s.events.includes("ending"));
   // Cover the old auto-title window. Do not zero the ending hold first.
@@ -11606,7 +11606,7 @@ test("World 8-4 ending holds SCORE and looped world clear until title", () => {
   assert.equal(s.mode, "finishing");
   assert.equal(s.tallyPhase, "ending");
   assert.equal(s.score, score);
-  assert.equal(s.victoryLoop, "worldClear");
+  assert.equal(s.victoryLoop, "ending");
   s.leaveEnding();
   assert.equal(s.mode, "title");
   assert.equal(s.levelIndex, 0);

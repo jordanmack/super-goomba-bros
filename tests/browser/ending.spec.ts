@@ -64,3 +64,99 @@ for (const view of [
     );
     expect(totals).toEqual({ warned: 0, saved: 0, died: 0, flag: 0, mario: 0 });
   });
+
+test("the 8-4 card plays world clear once, then loops one statement of the ending theme", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "START GAME" }).click();
+  await skipIntro(page);
+  await page.waitForFunction(
+    () => (window as any).__game.audio.buffers.size === 25,
+  );
+  await page.evaluate((last) => {
+    const s = (window as any).__game.sim;
+    s.levelIndex = last;
+    s.reset();
+    s.marioReturn = 1e6;
+    s.mode = "finishing";
+    s.tallyPhase = "ending";
+    s.victoryLoop = "ending";
+  }, LAST);
+  const state = () =>
+    page.evaluate(() => {
+      const a = (window as any).__game.audio;
+      const theme = a.victoryTheme;
+      return {
+        cue: a.cue?.key ?? null,
+        cueLoop: a.cue?.loop ?? null,
+        worldClear: [...a.effects].filter(
+          (source: any) => source.audioBuffer === a.buffers.get("worldClear"),
+        ).length,
+        music: a.music?.key ?? null,
+        theme: theme
+          ? {
+              key: theme.key,
+              playing: theme.isPlaying,
+              marker: theme.currentMarker?.name ?? null,
+              loop: theme.loop,
+              volume: theme.volume,
+              managed: a.manager.sounds.includes(theme),
+              intro: theme.markers.intro,
+              looped: theme.markers.loop,
+            }
+          : null,
+      };
+    });
+  await expect.poll(async () => (await state()).cue).toBe("worldClear");
+  const fanfare = await state();
+  // One play of the fanfare, not a loop, and no theme or area music over it.
+  expect(fanfare.cueLoop).toBe(false);
+  expect(fanfare.worldClear).toBe(1);
+  expect(fanfare.theme).toBeNull();
+  expect(fanfare.music).toBeNull();
+  await page.waitForTimeout(500);
+  expect((await state()).theme).toBeNull();
+  // Skip to the last 0.1 s so the cue ends on its own.
+  await page.evaluate(() => {
+    const cue = (window as any).__game.audio.cue;
+    cue.seek = cue.duration - 0.1;
+  });
+  await expect.poll(async () => (await state()).theme?.marker).toBe("intro");
+  const intro = await state();
+  expect(intro.cue).toBeNull();
+  expect(intro.worldClear).toBe(0);
+  expect(intro.music).toBeNull();
+  expect(intro.theme!.key).toBe("ending");
+  expect(intro.theme!.playing).toBe(true);
+  expect(intro.theme!.loop).toBe(false);
+  expect(intro.theme!.volume).toBeCloseTo(0.55);
+  // Played through the sound manager, so mute and pause still apply.
+  expect(intro.theme!.managed).toBe(true);
+  expect(intro.theme!.intro.start).toBeCloseTo(0.52);
+  expect(intro.theme!.intro.duration).toBeCloseTo(6.4);
+  expect(intro.theme!.looped.start).toBeCloseTo(6.92);
+  expect(intro.theme!.looped.duration).toBeCloseTo(6.4);
+  expect(intro.theme!.looped.config.loop).toBe(true);
+  await page.evaluate(() => {
+    const theme = (window as any).__game.audio.victoryTheme;
+    theme.seek = theme.duration - 0.1;
+  });
+  await expect.poll(async () => (await state()).theme?.marker).toBe("loop");
+  const looping = await state();
+  expect(looping.theme!.playing).toBe(true);
+  expect(looping.theme!.loop).toBe(true);
+  expect(looping.cue).toBeNull();
+  expect(looping.music).toBeNull();
+  await page.getByLabel("Ending").getByRole("button", { name: "TITLE" }).click();
+  await expect(page.getByRole("button", { name: "START GAME" })).toBeVisible();
+  const after = await page.evaluate(() => {
+    const a = (window as any).__game.audio;
+    return {
+      theme: a.victoryTheme,
+      endingSounds: a.manager.sounds.filter((s: any) => s.key === "ending").length,
+      cue: a.cue?.key ?? null,
+    };
+  });
+  expect(after).toEqual({ theme: null, endingSounds: 0, cue: null });
+});

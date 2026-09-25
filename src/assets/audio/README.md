@@ -9,6 +9,7 @@ by Mario Mayhem. These replace the prototype's synthesized music and game effect
 - Underground: https://www.mariomayhem.com/downloads/sound_tracks/Super_Mario_Bros._1/02-underworld.mp3
 - Water: https://www.mariomayhem.com/downloads/sound_tracks/Super_Mario_Bros._1/03-underwater.mp3
 - Castle: https://www.mariomayhem.com/downloads/sound_tracks/Super_Mario_Bros._1/04-castle.mp3
+- Ending (`ending.mp3`): https://www.mariomayhem.com/downloads/sound_tracks/Super_Mario_Bros._1/12-ending.mp3
 - Effects page: https://www.mariomayhem.com/downloads/sounds/super_mario_bros_nes_sounds.php
 - Each WAV comes from `https://www.mariomayhem.com/downloads/sounds/super_mario_bros/smb_<filename>.wav`.
 
@@ -51,9 +52,19 @@ question-block item uses the original appear effect with the bump. A 1-up uses
 `smb_warning.wav`, then the area theme plays faster. Leftover TIME tally
 retriggers a quieter copy of the coin sample on one voice. Flagpole fireworks
 use `smb_fireworks.wav` as each burst scores. Each Bowser flame spawn uses
-`smb_bowserfire.wav`, not the fireball or fireworks cue. World 8-4 loops
-`smb_world_clear.wav` on the ending screen after the castle tally until the
-player returns to the title.
+`smb_bowserfire.wav`, not the fireball or fireworks cue. On the World 8-4
+ending screen, after the castle tally, `smb_world_clear.wav` plays once. When
+it ends, the ending theme plays one statement and then loops the next until
+the player returns to the title.
+
+The ending recording is about 77 seconds: twelve plays of the one 384-frame
+(6.4 s) VictoryMusic statement, then a fade. `ending.mp3` keeps the first 536
+MP3 frames (14.0 s) with the original tags, which cover the opening silence,
+the first statement, and the looped second statement. The rest was cut at a
+frame boundary, not stream copied or re-encoded, so the kept audio decodes
+sample for sample the same as the full file and needs no decoder-padding
+offset. Playback starts at 0.52 s, just before the first note, and loops 6.92
+to 13.32 s, where the wrap lands on a phrase start.
 Warnings use a custom short square-wave voice, picked at random from a small
 pool of chirps. Pitch shapes live in `../../game/config.ts`. There is no
 approach heartbeat or distance-based music change. The world intro is silent.

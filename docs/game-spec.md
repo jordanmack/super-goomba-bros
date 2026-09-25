@@ -543,10 +543,13 @@ The castle door is always open. Reaching it completes the stage:
    THE KINGDOM IS SAFE. / A NEW QUEST STILL WAITS. Mario is named only as the
    villain. Do not thank Mario or mention a princess, and there is no
    world-select button. Below it are the campaign totals for WARNED, SAVED,
-   DIED, FLAG, and MARIO, then the final SCORE and TITLE. Loop the
-   world-clear cue until the player chooses the title with the TITLE button
-   or Start. That control does not fire by itself. Earlier stages still
-   auto-advance.
+   DIED, FLAG, and MARIO, then the final SCORE and TITLE. The card plays the
+   world-clear cue once, as SMB1 queues EndOfCastleMusic. When that play ends,
+   and not before, the original ending theme (SMB1 VictoryMusic) starts and
+   loops one 384-frame (6.4 s) statement until the player chooses the title
+   with the TITLE button or Start. The short cue itself never loops. Mute
+   still works, and leaving stops both. That control does not fire by
+   itself. Earlier stages still use the level-clear cue and auto-advance.
    Campaign totals: each stage's five end counters are added once, when that
    stage's tally finishes, 8-4 included before the card. DIED is the stage's
    lost-NPC count, and FLAG is 1 for a stage where the player beat Mario to

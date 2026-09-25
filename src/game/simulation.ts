@@ -387,11 +387,15 @@ export type GameEvent =
   | "firework"
   | "blast"
   | "flame";
-/** Looped cue for the 8-4 card. Game over and stage clear stay one-shots. */
+/**
+ * The 8-4 card plays world clear once, then loops the ending theme, as SMB1
+ * queues EndOfCastleMusic and then VictoryMusic. Game over and stage clear
+ * stay one-shots.
+ */
 export function victoryCue(
   event: GameEvent,
-): { name: "worldClear"; loop: true } | null {
-  return event === "ending" ? { name: "worldClear", loop: true } : null;
+): { fanfare: "worldClear"; theme: "ending" } | null {
+  return event === "ending" ? { fanfare: "worldClear", theme: "ending" } : null;
 }
 export type Particle = {
   x: number;
@@ -1408,8 +1412,8 @@ export class Simulation {
   campaignTotals = noTotals();
   tallyPhase: TallyPhase = "";
   tallyHold = 0;
-  /** Looped recording while the 8-4 card is up. Empty once the player leaves. */
-  victoryLoop: "" | "worldClear" = "";
+  /** Looped theme while the 8-4 card is up. Empty once the player leaves. */
+  victoryLoop: "" | "ending" = "";
   fireworksTotal = 0;
   private fireworksLeft = 0;
   private fireworkWait = 0;
@@ -5432,7 +5436,7 @@ export class Simulation {
       this.addCampaignTotals();
       if (this.levelIndex >= CAMPAIGN.length - 1) {
         this.tallyPhase = "ending";
-        this.victoryLoop = "worldClear";
+        this.victoryLoop = "ending";
         this.events.push("ending");
       } else this.nextLevel();
       return;
