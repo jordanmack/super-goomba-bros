@@ -77,6 +77,14 @@ export class Boot extends Phaser.Scene {
         repeat: -1,
       });
     }
+    // Mario's swim stroke steps every 8 frames.
+    for (const base of ["smallMario", "mario", "fireMario"])
+      this.anims.create({
+        key: `${base}-swim`,
+        frames: ["Swim", "Swim2", "Swim3"].map((pose) => ({ key: base + pose })),
+        frameRate: 7.5,
+        repeat: -1,
+      });
     this.registry.set("portrait", art.portrait);
     this.registry.set(
       "itemIcons",

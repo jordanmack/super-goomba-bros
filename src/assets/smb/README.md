@@ -39,8 +39,9 @@ The unchanged source sheets come from Mario Universe:
 
 Frame crops are in [smb-sprites.ts](../../game/smb-sprites.ts). Walking and running
 use original movement frames, with animation speed tied to movement speed.
-Mario also has idle, skid, jump, and death poses. Fire Mario uses the original
-SMB1 palette. Goombas and Koopas use their two-frame cycles. Koopa shells use
+Mario also has idle, skid, jump, and death poses. Off the floor in water he
+uses three swim frames per power stage, stepping every 8 frames while he rises
+and holding while he sinks. Fire Mario uses the original SMB1 palette. Goombas and Koopas use their two-frame cycles. Koopa shells use
 the original closed and legs-out frames, at the Koopa's current mushroom scale.
 Fire Goombas and Koopas use a white power-up palette while retaining their
 original faces and outlines.

@@ -67,7 +67,21 @@ test("swimming goombas and koopas play the walk cycle off the floor", async ({
         playerUp: pose(s.player, 0, -1.5, false),
         playerStill: pose(s.player, 0, 0, false),
         fishUp: pose(fish, 0, -1.5, false),
+        // Mario swims off the floor: the stroke plays while he rises and
+        // holds while he sinks, for every power stage.
         marioAir: pose(s.mario, 0, -2, false),
+        marioSink: pose(s.mario, 0, 1.5, false),
+        marioFloor: pose(s.mario, 2, 0, true),
+        smallMarioAir: (() => {
+          s.setMarioStage(0);
+          return pose(s.mario, 0, -2, false);
+        })(),
+        fireMarioAir: (() => {
+          s.setMarioStage(2);
+          const frame = pose(s.mario, 0, -2, false);
+          s.setMarioStage(1);
+          return frame;
+        })(),
         shell: (() => {
           koopa.shell = "moving";
           const frame = pose(koopa, 1.5, -1, false);
@@ -81,11 +95,16 @@ test("swimming goombas and koopas play the walk cycle off the floor", async ({
         (n: { kind: string; flower: boolean }) => n.kind === "goomba" && !n.flower,
       );
       if (!landGoomba) return null;
+      s.marioActive = true;
+      s.mario.alive = true;
+      s.mario.areaId = landGoomba.areaId;
+      s.setMarioStage(1);
       return {
         water,
         landRoom: s.roomFor(landGoomba).data.type,
         landWalk: pose(landGoomba, 2, 0, true),
         landAir: pose(landGoomba, 2, -1, false),
+        landMarioAir: pose(s.mario, 0, -2, false),
       };
     },
     { waterStage, landStage },
@@ -108,10 +127,22 @@ test("swimming goombas and koopas play the walk cycle off the floor", async ({
   expect(drawn!.water.fishUp.playing).toBe(false);
   expect(drawn!.water.shell.texture).toBe("koopaShell");
   expect(drawn!.water.shell.playing).toBe(false);
-  expect(drawn!.water.marioAir.texture).toBe("marioJump");
-  expect(drawn!.water.marioAir.anim).not.toBe("mario-walk");
+  expect(drawn!.water.marioAir.anim).toBe("mario-swim");
+  expect(drawn!.water.marioAir.playing).toBe(true);
+  expect(drawn!.water.marioAir.texture).toMatch(/^marioSwim/);
+  expect(drawn!.water.marioSink.anim).toBe("mario-swim");
+  expect(drawn!.water.marioSink.playing).toBe(false);
+  expect(drawn!.water.marioSink.texture).toMatch(/^marioSwim/);
+  // On the floor in water he walks, as in SMB1.
+  expect(drawn!.water.marioFloor.anim).toBe("mario-walk");
+  expect(drawn!.water.smallMarioAir.anim).toBe("smallMario-swim");
+  expect(drawn!.water.smallMarioAir.texture).toMatch(/^smallMarioSwim/);
+  expect(drawn!.water.fireMarioAir.anim).toBe("fireMario-swim");
+  expect(drawn!.water.fireMarioAir.texture).toMatch(/^fireMarioSwim/);
   expect(drawn!.landRoom).not.toBe("water");
   expect(drawn!.landWalk.anim).toBe("goomba-walk");
   expect(drawn!.landAir.playing).toBe(false);
   expect(drawn!.landAir.texture).toBe("goomba");
+  // Out of water, Mario in the air still jumps.
+  expect(drawn!.landMarioAir.texture).toBe("marioJump");
 });

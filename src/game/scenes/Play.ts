@@ -611,6 +611,14 @@ export class Play extends Phaser.Scene {
     } else if (moving && !skid) {
       sprite.play(`${base}-walk`, true);
       sprite.anims.timeScale = (pace * 60) / 90;
+    } else if (mario && inWater && !actor.grounded) {
+      // Off the floor in water, Mario swims: the stroke plays while he
+      // rises and holds its frame while he sinks.
+      const swim = `${base}-swim`;
+      if (sprite.anims.currentAnim?.key !== swim) sprite.play(swim);
+      sprite.anims.timeScale = 1;
+      if (actor.body.velocity.y < 0) sprite.anims.resume();
+      else sprite.anims.pause();
     } else
       sprite
         .stop()

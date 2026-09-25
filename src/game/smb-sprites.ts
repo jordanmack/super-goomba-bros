@@ -242,6 +242,22 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
   const fireMarioWalk3 = crop(mario, 262, 122, 16, 32);
   const fireMarioSkid = crop(mario, 287, 122, 16, 32);
   const fireMarioJump = crop(mario, 362, 122, 16, 32);
+  // Swim strokes, right-facing like the poses above: reach, pull, push. The
+  // sheet's other three right-facing swim frames are the same arms with the
+  // legs kicked.
+  const swim = (xs: number[], y: number, height: number) =>
+    xs.map((x) => crop(mario, x, y, 16, height));
+  const [smallMarioSwim, smallMarioSwim2, smallMarioSwim3] = swim(
+    [299, 239, 209],
+    29,
+    16,
+  );
+  const [marioSwim, marioSwim2, marioSwim3] = swim([209, 237, 262], 85, 32);
+  const [fireMarioSwim, fireMarioSwim2, fireMarioSwim3] = swim(
+    [209, 237, 262],
+    155,
+    32,
+  );
   return {
     goomba,
     goombaWalk,
@@ -276,6 +292,9 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     smallMarioWalk3,
     smallMarioSkid,
     smallMarioJump,
+    smallMarioSwim,
+    smallMarioSwim2,
+    smallMarioSwim3,
     marioDeath: crop(mario, 0, 16, 16, 16),
     mario: crop(mario, 180, 52, 16, 32),
     marioWalk: crop(mario, 209, 52, 16, 32),
@@ -283,12 +302,18 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     marioWalk3: crop(mario, 269, 52, 16, 32),
     marioSkid: crop(mario, 299, 52, 16, 32),
     marioJump: crop(mario, 359, 52, 16, 32),
+    marioSwim,
+    marioSwim2,
+    marioSwim3,
     fireMario,
     fireMarioWalk,
     fireMarioWalk2,
     fireMarioWalk3,
     fireMarioSkid,
     fireMarioJump,
+    fireMarioSwim,
+    fireMarioSwim2,
+    fireMarioSwim3,
   };
 }
 
