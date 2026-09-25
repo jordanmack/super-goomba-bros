@@ -347,7 +347,8 @@ fish: they join WARNED, SAVED, and DIED from the moment the egg appears, so a
 loss before it lands still counts. They are not part of the land population of
 30. Eggs and walkers do not hurt the player or other NPCs. Any contact with
 either defeats Mario, including a landing on top, which does not hatch or kill
-it. He never chooses a spike character as a stomp target. Fireballs, star, and
+it. His stun after a hit holds off that touch, as it holds off any other combat
+hit. He never chooses a spike character as a stomp target. Fireballs, star, and
 8x keep their existing rules.
 
 3-1, 5-2, 7-1, 8-3, and 8-4 spawn one Hammer Bro at each original type-5
@@ -677,7 +678,13 @@ defeated. 8x Mario ignores those smaller hits. An 8x player's land stomp or
 fireball ends 8x and keeps the stage under it, including fire. That hit does
 not also drop a stage, and the same overlap does not chain a second shrink.
 Shrink and grow blink between the two sizes.
-Damage causes blinking, with no frozen hit pose. An active Mario can upgrade
+Damage causes blinking, with no frozen hit pose. Each damaging hit starts his
+2-second stun (`marioStun`). Until it ends he ignores further combat hits:
+player fireballs, shells, Bullet Bills, firebars, Bowser flames, hammers, body
+contact, and a spike touch. So three player shots defeat Fire Mario only when
+each lands after the last stun ends, not on three frames in a row. The
+0.8-second size blink sits inside that lock. A player or NPC star still
+defeats him during it, and falling out still ends the hunt. An active Mario can upgrade
 only by collecting an item. Elapsed stage time can affect the form in which
 he returns; it cannot spontaneously change his active power. On a stage with
 Lakitu, every Mario spawn and return is Fire, including the first appearance,
@@ -790,7 +797,7 @@ coin sitting on that block, with the same coin pop and sound as a hidden coin
 block. Only the player Goomba adds that coin to the count and SCORE. It knocks
 up each NPC standing on the block. A player bounce or break
 does not kill that NPC. Mario's bounce or break kills them, including Koopas,
-unless they are 8x; this is not a stomp into a shell.
+unless they are 8x or in a damage blink; this is not a stomp into a shell.
 
 Visible question blocks that are not hidden 1-up or hidden coin blocks release
 one fully random prize from a shared pool of a coin plus the existing
@@ -839,7 +846,11 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   blink between the two sizes. Growth resolves overlap with scenery. Giant
   NPCs can back up to leave low ceilings. The first damaging stomp or hit on
   2x or 3x form shrinks to small instead of killing, and also removes a
-  flower. A lone 8x ignores those hits. Collecting a flower never changes Goomba
+  flower. A lone 8x ignores those hits. The damage blink after that shrink,
+  and after a damaging drop from 8x to 3x, ignores further combat hits (a
+  fireball, shell, Bullet Bill, firebar, stomp, body hit, or Mario's block
+  bump) until it ends. The blink when an 8x timer runs out, and a growth
+  blink, stay hitable. Collecting a flower never changes Goomba
   or NPC size.
 - Player fireballs match the shooter's scale at every size. A Fire Mario
   shot matches his body scale: normal size while big and scale 8 while 8x.
@@ -972,7 +983,8 @@ unprotected player. 2x and 3x form shrinks on the first damaging stomp, shell,
 or fireball hit and loses a flower; that size is not full immunity. A lone 8x
 ignores those smaller hits. An 8x land stomp or fireball demotes another 8x by
 one level.
-Falling out of the level also kills, including 8x. TIME 0 still kills 8x. Stars
+Falling out of the level also kills, including 8x and during a damage blink.
+TIME 0 still kills 8x and a blinking player. Stars
 grant full immunity. Death spends a life. If lives remain, the original-style
 black intro shows WORLD n-n and the player Goomba × remaining lives at
 playfield scale, then the current stage restarts with cleared counters,

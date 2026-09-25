@@ -289,6 +289,43 @@ test("Mario contact with a spike is a loss and not a stomp", () => {
   s.physics.clear();
 });
 
+test("a spike touch waits out Mario's stun after a hit", () => {
+  const s = start(4, 1);
+  s.cameraX = s.activeRoom.offset + 400;
+  revealLakitu(s);
+  enterMario(s);
+  parkAway(s);
+  s.lakitus[0]!.throwWait = 0;
+  step(s);
+  const spike = s.npcs.find((n) => n.kind === "spike")!;
+  stand(spike, 5200);
+  s.setMarioStage(1);
+  const hold = (a: Actor) => {
+    Body.setPosition(a.body, { x: 800, y: 300 });
+    Body.setVelocity(a.body, { x: 0, y: 0 });
+  };
+  hold(s.mario);
+  s.fireballs.push({ id: 1, x: 800, y: 300, vx: 0, age: 0, owner: "player" });
+  step(s);
+  assert.equal(s.marioStage, 0);
+  assert.ok(s.marioStun > 0);
+  while (s.marioStun > 2 * dt) {
+    hold(s.mario);
+    hold(spike);
+    step(s);
+    assert.equal(s.marioActive, true);
+  }
+  // Once the stun ends, the same touch is a loss.
+  for (let i = 0; i < 5 && s.marioActive; i++) {
+    hold(s.mario);
+    hold(spike);
+    step(s);
+  }
+  assert.equal(s.marioActive, false);
+  assert.ok(s.events.includes("marioDeath"));
+  s.physics.clear();
+});
+
 test("star, 8x, and fireballs keep their rules against a spike", () => {
   const starred = start(4, 1);
   starred.cameraX = starred.activeRoom.offset + 400;

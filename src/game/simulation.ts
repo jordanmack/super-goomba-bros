@@ -205,6 +205,9 @@ export type Actor = {
   scale: number;
   transformLeft: number;
   transformFrom: number;
+  // The current blink is an 8x damage drop, which holds off hits like a
+  // smaller shrink. An 8x timeout blink leaves it false and stays hitable.
+  hurtBlink?: boolean;
   starLeft: number;
   hugeLeft: number;
   exclaimLeft: number;
@@ -3683,6 +3686,7 @@ export class Simulation {
     const ratio = solidScale(nextScale) / solidScale(previous);
     Body.scale(a.body, ratio, ratio);
     a.scale = nextScale;
+    a.hurtBlink = false;
     Body.setPosition(a.body, {
       x: a.body.position.x,
       y: feet - a.body.height / 2,
@@ -3694,11 +3698,12 @@ export class Simulation {
   }
 
   private shrinking(a: Actor) {
-    // Damage i-frames only. 8x expiry blinks from hugeScale and stays hitable.
+    // Damage i-frames only. An 8x damage drop holds too, but the 8x expiry
+    // blink from hugeScale stays hitable.
     return (
       a.transformLeft > 0 &&
       a.transformFrom > a.scale &&
-      a.transformFrom < T.hugeScale
+      (a.transformFrom < T.hugeScale || a.hurtBlink === true)
     );
   }
 
@@ -3917,7 +3922,8 @@ export class Simulation {
       if (!n.alive || n.saved || this.inPipe(n) || !this.actorOnBlock(n, block))
         continue;
       if (hitter === this.mario) {
-        if (n.starLeft <= 0 && !this.isHuge(n)) this.kill(n);
+        if (n.starLeft <= 0 && !this.isHuge(n) && !this.shrinking(n))
+          this.kill(n);
         continue;
       }
       Body.setVelocity(n.body, {
@@ -4059,6 +4065,7 @@ export class Simulation {
       return true;
     }
     this.setGoombaScale(a, T.giantScale, true);
+    a.hurtBlink = true;
     this.hugeContactHold.add(a);
     return true;
   }
@@ -4618,8 +4625,14 @@ export class Simulation {
     this.fireballs = this.fireballs.filter((f) => f.owner === "player");
   }
 
+  // Any combat hit on Mario. The stun after a hit holds off the next one.
   private hitMarioByFireball(byPlayer = true) {
-    if (!this.marioActive || this.mario.starLeft > 0 || this.isHuge(this.mario))
+    if (
+      !this.marioActive ||
+      this.marioStun > 0 ||
+      this.mario.starLeft > 0 ||
+      this.isHuge(this.mario)
+    )
       return;
     if (this.marioStage === 2) {
       this.setMarioStage(1, true);
@@ -4885,8 +4898,10 @@ export class Simulation {
         continue;
       }
       if (a.kind === "spike") {
-        // Star and 8x already returned above. Any other touch is a loss.
-        if (this.mario.starLeft <= 0) this.defeatMario(false);
+        // Star and 8x already returned above. The stun after a hit holds it
+        // off. Any other touch is a loss.
+        if (this.mario.starLeft <= 0 && this.marioStun === 0)
+          this.defeatMario(false);
         continue;
       }
       if (this.inWater(a)) {

@@ -2042,31 +2042,218 @@ test("flowers enable player fireballs; hits stun Mario and never hurt NPCs", () 
   assert.equal(s.fireballs.length, 0);
 });
 
-test("player fireballs step Mario from fire to big to small, then defeat him", () => {
+function shootMario(s: Simulation) {
+  const p = s.mario.body.position;
+  s.fireballs.push({
+    id: s.fireballs.length + 1,
+    x: p.x,
+    y: p.y,
+    vx: 0,
+    age: 0,
+    owner: "player",
+  });
+  tick(s, dt);
+}
+
+function shootAt(s: Simulation, a: Actor) {
+  s.fireballs.push({
+    id: s.fireballs.length + 1,
+    x: a.body.position.x,
+    y: a.body.position.y,
+    vx: 0,
+    age: 0,
+    owner: "mario",
+    vy: 0,
+  });
+  tick(s, dt);
+}
+
+test("player fireballs step Mario from fire to big to small, then defeat him, one stun apart", () => {
   const s = game();
-  s.marioActive = true;
-  Body.setFrozen(s.mario.body, false);
+  parkNpcs(s, []);
+  at(s, 1000, 411);
+  stillMario(s);
+  s.marioPause = 30;
+  s.marioLook = 30;
   Body.setPosition(s.mario.body, { x: 140, y: 411 });
-  at(s, 140, 411);
-  s.marioStage = 2;
-  s.mario.flower = true;
+  s.setMarioStage(2);
   for (const expected of [1, 0]) {
-    s.fireballs.push({
-      id: s.fireballs.length + 1,
-      x: 140,
-      y: 411,
-      vx: 0,
-      age: 0,
-      owner: "player",
-    });
-    tick(s, dt);
+    shootMario(s);
     assert.equal(s.marioStage, expected);
     assert.equal(s.marioActive, true);
+    // Only the drop to small changes size and blinks; the lock outlasts it.
+    assert.equal(s.mario.transformLeft > 0, expected === 0);
+    assert.ok(s.marioStun > T.transformSeconds);
+    // A shot on the next frame, and on every frame of the lock, does nothing.
+    let held = 0;
+    while (s.marioStun > 2 * dt) {
+      shootMario(s);
+      assert.equal(s.marioStage, expected);
+      assert.equal(s.marioActive, true);
+      held++;
+    }
+    assert.ok(held >= (T.marioStunSeconds - 3 * dt) * 60, `${held}`);
+    tick(s, 3 * dt);
+    assert.equal(s.marioStun, 0);
   }
-  s.fireballs.push({ id: 3, x: 140, y: 411, vx: 0, age: 0, owner: "player" });
+  shootMario(s);
+  assert.equal(s.marioActive, false);
+  assert.ok(s.marioDeath);
+});
+
+test("a starred player still defeats Mario during his stun", () => {
+  const s = game();
+  parkNpcs(s, []);
+  at(s, 1000, 411);
+  stillMario(s);
+  Body.setPosition(s.mario.body, { x: 140, y: 411 });
+  s.setMarioStage(1);
+  shootMario(s);
+  assert.equal(s.marioStage, 0);
+  assert.ok(s.marioStun > 0);
+  give(s, s.player, "star");
+  at(s, s.mario.body.position.x, s.mario.body.position.y);
   tick(s, dt);
   assert.equal(s.marioActive, false);
   assert.ok(s.marioDeath);
+});
+
+test("a 2x shrink blink holds off the next fireball and a Mario block bump", () => {
+  const s = game();
+  parkNpcs(s, []);
+  give(s, s.player, "mushroom");
+  // A growth blink stays hitable.
+  assert.ok(s.player.transformLeft > 0);
+  shootAt(s, s.player);
+  assert.equal(s.player.scale, 1);
+  assert.ok(s.player.transformLeft > 0);
+  shootAt(s, s.player);
+  assert.equal(s.player.alive, true);
+  assert.equal(s.player.scale, 1);
+  while (s.player.transformLeft > 0) tick(s, dt);
+  shootAt(s, s.player);
+  assert.equal(s.player.alive, false);
+
+  const bump = game();
+  const [first, second] = bump.obstacles.filter(
+    (c) => c.kind === "brick" && !c.question && !c.hidden && c.y > 300,
+  );
+  assert.ok(first && second);
+  const n = bump.npcs.find((npc) => npc.kind === "goomba")!;
+  parkNpcs(bump, [n]);
+  give(bump, n, "mushroom");
+  shootAt(bump, n);
+  assert.equal(n.scale, 1);
+  assert.ok(n.transformLeft > 0);
+  standOn(n, first);
+  bump.hitBlock(first, bump.mario);
+  assert.equal(n.alive, true);
+  while (n.transformLeft > 0) tick(bump, dt);
+  standOn(n, second);
+  bump.hitBlock(second, bump.mario);
+  assert.equal(n.alive, false);
+});
+
+test("a damage blink does not stop a pit or TIME 0", () => {
+  const blinking = () => {
+    const s = game();
+    const n = s.npcs[0];
+    parkNpcs(s, [n]);
+    give(s, s.player, "mushroom");
+    give(s, n, "mushroom");
+    shootAt(s, s.player);
+    shootAt(s, n);
+    for (const a of [s.player, n]) {
+      assert.equal(a.scale, 1);
+      assert.ok(a.transformLeft > 0);
+    }
+    return { s, n };
+  };
+  const pit = blinking();
+  Body.setPosition(pit.n.body, { x: 600, y: 700 });
+  tick(pit.s, dt);
+  assert.equal(pit.n.alive, false);
+  Body.setPosition(pit.s.player.body, { x: 200, y: 700 });
+  tick(pit.s, dt);
+  assert.equal(pit.s.player.alive, false);
+  assert.equal(pit.s.mode, "dead");
+
+  const time = blinking();
+  time.s.timeLeft = 1;
+  // One timer tick is shorter than the blink, so TIME 0 lands inside it.
+  assert.ok(T.timerTickFrames / 60 < time.s.player.transformLeft);
+  tick(time.s, T.timerTickFrames / 60);
+  assert.equal(time.s.timeLeft, 0);
+  assert.equal(time.s.player.alive, false);
+  assert.equal(time.s.mode, "dead");
+});
+
+test("an 8x damage drop holds off the next hit; an 8x timeout blink does not", () => {
+  const hugeRivals = () => {
+    const s = game();
+    const n = s.npcs[0];
+    parkNpcs(s, [n]);
+    stillMario(s);
+    s.marioPause = 30;
+    s.marioLook = 30;
+    give(s, s.mario, "mushroom8x");
+    give(s, s.player, "mushroom8x");
+    give(s, n, "mushroom8x");
+    standOnGround(s.player, 300);
+    standOnGround(n, 700);
+    // Mario stays in view, so he is still active.
+    standOnGround(s.mario, 1100);
+    tick(s, dt);
+    assert.equal(s.player.scale, T.hugeScale);
+    assert.equal(n.scale, T.hugeScale);
+    assert.equal(s.mario.scale, T.hugeScale);
+    assert.equal(s.marioActive, true);
+    assert.equal(actorsOverlap(s.player, n), false);
+    assert.equal(actorsOverlap(n, s.mario), false);
+    return { s, n };
+  };
+
+  for (const who of ["player", "npc"] as const) {
+    const { s, n } = hugeRivals();
+    const a = who === "player" ? s.player : n;
+    shootAt(s, a);
+    assert.equal(a.scale, T.giantScale, who);
+    assert.equal(a.transformFrom, T.hugeScale, who);
+    assert.ok(a.transformLeft > 0, who);
+    shootAt(s, a);
+    assert.equal(a.alive, true, who);
+    assert.equal(a.scale, T.giantScale, who);
+    while (a.transformLeft > 0) tick(s, dt);
+    shootAt(s, a);
+    assert.equal(a.alive, true, who);
+    assert.equal(a.scale, 1, who);
+  }
+
+  // Mario's 8x drop starts his stun, which the next shot waits out.
+  const { s: m } = hugeRivals();
+  m.setMarioStage(2);
+  shootMario(m);
+  assert.equal(m.mario.scale, 1);
+  assert.equal(m.marioStage, 2);
+  assert.ok(m.marioStun > 0);
+  shootMario(m);
+  assert.equal(m.marioStage, 2);
+  assert.equal(m.marioActive, true);
+
+  for (const who of ["player", "npc"] as const) {
+    const s = game();
+    const n = s.npcs[0];
+    parkNpcs(s, [n]);
+    const a = who === "player" ? s.player : n;
+    give(s, a, "mushroom8x");
+    tick(s, T.hugeSeconds);
+    assert.equal(a.scale, T.giantScale, who);
+    assert.equal(a.transformFrom, T.hugeScale, who);
+    assert.ok(a.transformLeft > 0, who);
+    shootAt(s, a);
+    assert.equal(a.alive, true, who);
+    assert.equal(a.scale, 1, who);
+  }
 });
 
 function overlapX(s: Simulation, n: Actor) {
