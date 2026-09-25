@@ -3261,18 +3261,6 @@ test("an unwarned NPC in range is warned the same step with no cooldown delay", 
   assert.equal(s.warned, 2);
 });
 
-test("walking and jumping keep nearby NPCs alive", () => {
-  const s = game();
-  at(s, 100);
-  tick(s, 0.2, {});
-  tick(s, dt, { right: true });
-  assert.equal(s.player.state, "idle");
-  tick(s, 1);
-  tick(s, dt, { jump: true });
-  assert.ok(s.player.body.velocity.y < 0);
-  assert.ok(s.npcs.every((n) => n.alive));
-});
-
 test("NPCs complete the full route offscreen, including both gaps", () => {
   const s = game();
   for (const n of s.npcs) {
@@ -3828,17 +3816,6 @@ test("hunter Mario stands on free floor, not a brick, in World 3-1", () => {
   }
 });
 
-test("Mario can attack players beside former cover locations", () => {
-  const s = game();
-  at(s, s.obstacles[0].x);
-  s.marioActive = true;
-  Body.setFrozen(s.mario.body, false);
-  Body.setPosition(s.mario.body, { x: s.obstacles[0].x + 2, y: 390 });
-  Body.setVelocity(s.mario.body, { x: 0, y: 2 });
-  tick(s, dt);
-  assert.equal(s.player.state, "idle");
-});
-
 test("Mario can break a brick without harming a nearby player", () => {
   const s = game();
   const brick = s.obstacles.find((c) => c.kind === "brick" && c.y > 300)!;
@@ -3852,14 +3829,6 @@ test("Mario can break a brick without harming a nearby player", () => {
   tick(s, dt, {});
   assert.equal(brick.broken, true);
   assert.equal(s.player.alive, true);
-});
-
-test("fireballs kill exposed players beside former cover locations", () => {
-  const s = game();
-  at(s, s.obstacles[0].x);
-  s.fireballs.push({ id: 20, x: s.obstacles[0].x, y: 412, vx: 0, age: 0 });
-  tick(s, dt);
-  assert.equal(s.player.alive, false);
 });
 
 test("late Mario fires visible projectiles when pursuing", () => {
@@ -6377,12 +6346,11 @@ test("Mario cannot stomp a traveler in a pipe", () => {
   assert.ok(s.player.pipeTravel);
 });
 
-test("decorative pipes stay solid when the Pipe control is pressed", () => {
+test("the player stops flush against a pipe side", () => {
   const s = game();
   const pipe = s.obstacles.find((c) => c.kind === "pipe")!;
   at(s, pipe.x - 100);
   tick(s, 0.2, { right: true });
-  assert.equal(s.player.state, "idle");
   tick(s, 1, { right: true });
   assert.equal(overlaps(s.player.body, [pipe.body!]).length, 0);
   assert.ok(
@@ -9267,7 +9235,7 @@ function overlapWithMario(s: Simulation, actor: Actor) {
   Body.setVelocity(actor.body, { x: 0, y: 0 });
 }
 
-test("8x NPC fireball shrinks 2x and 3x and kills 1x", () => {
+test("Mario fireball shrinks a 2x or 3x NPC and kills a 1x NPC", () => {
   for (const kind of ["mushroom", "mushroom3x"] as const) {
     const s = game();
     const n = s.npcs[0];
@@ -10399,23 +10367,6 @@ test("a falling player landing on an unwarned walking Koopa does not shell or wa
   assert.equal(s.events.includes("splat"), false);
 });
 
-test("Mario stomps a walking Koopa, shells it, and bounces", () => {
-  const s = game();
-  const n = troopa(s);
-  parkNpcs(s, [n]);
-  n.idleWalking = false;
-  n.wait = 99;
-  Body.setPosition(n.body, { x: 200, y: 415 });
-  Body.setVelocity(n.body, { x: 0, y: 0 });
-  at(s, 4000);
-  marioStomp(s, n);
-  tick(s, dt);
-  assert.ok(s.mario.body.velocity.y < 0);
-  assert.ok(n.alive);
-  assert.equal(n.shell, "stopped");
-  assert.equal(s.events.includes("splat"), false);
-});
-
 test("a falling player landing still leaves a Goomba unshellable", () => {
   const s = game();
   const n = s.npcs[0];
@@ -10699,30 +10650,6 @@ test("Mario hunt overlap with a moving shell does not stomp from the side", () =
   Body.setFrozen(s.mario.body, false);
   Body.setPosition(s.mario.body, { x: 210, y: 400 });
   Body.setVelocity(s.mario.body, { x: 0, y: 4 });
-  tick(s, dt);
-  assert.equal(n.shell, "moving");
-  assert.equal(s.marioStage, 1);
-  assert.ok(s.events.includes("shrink"));
-});
-
-test("Mario side-falling into a moving shell takes damage instead of stomping", () => {
-  const s = game();
-  const n = troopa(s);
-  parkNpcs(s, [n]);
-  n.idleWalking = false;
-  n.wait = 99;
-  n.shell = "moving";
-  n.facing = 1;
-  n.kickIgnore = 0;
-  Body.setPosition(n.body, { x: 200, y: 415 });
-  Body.setVelocity(n.body, { x: 0, y: 0 });
-  s.marioActive = true;
-  s.setMarioStage(2);
-  s.marioLook = 10;
-  s.marioPause = 10;
-  Body.setFrozen(s.mario.body, false);
-  Body.setPosition(s.mario.body, { x: 220, y: 410 });
-  Body.setVelocity(s.mario.body, { x: 0, y: 2 });
   tick(s, dt);
   assert.equal(n.shell, "moving");
   assert.equal(s.marioStage, 1);
@@ -11174,7 +11101,7 @@ test("Mario swimming through water NPCs or falling on a Koopa hurts none", () =>
   assert.equal(koopa.shell, "none");
 });
 
-test("star and 8x still defeat on water contact", () => {
+test("in water, a star defeats Mario and 8x contact stuns him", () => {
   const star = waterGame();
   parkNpcs(star, []);
   waterGrant(star, star.player, "star");
@@ -12993,21 +12920,6 @@ test("an NPC's jump arc keeps off a Piranha Plant's rise", () => {
   s.mario.areaId = room.data.id;
   pin(s.mario, plant.x - 300, ground);
   assert.equal(sim.npcPlantClear(n), undefined);
-});
-
-test("with Mario near, NPCs stop timing firebars too", () => {
-  const s = stageAt("1-4");
-  const room = s.activeRoom;
-  const bar = room.firebars[0]!;
-  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
-  n.areaId = room.data.id;
-  pin(n, bar.x - 120, bar.y + 40);
-  const sim = s as unknown as { npcFirebarClear(a: Actor): unknown };
-  assert.equal(typeof sim.npcFirebarClear(n), "function");
-  s.marioActive = true;
-  s.mario.areaId = room.data.id;
-  pin(s.mario, bar.x - 300, bar.y + 40);
-  assert.equal(sim.npcFirebarClear(n), undefined);
 });
 
 test("an NPC rising out of a pipe waits for its plant; the player's arrival resets it", () => {

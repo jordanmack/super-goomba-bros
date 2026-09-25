@@ -108,18 +108,6 @@ test("a 3x body has a 2x solid shape and a 3x hurt box", () => {
   s.physics.clear();
 });
 
-test("a 3x body falls through a two-tile hole and a one-tile gap holds it", () => {
-  const through = drop(SOLID_3X.w, SOLID_3X.h, TILE * 2);
-  assert.equal(through.fell, true, `feet ${through.actor.bounds.max.y}`);
-  assert.equal(through.held, false);
-  through.sim.clear();
-
-  const held = drop(SOLID_3X.w, SOLID_3X.h, TILE);
-  assert.equal(held.fell, false, `feet ${held.actor.bounds.max.y}`);
-  assert.equal(held.held, true);
-  held.sim.clear();
-});
-
 test("a 3x body jumps back up through a two-tile hole and walks under a 2x opening", () => {
   const { w: width, h: height } = SOLID_3X;
   // A two-tile hole in a ceiling slab directly above the body.

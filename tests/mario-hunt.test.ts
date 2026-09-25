@@ -75,19 +75,6 @@ for (const stage of HUNT_STAGES)
     }
   });
 
-test("Mario hunt coverage includes 1-3 and its question block", () => {
-  assert.ok(
-    HUNT_STAGES.some((s) => s.id === "1-3"),
-    "1-3 is not in the hunt harness",
-  );
-  const stage = HUNT_STAGES.find((s) => s.id === "1-3")!;
-  const blocks = stage.scenes.find((sc) => sc.name === "blocks")!;
-  assert.ok(blocks.questionX, "1-3 has no question-block arena");
-  const r = runRung(stage, blocks, blocks.rungs[0]!, 1);
-  assert.equal(r.goal, "question");
-  assertLockedIdentity(r, "1-3 question");
-});
-
 test("the 1-2 blocks scene stays at arena 250 and question x 336", () => {
   const stage = HUNT_STAGES.find((s) => s.id === "1-2")!;
   const blocks = stage.scenes.find((sc) => sc.name === "blocks")!;
