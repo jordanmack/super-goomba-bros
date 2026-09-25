@@ -16,7 +16,9 @@ import {
   plannerFirebarBalls,
 } from "../src/game/castle.ts";
 import { firebarCrossing, planJump } from "../src/game/navigation.ts";
-import type { Input } from "../src/game/simulation.ts";
+import type { Actor, Input } from "../src/game/simulation.ts";
+import { enemyRole, podobooHurtBox, type Podoboo } from "../src/game/room.ts";
+import type { PodobooMotion } from "../src/game/podoboo.ts";
 import {
   axeMetatileRow,
   decodeArea,
@@ -1238,4 +1240,198 @@ test("a firebar crossing that hits a wall does not pass a solid inside the span"
     undefined,
     "consulting wall refuses a solid inside the span",
   );
+});
+
+// #215: Podoboos leap from the castle lava.
+test("every type-$0c row leaps a Podoboo, hard-mode rows included", () => {
+  assert.equal(enemyRole(0x0c), "podoboo");
+  const s = castleGame("1-4");
+  const counts: Record<string, number> = {};
+  for (const id of ["60", "61", "62", "63", "64", "65"]) {
+    const room = s.loadRoom(id);
+    const rows = areaData(id).enemies.filter((e) => e.type === 0x0c);
+    counts[id] = room.podoboos.length;
+    assert.deepEqual(
+      room.podoboos.map((p) => p.x),
+      rows.map((e) => room.offset + e.column * 32 + 16),
+    );
+    for (const p of room.podoboos) assert.ok(p.motion.y >= 240, "starts below");
+  }
+  assert.deepEqual(counts, { "60": 3, "61": 1, "62": 6, "63": 6, "64": 2, "65": 1 });
+  s.physics.clear();
+});
+
+// Held in the air: with no speed and no force it stays at y 100 for a step.
+const hovering = (): PodobooMotion => ({
+  y: 100,
+  speed: 0,
+  force: 0,
+  dummy: 0,
+  timer: 5,
+});
+
+function onPodoboo(a: Actor, podoboo: Podoboo) {
+  Body.setFrozen(a.body, true);
+  Body.setPosition(a.body, { x: podoboo.x, y: MAP_TOP + 100 * 2 + 34 });
+  Body.setVelocity(a.body, { x: 0, y: 0 });
+}
+
+test("a Podoboo hurts the player and NPCs like a firebar and damages Mario", () => {
+  const s = castleGame("1-4");
+  const podoboo = s.activeRoom.podoboos[0]!;
+  const n = s.npcs[0]!;
+  parkNpcs(s, [n]);
+  // An NPC dies and counts in DIED.
+  podoboo.motion = hovering();
+  onPodoboo(n, podoboo);
+  const died = s.died();
+  s.step(dt, emptyInput());
+  assert.equal(n.alive, false);
+  assert.equal(s.died(), died + 1);
+  // A star makes the player immune; without one the player dies.
+  s.player.starLeft = 10;
+  podoboo.motion = hovering();
+  onPodoboo(s.player, podoboo);
+  s.step(dt, emptyInput());
+  assert.equal(s.player.alive, true);
+  s.player.starLeft = 0;
+  podoboo.motion = hovering();
+  onPodoboo(s.player, podoboo);
+  s.step(dt, emptyInput());
+  assert.equal(s.player.alive, false);
+  s.physics.clear();
+  // Mario loses one power stage.
+  const m = castleGame("1-4");
+  parkNpcs(m);
+  const mine = m.activeRoom.podoboos[0]!;
+  m.cameraX = mine.x - 400;
+  stillMario(m);
+  m.mario.areaId = m.activeRoom.data.id;
+  m.setMarioStage(2);
+  mine.motion = hovering();
+  onPodoboo(m.mario, mine);
+  m.step(dt, emptyInput());
+  assert.equal(m.marioStage, 1);
+  m.physics.clear();
+});
+
+type PodobooSim = {
+  podobooAhead(a: Actor, direction: number): boolean;
+  npcFirebarClear(
+    a: Actor,
+  ): ((point: { x: number; y: number; frames: number }) => boolean) | undefined;
+  podobooYAt(podoboo: Podoboo, flight: number): number;
+};
+
+// The 1-4, 4-4, and 7-4 bridges each have a Podoboo leaping through them,
+// and 4-4's also has a firebar spinning on it. 8-4's is over a pit.
+for (const [id, column] of [
+  ["1-4", 125],
+  ["4-4", 158],
+  ["7-4", 190],
+  ["8-4", 270],
+] as const)
+  test(`a calm ${id} NPC times the last Podoboo at every leap phase`, () => {
+    for (const delay of [0, 60, 120, 180, 240, 300]) {
+      const s = castleGame(id);
+      s.bowsers = [];
+      const room = s.activeRoom;
+      const podoboo = room.podoboos.at(-1)!;
+      const runner = s.npcs[0]!;
+      for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+      s.npcs = [runner];
+      s.player.saved = true;
+      Body.setFrozen(s.player.body, true);
+      tick(s, delay * dt);
+      let row = 3;
+      while (!isSolidTile(room.data.tiles[row]![column]!)) row++;
+      Body.setFrozen(runner.body, false);
+      Body.setPosition(runner.body, {
+        x: room.offset + column * 32 + 16,
+        y: MAP_TOP + row * 32 - runner.body.height / 2,
+      });
+      Body.setVelocity(runner.body, { x: 0, y: 0 });
+      runner.alive = true;
+      runner.warned = true;
+      runner.state = "run";
+      runner.wait = 0;
+      let touched = 0;
+      for (
+        let frame = 0;
+        frame < 60 * 30 &&
+        runner.alive &&
+        runner.body.position.x < podoboo.x + 120;
+        frame++
+      ) {
+        s.step(dt, emptyInput());
+        const a = s.hurtBox(runner),
+          b = podobooHurtBox(podoboo);
+        if (
+          Math.abs(a.x - b.x) < a.halfW + b.halfW &&
+          Math.abs(a.y - b.y) < a.halfH + b.halfH
+        )
+          touched++;
+      }
+      const where = `${id} after ${delay}: ${JSON.stringify({
+        alive: runner.alive,
+        x: runner.body.position.x - podoboo.x,
+      })}`;
+      assert.equal(touched, 0, where);
+      assert.equal(runner.alive, true, where);
+      assert.ok(runner.body.position.x >= podoboo.x + 120, where);
+      s.physics.clear();
+    }
+  });
+
+test("with Mario near, NPCs stop timing Podoboos", () => {
+  const s = castleGame("1-4");
+  s.bowsers = [];
+  const room = s.activeRoom;
+  const podoboo = room.podoboos.at(-1)!;
+  const n = s.npcs[0]!;
+  parkNpcs(s, [n]);
+  const sim = s as unknown as PodobooSim;
+  // On the bridge, 60px short, while it leaps: the NPC holds.
+  let row = 3;
+  const column = Math.floor((podoboo.x - room.offset) / 32);
+  while (!isSolidTile(room.data.tiles[row]![column]!)) row++;
+  const feet = MAP_TOP + row * 32;
+  Body.setPosition(n.body, { x: podoboo.x - 60, y: feet - n.body.height / 2 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.grounded = true;
+  podoboo.motion = { y: 0x102, speed: -7, force: 0x80, dummy: 0, timer: 7 };
+  assert.equal(sim.podobooAhead(n, 1), true);
+  assert.equal(typeof sim.npcFirebarClear(n), "function");
+  // Mario within 340px: no hold, and no timing for jumps either.
+  s.marioActive = true;
+  s.mario.areaId = room.data.id;
+  Body.setPosition(s.mario.body, { x: podoboo.x - 300, y: feet - 16 });
+  assert.equal(sim.podobooAhead(n, 1), false);
+  assert.equal(sim.npcFirebarClear(n), undefined);
+  s.physics.clear();
+});
+
+test("the jump planner sees a Podoboo where its leap will be, in a room with no firebars", () => {
+  const s = castleGame("8-4");
+  const room = s.activeRoom;
+  assert.equal(room.firebars.length, 0);
+  const podoboo = room.podoboos[0]!;
+  const n = s.npcs[0]!;
+  parkNpcs(s, [n]);
+  const sim = s as unknown as PodobooSim;
+  const clear = sim.npcFirebarClear(n);
+  assert.ok(clear, "Podoboos alone turn on the timing");
+  let up = 0,
+    down = 0;
+  for (let flight = 1; flight < 400 && (!up || !down); flight++) {
+    const y = sim.podobooYAt(podoboo, flight);
+    if (!up && y > 90 && y < 200) up = flight;
+    if (up && !down && y >= 240) down = flight;
+  }
+  assert.ok(up && down, "the replay leaps and falls back");
+  const at = MAP_TOP + sim.podobooYAt(podoboo, up) * 2 + 34;
+  assert.equal(clear({ x: podoboo.x, y: at, frames: up }), false);
+  assert.equal(clear({ x: podoboo.x + 120, y: at, frames: up }), true);
+  assert.equal(clear({ x: podoboo.x, y: at, frames: down }), true);
+  s.physics.clear();
 });

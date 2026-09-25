@@ -9,6 +9,7 @@ import { TUNING as T } from "../../src/game/config.ts";
 import { physics } from "./arcade.ts";
 import type { PlatformMotion } from "../../src/game/platform-motion.ts";
 import type { PlantMotion } from "../../src/game/piranha.ts";
+import type { PodobooMotion } from "../../src/game/podoboo.ts";
 
 type State = {
   x: number;
@@ -29,6 +30,9 @@ type State = {
   liftKey: string;
   // Every room's Piranha Plants, so a rewind replays their cycle.
   plants: Record<string, PlantMotion[]>;
+  // Every room's Podoboos, and the frame they last stepped.
+  podoboos: Record<string, PodobooMotion[]>;
+  podobooStepped: number;
   // Rooms loaded so far. A rewind unloads later ones so they load fresh.
   roomIds: string[];
   // Spring squashes in progress, riders included.
@@ -174,6 +178,14 @@ function capture(sim: Simulation): State {
         room.plants.map((plant) => ({ ...plant.motion })),
       ]),
     ),
+    podoboos: Object.fromEntries(
+      [...sim.rooms].map(([id, room]) => [
+        id,
+        room.podoboos.map((podoboo) => ({ ...podoboo.motion })),
+      ]),
+    ),
+    podobooStepped: (sim as unknown as { podobooStepped: number })
+      .podobooStepped,
     liftKey: sim.activeRoom.platforms
       .map(
         (p) =>
@@ -262,6 +274,12 @@ function restore(sim: Simulation, state: State) {
         const motion = plants[i];
         if (motion) plant.motion = { ...motion };
       });
+    const podoboos = state.podoboos[id];
+    if (podoboos)
+      room.podoboos.forEach((podoboo, i) => {
+        const motion = podoboos[i];
+        if (motion) podoboo.motion = { ...motion };
+      });
     const saved = state.lifts[id];
     if (!saved) continue;
     const clock = room as unknown as LiftClock;
@@ -292,6 +310,8 @@ function restore(sim: Simulation, state: State) {
     mode: "playing",
     elapsed: state.time,
     frame: state.frame,
+    podobooStepped: state.podobooStepped,
+    podobooTracks: new WeakMap(),
     jumped: state.jumpHeld,
     playerPace: state.pace,
     marioReturn: 1e6,
@@ -576,6 +596,17 @@ function search(index: number) {
             `${motion!.rise},${motion!.speed},${Math.ceil(motion!.timer / 8)}`,
         )
         .join("|");
+      // A Podoboo near the player is part of the state too.
+      const podobooPhase = room.podoboos
+        .map((podoboo, i) => ({
+          podoboo,
+          motion: state.podoboos[state.area]?.[i],
+        }))
+        .filter(
+          ({ podoboo, motion }) => motion && Math.abs(podoboo.x - state.x) < 200,
+        )
+        .map(({ motion }) => `${Math.round(motion!.y / 8)},${motion!.timer}`)
+        .join("|");
       const firePhase = room.firebars.some(
         (bar) => Math.abs(state.x - bar.x) < 220,
       )
@@ -611,7 +642,7 @@ function search(index: number) {
               `h${Math.round((hammer.x - state.x) / 24)},${Math.round((hammer.y - state.y) / 24)}v${Math.sign(hammer.vx)}`,
           ),
       ].join("|");
-      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${billPhase}:${hammerPhase}:${plantPhase}:${springPhase}:${state.hidden.join(",")}`;
+      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${billPhase}:${hammerPhase}:${plantPhase}:${podobooPhase}:${springPhase}:${state.hidden.join(",")}`;
       if ((visited.get(key) ?? Infinity) <= cost) continue;
       visited.set(key, cost);
       const dx =

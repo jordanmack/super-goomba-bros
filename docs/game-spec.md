@@ -624,7 +624,7 @@ NPC deaths to DIED, and can damage Mario. A star makes the player immune.
 Touching the balls, even at 8x, does not destroy a bar. A calm NPC times its
 way past a bar when it can. With Mario within 340px of it, an NPC panics: it
 stops timing bars and may run into one and die. The same rule times Piranha
-Plants.
+Plants and Podoboos.
 
 The bar spins on the one cell at its pivot, whatever that cell's metatile.
 When that cell is removed, by an 8x body, a scale-8 fireball, or the bridge
@@ -634,6 +634,38 @@ Falling balls are harmless debris. They hurt no one, and warned NPCs no longer
 treat that bar as a hazard. A bar whose cell is still there keeps spinning.
 8x cannot smash a row-13 anchor, as in 2-4, so those bars always spin. The 4-4
 bar on bridge tile 137 stops when the bridge drops.
+
+### Podoboos
+
+Every type-$0c enemy row spawns a Podoboo, hard-mode rows included: 3 in area
+60 (1-4 and 6-4), 1 in 61 (4-4), 6 in 62 (2-4 and 5-4), 6 in 63 (3-4), 2 in 64
+(7-4), and 1 in 65 (8-4). It is a lava fireball in a fixed column, a hazard,
+not a rescue NPC, and is not in WARNED, SAVED, or DIED. Nothing defeats it.
+Every Podoboo in a loaded area runs from the moment the area loads.
+
+- Motion (`InitPodoboo`, `MovePodoboo`): it starts 2 NES px below the bottom
+  of the screen with one interval on its timer. Interval timers count down
+  once every 21 frames. When the timer runs out it starts over at that spot
+  with vertical speed $f9 (-7 px a frame), a fraction force of its random byte
+  with d7 set, and a timer of that byte's low nybble ORed with 6 (6, 7, 14, or
+  15 intervals). `MoveJ_EnemyVertically` then pulls it down each frame with
+  $1c gravity to at most 3 px a frame, so it leaps to about 60-90 NES px from
+  the top of the screen and falls back below it. It does not chase or bounce.
+  Its random byte is `PseudoRandomBitReg`+1+slot, the shared seven-byte LSFR
+  that also drives cannons, and its slot is its order in the area, modulo 5.
+- It is drawn from the enemy sheet in front of the level tiles, upside down
+  once it stops rising, and not at all once it is entirely below the screen.
+- Contact uses bounding box $09: 10x6 NES px, 14-20 px below its top and
+  centered on its column. It hurts like a firebar: it kills or shrinks the
+  player and NPCs, adds NPC deaths to DIED, and can damage Mario. A star or an
+  8x body makes the player immune.
+- A calm NPC times it. The leap depends only on the frame count and the LSFR,
+  so NPCs replay it ahead. The jump planner rejects an arc or landing that a
+  leap will cross, and a firebar's walking plan avoids a Podoboo too, as on
+  the 4-4 bridge. On a bridge with no bar zone, an NPC holds within 64 px of
+  the point where its body would touch the box (plus 4 px) until the leap will
+  stay a tile below its feet for the whole walk plus 30 frames. With Mario within 340 px it panics, stops timing
+  Podoboos, and may run into one and die.
 
 Bowser stands on the bridge at the end of every castle, placed from that
 area's enemy data. He is an ally. He never harms the player or NPCs. He blocks

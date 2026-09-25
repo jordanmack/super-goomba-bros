@@ -8,6 +8,7 @@ import {
 import { isSolidTile, themeFor } from "../levels";
 import { ROPE_TILE, plantTop, type Room } from "../room";
 import { plantShown } from "../piranha";
+import { podobooFalling } from "../podoboo";
 import atlas from "../../assets/smb/metatiles.json";
 import {
   actorSpriteBox,
@@ -217,6 +218,7 @@ export class Play extends Phaser.Scene {
         .setDepth(depth)
         .setTint(tint)
         .setFlipX(false)
+        .setFlipY(false)
         .setRotation(0)
         .setAlpha(1)
         .setCrop()
@@ -307,6 +309,14 @@ export class Play extends Phaser.Scene {
       image(ball.x, ball.y, 16, 16, "fireball", 10).setRotation(
         ((Math.floor(sim.elapsed * 12) % 4) * Math.PI) / 2,
       );
+    // Podoboos draw in front of the lava. The frame's top row is blank, so the
+    // art starts 8 NES px below the top, and once it is all below the screen
+    // it is not drawn.
+    for (const { x, motion } of room.podoboos)
+      if (motion.y + 8 < 240)
+        image(x, MAP_TOP + (motion.y + 16) * 2, 32, 32, "podoboo", 10).setFlipY(
+          podobooFalling(motion),
+        );
     for (const flame of sim.bowserFlames)
       if (flame.areaId === room.data.id)
         image(flame.x, flame.y, 48, 16, "bowserFlame", 10).setFlipX(flame.vx < 0);

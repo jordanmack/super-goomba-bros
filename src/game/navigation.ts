@@ -181,6 +181,8 @@ export function firebarCrossing(
   simFrame: number,
   bars: Firebar[],
   wall: (x: number) => boolean = () => false,
+  // Other timed hazards, such as Podoboos, at a planner flight.
+  blocked: (x: number, flight: number) => boolean = () => false,
 ): Uint8Array | undefined {
   const direction = Math.sign(vx);
   const pace = Math.abs(vx);
@@ -202,7 +204,7 @@ export function firebarCrossing(
     const frame = plannerFirebarFrame(simFrame, flight);
     for (const bar of reach)
       if (firebarHits(bar, frame, x, y, half, tall)) return true;
-    return false;
+    return blocked(x, flight);
   };
   // Two bars at different speeds realign only at their joint period, so allow
   // the slower one a full revolution plus the walk itself.

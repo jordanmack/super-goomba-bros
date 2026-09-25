@@ -20,6 +20,11 @@ import {
 import type { Point } from "./physics.ts";
 import { PLANT_BOX, initPlant, type PlantMotion } from "./piranha.ts";
 import {
+  PODOBOO_BOX,
+  initPodoboo,
+  type PodobooMotion,
+} from "./podoboo.ts";
+import {
   AXE_OPCODE,
   FIREBAR_TYPE,
   castleActorPos,
@@ -53,6 +58,7 @@ export const ENEMY_FISH = 7;
 // GreyCheepCheep and RedCheepCheep placements.
 export const ENEMY_GREY_CHEEP = 10;
 export const ENEMY_RED_CHEEP = 11;
+export const ENEMY_PODOBOO = 12;
 // Area objects that start a frenzy (flying Cheep Cheeps, or swimming Cheep
 // Cheeps in water and Bullet Bills on land) and the one that stops it.
 export const FRENZY_FLYING_CHEEPS = 42;
@@ -77,6 +83,7 @@ export type EnemyRole =
   | "platform"
   | "firebar"
   | "bowser"
+  | "podoboo"
   | "other";
 
 export function enemyRole(type: number): EnemyRole {
@@ -84,6 +91,7 @@ export function enemyRole(type: number): EnemyRole {
   if (type === ENEMY_FISH) return "fish";
   if (type === ENEMY_GREY_CHEEP || type === ENEMY_RED_CHEEP) return "cheep";
   if (type === ENEMY_LAKITU) return "lakitu";
+  if (type === ENEMY_PODOBOO) return "podoboo";
   if (isFirebarType(type)) return "firebar";
   if (isBowserType(type)) return "bowser";
   if (type === ENEMY_BALANCE_LIFT) return "balance-lift";
@@ -114,6 +122,28 @@ export function plantHurtBox(plant: Plant) {
     y: top + (PLANT_BOX.top + PLANT_BOX.bottom),
     halfW: PLANT_BOX.halfW * 2,
     halfH: PLANT_BOX.bottom - PLANT_BOX.top,
+  };
+}
+
+// A Podoboo leaping from the lava in one column. x is the column's center.
+// `slot` picks its PseudoRandomBitReg byte, like an SMB1 enemy slot.
+export type Podoboo = {
+  x: number;
+  column: number;
+  slot: number;
+  motion: PodobooMotion;
+};
+
+// Where a Podoboo hurts, as a center and half sizes on screen.
+export function podobooHurtBox(podoboo: Podoboo) {
+  return {
+    x: podoboo.x,
+    y:
+      MAP_TOP +
+      podoboo.motion.y * 2 +
+      (PODOBOO_BOX.top + PODOBOO_BOX.bottom),
+    halfW: PODOBOO_BOX.halfW * 2,
+    halfH: PODOBOO_BOX.bottom - PODOBOO_BOX.top,
   };
 }
 
@@ -188,6 +218,7 @@ export class Room {
   // Frenzy objects by left edge, in column order.
   frenzies: { x: number; opcode: number }[] = [];
   plants: Plant[] = [];
+  podoboos: Podoboo[] = [];
 
   constructor(
     physics: PhysicsWorld,
@@ -325,6 +356,16 @@ export class Room {
           length: spec.length,
           nesSpeed: spec.nesSpeed,
           clockwise: spec.clockwise,
+        });
+        continue;
+      }
+      // Every row spawns: the hard-mode bit is ignored.
+      if (role === "podoboo") {
+        this.podoboos.push({
+          x: offset + enemy.column * 32 + 16,
+          column: enemy.column,
+          slot: this.podoboos.length % 5,
+          motion: initPodoboo(),
         });
         continue;
       }

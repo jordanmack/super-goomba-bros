@@ -52,7 +52,7 @@ export const LAKITU_SHEET = {
 
 // Spiny walk frames face left, so they are flipped. (150, 154) and (180, 154)
 // are the right-facing mirrors. y=184 is the red Cheep Cheep. The two egg
-// frames follow them. (60, 154) is a Podoboo.
+// frames follow them. (60, 154) is a Podoboo: PODOBOO_SHEET.
 export const SPINY_SHEET = {
   stand: { x: 90, y: 154 },
   walk: { x: 120, y: 154 },
@@ -99,6 +99,10 @@ function waterEnemySprites(enemies: HTMLImageElement) {
     art[`fire${key[0]!.toUpperCase()}${key.slice(1)}`] = firePalette(canvas);
   return art;
 }
+
+// The Podoboo's one frame ($d0 over $d7, mirrored), moving up. It is drawn
+// upside down while it falls.
+export const PODOBOO_SHEET = { x: 60, y: 154 } as const;
 
 // Piranha Plant frames: closed and open, in sprite palette 1. That is green
 // on overworld areas and teal underground and in castles.
@@ -202,6 +206,7 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     goombaWalk,
     ...waterEnemySprites(enemies),
     ...piranhaSprites(enemies),
+    podoboo: crop(enemies, PODOBOO_SHEET.x, PODOBOO_SHEET.y, 16, 16),
     lakitu,
     lakituDrop,
     hammerBro,

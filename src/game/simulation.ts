@@ -50,6 +50,8 @@ import {
   Room,
   enemyRole,
   plantHurtBox,
+  podobooHurtBox,
+  type Podoboo,
 } from "./room.ts";
 import {
   PLANT_BOX,
@@ -75,6 +77,8 @@ import {
 import { enclosedWell, firebarCrossing, planJump } from "./navigation.ts";
 import { firstEmptySpawnCell } from "./spawn-cell.ts";
 import { warpZoneSignage } from "./warp-zone.ts";
+import { stepRandomBits } from "./lfsr.ts";
+import { PODOBOO_BOX, stepPodoboo } from "./podoboo.ts";
 
 export type Input = {
   left: boolean;
@@ -532,12 +536,22 @@ const SWIM_AIM_AHEAD = 12;
 const SWIM_STROKE_MARGIN = 8;
 // Bloopers and Cheep Cheeps move while within this much of the view.
 const SWIMMER_VIEW_MARGIN = 128;
-// Mario this close sends NPCs into a panic: they stop timing firebars and
-// Piranha Plants and may run into them.
+// Mario this close sends NPCs into a panic: they stop timing firebars,
+// Piranha Plants, and Podoboos and may run into them.
 const MARIO_THREAT_RANGE = 340;
 // An NPC already this close to a plant's center keeps going, not stopping in
 // the plant: the 10px box plus a small margin.
 const PLANT_PASS_X = 14;
+// On a bridge, a calm NPC holds up to this far short of a Podoboo's column,
+// past the box, its own half width, and PODOBOO_MARGIN. It crosses only when
+// the leap will stay a tile below its feet for the whole walk plus
+// PODOBOO_SLACK frames.
+const PODOBOO_HOLD = 64;
+const PODOBOO_MARGIN = 4;
+const PODOBOO_SLACK = 30;
+// Frames of each Podoboo's leap replayed ahead for NPC timing. It covers the
+// firebar walking plan's horizon.
+const PODOBOO_TRACK = 480;
 export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
 const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
 /** SCORE change for one tally line: count times that line's points. */
@@ -1238,6 +1252,12 @@ export class Simulation {
   bulletBills: BulletBill[] = [];
   // SMB1 PseudoRandomBitReg. Cold boot seeds the first byte with $a5.
   private cannonLfsr = Uint8Array.of(0xa5, 0, 0, 0, 0, 0, 0);
+  // The frame the Podoboos last stepped, and their replayed leaps.
+  private podobooStepped = -1;
+  private podobooTracks = new WeakMap<
+    Podoboo,
+    { next: number; ys: Int16Array }
+  >();
   // FrenzyEnemyTimer (frames) and BitMFilter for the Cheep Cheep frenzies.
   private frenzyTimer = 0;
   private cheepHeights = 0;
@@ -2595,9 +2615,14 @@ export class Simulation {
   }
   // Bar clearance at the frame the body occupies that cell. Undefined when
   // this actor does not have to dodge bars.
+  // Podoboos are timed the same way, from their replayed leaps.
   private npcFirebarClear(a: Actor) {
     const room = this.roomFor(a);
-    if (a === this.mario || !room.firebars.length || this.marioThreat(a))
+    if (
+      a === this.mario ||
+      (!room.firebars.length && !room.podoboos.length) ||
+      this.marioThreat(a)
+    )
       return;
     const half = a.body.width / 2;
     const tall = a.body.height / 2;
@@ -2609,6 +2634,14 @@ export class Simulation {
         half,
         tall,
         plannerFirebarFrame(this.frame, point.frames),
+      ) &&
+      !this.podobooHits(
+        room,
+        point.x,
+        point.y,
+        half + PODOBOO_MARGIN,
+        tall + PODOBOO_MARGIN,
+        point.frames,
       );
   }
   // Jump plan from the body that is about to leave the ground. Backoff stores
@@ -2987,7 +3020,7 @@ export class Simulation {
     // Arcs are checked against each bar's phase at the frame the body is there.
     // step() advances frame before updateNpcs, so flight 1 is the current frame.
     const room = this.roomFor(a);
-    if (this.plantAhead(a, direction)) {
+    if (this.plantAhead(a, direction) || this.podobooAhead(a, direction)) {
       a.navFirebarWaitFrame = this.frame;
       this.move(a, 0);
       return;
@@ -5499,6 +5532,8 @@ export class Simulation {
     this.updateCastleHazards(dt);
     this.updatePlants();
     this.collidePlants();
+    this.updatePodoboos();
+    this.collidePodoboos();
     this.resolveHammerHits(marioBottom, marioFalling, prevBroTops);
     this.updateFlagpoles(dt);
     if (this.mode === "finishing") {
@@ -5669,7 +5704,11 @@ export class Simulation {
               )
             )
               return "blocked";
-            if (this.plantAhead(n, direction)) return "blocked";
+            if (
+              this.plantAhead(n, direction) ||
+              this.podobooAhead(n, direction)
+            )
+              return "blocked";
             if (below.some((s) => Math.abs(s.bounds.min.y - feet) < 6))
               return "walk";
             if (
@@ -6889,17 +6928,8 @@ export class Simulation {
     return { left: cam - 32, right: cam + width + 32 };
   }
 
-  // NMI rotates seven LSFR bytes. Feedback is bit 1 of the first two bytes.
   private stepCannonLfsr() {
-    const reg = this.cannonLfsr;
-    const mixed = (reg[0] & 0x02) ^ (reg[1] & 0x02);
-    let carry = mixed === 0 ? 0 : 1;
-    for (let i = 0; i < reg.length; i++) {
-      const byte = reg[i] ?? 0;
-      const next = byte & 1;
-      reg[i] = ((byte >>> 1) | (carry << 7)) & 0xff;
-      carry = next;
-    }
+    stepRandomBits(this.cannonLfsr);
   }
 
   // Three enemy slots. An empty slot reads PseudoRandomBitReg+1,x, keeps the
@@ -7088,6 +7118,7 @@ export class Simulation {
   // Walk to exitX without touching a bar or a solid. `wall` uses the same
   // vertical test as wallAhead, at each pace step instead of a fixed lookahead.
   private firebarCrossPlan(a: Actor, vx: number, exitX: number) {
+    const room = this.roomFor(a);
     const start = a.body.position;
     const half = a.body.width / 2 + 6,
       tall = a.body.height / 2 + 8;
@@ -7102,7 +7133,7 @@ export class Simulation {
       half,
       tall,
       this.frame,
-      this.roomFor(a).firebars,
+      room.firebars,
       (x) => {
         if (a.body.ignoreWalls) return false;
         return this.solids.some(
@@ -7114,6 +7145,9 @@ export class Simulation {
             head < solid.bounds.max.y,
         );
       },
+      (x, flight) =>
+        room.podoboos.length > 0 &&
+        this.podobooHits(room, x, start.y, half, tall, flight),
     );
   }
 
@@ -7240,6 +7274,144 @@ export class Simulation {
       (plant) =>
         !room.plantGone(plant) && Math.abs(plant.x - a.body.position.x) < 32,
     );
+  }
+
+  // Podoboos in every loaded room. Each reads its own PseudoRandomBitReg byte
+  // after this frame's rotate, which updateCannons did.
+  private updatePodoboos() {
+    if (this.pipeIntro) return;
+    this.podobooStepped = this.frame;
+    for (const room of this.rooms.values())
+      for (const podoboo of room.podoboos)
+        stepPodoboo(
+          podoboo.motion,
+          this.frame,
+          this.cannonLfsr[1 + podoboo.slot] ?? 0,
+        );
+  }
+
+  // A Podoboo hurts like a firebar: the player and NPCs are hurt (a star or 8x
+  // body is immune), and Mario is damaged. Nothing defeats it.
+  private collidePodoboos() {
+    const actors = [
+      this.player,
+      ...this.npcs,
+      ...(this.marioActive ? [this.mario] : []),
+    ];
+    for (const a of actors) {
+      if (!a.alive || a.saved || this.inPipe(a)) continue;
+      const room = this.roomFor(a);
+      if (!room.podoboos.length) continue;
+      const box = this.hurtBox(a);
+      const hit = room.podoboos.some((podoboo) => {
+        const b = podobooHurtBox(podoboo);
+        return (
+          Math.abs(box.x - b.x) < box.halfW + b.halfW &&
+          Math.abs(box.y - b.y) < box.halfH + b.halfH
+        );
+      });
+      if (!hit) continue;
+      if (a === this.mario) {
+        if (this.marioStun > 0) continue;
+        this.hitMarioByFireball(false);
+      } else this.hurt(a);
+    }
+  }
+
+  // Each Podoboo's y after each of its next PODOBOO_TRACK steps. The leap
+  // depends only on the frame count and the random bits, so this replays it
+  // on copies. A track holds until the Podoboos step again.
+  private podobooTrack(podoboo: Podoboo) {
+    const next =
+      this.podobooStepped === this.frame ? this.frame + 1 : this.frame;
+    const cached = this.podobooTracks.get(podoboo);
+    if (cached?.next === next) return cached;
+    const motion = { ...podoboo.motion };
+    const bits = Uint8Array.from(this.cannonLfsr);
+    const ys = new Int16Array(PODOBOO_TRACK);
+    for (let k = 0; k < PODOBOO_TRACK; k++) {
+      stepRandomBits(bits);
+      stepPodoboo(motion, next + k, bits[1 + podoboo.slot] ?? 0);
+      ys[k] = motion.y;
+    }
+    const track = { next, ys };
+    this.podobooTracks.set(podoboo, track);
+    return track;
+  }
+
+  // A Podoboo's y at planner flight `flight`, where flight 1 is this frame.
+  private podobooYAt(podoboo: Podoboo, flight: number) {
+    const { next, ys } = this.podobooTrack(podoboo);
+    const steps = this.frame + flight - next;
+    if (steps <= 0) return podoboo.motion.y;
+    return ys[Math.min(steps, ys.length) - 1]!;
+  }
+
+  // Whether any Podoboo's box, at planner flight `flight`, overlaps a box
+  // centered on x, y.
+  private podobooHits(
+    room: Room,
+    x: number,
+    y: number,
+    halfW: number,
+    halfH: number,
+    flight: number,
+  ) {
+    const box = PODOBOO_BOX.halfW * 2,
+      tall = PODOBOO_BOX.bottom - PODOBOO_BOX.top;
+    for (const podoboo of room.podoboos) {
+      if (Math.abs(podoboo.x - x) >= halfW + box) continue;
+      const center =
+        MAP_TOP +
+        this.podobooYAt(podoboo, flight) * 2 +
+        PODOBOO_BOX.top +
+        PODOBOO_BOX.bottom;
+      if (Math.abs(center - y) < halfH + tall) return true;
+    }
+    return false;
+  }
+
+  // On a bridge, a calm grounded NPC holds short of a Podoboo's column until
+  // it can walk past before the next leap comes within a tile of its feet.
+  // Once in the column it keeps going. Over a pit, the jump planner times the
+  // leap instead, and inside a firebar's zone the bar's walking plan does.
+  private podobooAhead(a: Actor, direction: number) {
+    if (a === this.mario || a === this.player || this.marioThreat(a))
+      return false;
+    if (!a.grounded) return false;
+    const room = this.roomFor(a);
+    if (!room.podoboos.length) return false;
+    const p = a.body.position;
+    const feet = a.body.bounds.max.y;
+    const reach = PODOBOO_BOX.halfW * 2 + a.body.width / 2 + PODOBOO_MARGIN;
+    const pace = this.runSpeedFor(a);
+    const line = feet + 32;
+    const ahead = room.podoboos.filter((podoboo) => {
+      const gap = (podoboo.x - p.x) * direction;
+      if (gap < reach || gap > reach + PODOBOO_HOLD) return false;
+      // Floor at the NPC's feet runs through the column: a bridge.
+      return this.solids.some(
+        (s) =>
+          !s.headOnly &&
+          Math.abs(s.bounds.min.y - feet) < 4 &&
+          s.bounds.min.x < podoboo.x - PODOBOO_BOX.halfW * 2 &&
+          s.bounds.max.x > podoboo.x + PODOBOO_BOX.halfW * 2,
+      );
+    });
+    if (!ahead.length) return false;
+    if (room.firebars.length) {
+      const zone = this.firebarZone(a, direction);
+      if (zone && (p.x - zone.hold) * direction >= -pace) return false;
+    }
+    return ahead.some((podoboo) => {
+      const gap = (podoboo.x - p.x) * direction;
+      const frames = Math.ceil((gap + reach) / pace) + PODOBOO_SLACK;
+      for (let flight = 1; flight <= frames; flight++) {
+        const y = this.podobooYAt(podoboo, flight);
+        if (MAP_TOP + (y + PODOBOO_BOX.top) * 2 <= line) return true;
+      }
+      return false;
+    });
   }
 
   private marioThreat(a: Actor) {
