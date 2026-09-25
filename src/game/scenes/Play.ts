@@ -274,12 +274,19 @@ export class Play extends Phaser.Scene {
       ).setRotation(0);
     }
     // Piranha Plants draw behind the level tiles, so the pipe hides whatever
-    // is still inside it. They flap every 8 frames.
+    // is still inside it. They flap every 8 frames. A killed plant draws
+    // upside down while it hops and falls.
     const plantArt = room.data.type === "overworld" ? "piranha" : "piranhaTeal";
     const plantOpen = Math.floor(sim.frame / 8) % 2 ? "Open" : "";
-    for (const plant of room.plants)
-      if (!room.plantGone(plant) && plantShown(plant.motion))
+    for (const plant of room.plants) {
+      if (plant.death) {
+        if (plant.death.y < MAP_TOP + 15 * 32)
+          image(plant.x, plant.death.y + 24, 32, 48, plantArt, -1).setFlipY(
+            true,
+          );
+      } else if (!room.plantGone(plant) && plantShown(plant.motion))
         image(plant.x, plantTop(plant) + 24, 32, 48, plantArt + plantOpen, -1);
+    }
     for (const platform of room.platforms) {
       const tiles = platform.body.width / 16;
       // CloudTypeOverride swaps the large deck to puffs. Small decks keep $5B.

@@ -751,8 +751,8 @@ DIED. The player cannot rescue it.
   waits at the bottom.
 - Contact uses bounding box $09: 10x6 NES px, 14-20 px below the plant's top
   and centered on the pipe. It hurts like a firebar: it kills or shrinks the
-  player and NPCs, adds NPC deaths to DIED, and can damage Mario. A star or an
-  8x body makes the player immune.
+  player and NPCs, adds NPC deaths to DIED, and can damage Mario. A 2x or 3x
+  body without a star is still hurt, and the plant stays.
 - A calm NPC waits short of a pipe whose plant is up or moving, including
   before it ducks into that pipe. Its jump arcs also keep off a plant's rise,
   replayed from the plant's cycle with the holders it has at takeoff. Once it is within 66 px the plant stays down,
@@ -761,7 +761,23 @@ DIED. The player cannot rescue it.
 - SMB1 loads an area with its plants down, so the player always rises clear
   of an arrival pipe; the plant resets as the player comes up. An NPC or Mario
   rising out of a pipe whose plant is out waits inside until it drops.
-- A plant whose pipe mouth was smashed is gone.
+- As in SMB1, a fireball or a star kills it and a stomp does not. Any thrown
+  fireball, the player's or Mario's at any size, that overlaps that box kills
+  the plant. The shot is removed and plays the splat cue once, with no bump.
+  A star or 8x body (the player, an NPC, or Mario) that touches the box kills
+  it the same way and is not hurt. A plant down in its pipe has no box out, so
+  neither can reach it there. Firebar balls, Podoboos, and Bowser's flame never
+  kill a plant, and NPCs do not throw fireballs.
+- Destroying the pipe kills its plant even when the attack never touches it,
+  including while it is down inside the pipe. A normal fireball that only hits
+  the pipe and does not break it leaves the plant, and standing on a pipe lid
+  neither smashes the pipe nor kills the plant. A goal pipe is never smashed,
+  but its plant still dies to a fireball, a star, or 8x contact. (In the
+  current stages every pipe goal is a side pipe, so none grows a plant.)
+- A killed plant draws upside down, hops and falls with the death fall, and
+  stays gone while its room stays loaded. The pipe stays unless the attack
+  smashed it. A new stage grows the plant again. A kill adds no score and does
+  not change WARNED, SAVED, or DIED.
 
 ## Castle interiors
 

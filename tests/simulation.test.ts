@@ -27,6 +27,8 @@ import {
   ENEMY_FISH,
   ENEMY_RIGHT_LIFT,
   ROPE_TILE,
+  plantHurtBox,
+  type Plant,
 } from "../src/game/room.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
@@ -12666,14 +12668,8 @@ test("plant contact hurts the player and NPCs like a firebar and damages Mario",
   s.step(dt, emptyInput());
   assert.equal(n.alive, false);
   assert.equal(s.died(), died + 1);
-  // A starred player is immune; without a star the player dies.
+  // Without a star the player dies.
   s.player.areaId = room.data.id;
-  s.player.starLeft = 5;
-  plant.motion = plantUp();
-  pin(s.player, plant.x, lid);
-  s.step(dt, emptyInput());
-  assert.equal(s.player.alive, true);
-  s.player.starLeft = 0;
   plant.motion = plantUp();
   pin(s.player, plant.x, lid);
   s.step(dt, emptyInput());
@@ -12814,6 +12810,216 @@ test("an NPC rising out of a pipe waits for its plant; the player's arrival rese
   s.step(dt, emptyInput());
   assert.equal(plant.motion.rise, 0);
   assert.ok(s.player.body.position.y < inside, "rises at once");
+});
+
+function scaleTo(s: Simulation, a: Actor, scale: number) {
+  (
+    s as unknown as { resize(a: Actor, scale: number, blink: boolean): void }
+  ).resize(a, scale, false);
+}
+
+function tally(s: Simulation) {
+  return { warned: s.warned, saved: s.saved, died: s.died(), score: s.score };
+}
+
+// One step with only this shot in flight; the events it voiced.
+function shootPlant(
+  s: Simulation,
+  plant: Plant,
+  shot: { x: number; y: number; owner: "player" | "mario"; scale: number },
+) {
+  s.cameraX = plant.x - 480;
+  s.fireballs = [{ id: 9000, vx: 6, vy: 0, age: 0, ...shot }];
+  const before = s.events.length;
+  s.step(dt, emptyInput());
+  return s.events.slice(before);
+}
+
+test("any player or Mario fireball kills a Piranha Plant with one splat", () => {
+  for (const [owner, scale] of [
+    ["player", 1],
+    ["mario", T.mushroomScale],
+    ["player", T.hugeScale],
+  ] as const) {
+    const who = `${owner} ${scale}x`;
+    const { s, room, plant } = plantStage();
+    plant.motion = plantUp();
+    const box = plantHurtBox(plant);
+    const radius = 6 * scale;
+    const counts = tally(s);
+    const heard = shootPlant(s, plant, {
+      x: box.x - box.halfW - radius - 2,
+      y: box.y,
+      owner,
+      scale,
+    });
+    assert.ok(plant.death, who);
+    assert.equal(room.plantGone(plant), true, who);
+    assert.equal(s.fireballs.length, 0, `${who}: the shot is removed`);
+    assert.equal(heard.filter((e) => e === "splat").length, 1, who);
+    assert.equal(heard.includes("bump"), false, who);
+    assert.equal(room.smashedTiles.size, 0, `${who}: the pipe stays`);
+    assert.deepEqual(tally(s), counts, `${who}: no score or tally change`);
+    // It flips, hops, then falls off the map and stays gone.
+    const top = plant.death.y;
+    let peak = top;
+    for (let f = 0; f < 60 * 3; f++) {
+      s.step(dt, emptyInput());
+      peak = Math.min(peak, plant.death.y);
+    }
+    assert.ok(peak < top - 40, `${who}: hops ${top - peak}px`);
+    assert.ok(plant.death.y >= MAP_TOP + 15 * 32, `${who}: fell off`);
+    assert.equal(plant.motion.rise, 24, `${who}: no longer cycles`);
+    assert.equal(room.plantGone(plant), true);
+    assert.deepEqual(tally(s), counts);
+  }
+  // A new stage grows it again.
+  const { s, plant } = plantStage();
+  plant.motion = plantUp();
+  const box = plantHurtBox(plant);
+  shootPlant(s, plant, { x: box.x - 18, y: box.y, owner: "player", scale: 1 });
+  assert.ok(plant.death);
+  s.reset();
+  const again = s.loadRoom("25").plants.find((p) => p.column === 28)!;
+  assert.equal(again.death, undefined);
+  // A shot misses a plant that is down in its pipe.
+  const down = plantStage();
+  down.plant.motion = initPlant();
+  const lid = plantHurtBox({ ...down.plant, motion: plantUp() });
+  shootPlant(down.s, down.plant, {
+    x: lid.x - 18,
+    y: lid.y,
+    owner: "player",
+    scale: 1,
+  });
+  assert.equal(down.plant.death, undefined, "no hurt box while it is down");
+});
+
+test("a star or 8x body kills a plant it touches; 2x and 3x are still hurt", () => {
+  const killers: [string, (s: Simulation) => Actor][] = [
+    ["starred player", (s) => ((s.player.starLeft = 5), s.player)],
+    [
+      "starred NPC",
+      (s) => {
+        const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+        n.starLeft = 5;
+        return n;
+      },
+    ],
+    [
+      "starred Mario",
+      (s) => {
+        s.marioActive = true;
+        s.mario.alive = true;
+        s.setMarioStage(2);
+        s.mario.starLeft = 5;
+        Body.setFrozen(s.mario.body, true);
+        return s.mario;
+      },
+    ],
+  ];
+  for (const [who, pick] of killers) {
+    const { s, room, plant } = plantStage();
+    const a = pick(s);
+    a.areaId = room.data.id;
+    if (a !== s.player) {
+      s.player.areaId = room.data.id;
+      pin(s.player, plant.x + 600, MAP_TOP + 13 * 32);
+    }
+    s.cameraX = plant.x - 300;
+    plant.motion = plantUp();
+    pin(a, plant.x, plant.pipeTop);
+    const counts = tally(s);
+    const before = s.events.length;
+    s.step(dt, emptyInput());
+    assert.ok(plant.death, who);
+    assert.equal(a.alive, true, who);
+    assert.equal(
+      s.events.slice(before).filter((e) => e === "splat").length,
+      1,
+      who,
+    );
+    assert.deepEqual(tally(s), counts, who);
+    if (a === s.mario) assert.equal(s.marioStage, 2, "Mario is not hurt");
+  }
+
+  // 8x contact: the body is not hurt and the pipe is not smashed.
+  for (const who of ["player", "NPC"] as const) {
+    const { s, room, plant } = plantStage();
+    const a =
+      who === "player" ? s.player : s.npcs.find((n) => n.kind === "goomba")!;
+    a.areaId = room.data.id;
+    scaleTo(s, a, T.hugeScale);
+    plant.motion = plantUp();
+    const box = plantHurtBox(plant);
+    Body.setPosition(a.body, {
+      x: box.x,
+      y: box.y - box.halfH - a.body.height / 2 + 4,
+    });
+    (s as unknown as { collidePlants(): void }).collidePlants();
+    assert.ok(plant.death, `8x ${who}`);
+    assert.equal(a.alive, true);
+    assert.equal(a.scale, T.hugeScale, `8x ${who} is not hurt`);
+    assert.equal(room.smashedTiles.size, 0);
+  }
+
+  // 2x and 3x without a star are hurt and the plant stays.
+  for (const scale of [T.mushroomScale, T.giantScale]) {
+    const { s, room, plant } = plantStage();
+    s.player.areaId = room.data.id;
+    scaleTo(s, s.player, scale);
+    plant.motion = plantUp();
+    pin(s.player, plant.x, plant.pipeTop);
+    s.step(dt, emptyInput());
+    assert.equal(plant.death, undefined, `${scale}x`);
+    assert.equal(s.player.alive, true);
+    assert.ok(s.player.scale < scale, `${scale}x shrinks`);
+  }
+});
+
+test("smashing a pipe kills its plant even down inside it; a small shot does not", () => {
+  const { s, room, plant } = plantStage();
+  const side = plant.x - 32;
+  const mouthY = plant.pipeTop + 16;
+  plant.motion = initPlant();
+  // A normal shot into the side bumps and leaves the pipe and plant.
+  const bump = shootPlant(s, plant, {
+    x: side - 8,
+    y: mouthY,
+    owner: "player",
+    scale: 1,
+  });
+  assert.ok(bump.includes("bump"));
+  assert.equal(plant.death, undefined);
+  assert.equal(room.plantMouthSmashed(plant), false);
+  // Standing on the lid neither smashes the pipe nor kills the plant.
+  s.player.areaId = room.data.id;
+  plant.motion = initPlant();
+  for (let f = 0; f < 120; f++) {
+    pin(s.player, plant.x, plant.pipeTop);
+    s.step(dt, emptyInput());
+  }
+  assert.equal(s.player.alive, true);
+  assert.equal(plant.death, undefined);
+  assert.equal(room.plantMouthSmashed(plant), false);
+  s.player.areaId = s.level.main;
+  at(s, s.loadRoom(s.level.main).offset + 400, 200);
+  // An 8x shot smashes the pipe, and the plant dies down inside it.
+  plant.motion = initPlant();
+  const counts = tally(s);
+  const heard = shootPlant(s, plant, {
+    x: side - 6 * T.hugeScale - 2,
+    y: mouthY,
+    owner: "player",
+    scale: T.hugeScale,
+  });
+  assert.equal(room.plantMouthSmashed(plant), true);
+  // Read it fresh: the earlier checks narrowed plant.death to undefined.
+  const death = (plant as Plant).death;
+  assert.ok(death, "the smash kills it");
+  assert.equal(death.y, plant.pipeTop, "from down in its pipe");
+  assert.equal(heard.filter((e) => e === "splat").length, 1);
+  assert.deepEqual(tally(s), counts);
 });
 
 test("lift decks are six girder tiles, four in a castle, and three when small", () => {

@@ -50,6 +50,7 @@ import {
   Room,
   enemyRole,
   plantHurtBox,
+  plantTop,
   podobooHurtBox,
   type Plant,
   type Podoboo,
@@ -908,7 +909,8 @@ export class Simulation {
       const plant = room.plants.find(
         (p) => p.column === pipe.column && p.row === pipe.row,
       );
-      if (plant && !plantResting(plant.motion)) return false;
+      if (plant && !room.plantGone(plant) && !plantResting(plant.motion))
+        return false;
     }
     const wasHuge = this.isHuge(actor);
     const hugeFeet = actor.body.bounds.max.y;
@@ -5814,7 +5816,7 @@ export class Simulation {
       marioFalling,
     );
     this.updateCastleHazards(dt);
-    this.updatePlants();
+    this.updatePlants(dt);
     this.collidePlants();
     this.updatePodoboos();
     this.collidePodoboos();
@@ -7656,6 +7658,19 @@ export class Simulation {
         f.age = 6;
         continue;
       }
+      // Any thrown shot kills a Piranha Plant it meets, with no bump.
+      const plant = this.plantTouching(
+        this.rooms.values(),
+        f.x,
+        f.y,
+        radius,
+        radius,
+      );
+      if (plant) {
+        this.killPlant(plant);
+        f.age = 6;
+        continue;
+      }
       let removedBySolid = false;
       const voicedAt = this.events.length;
       const hugeShot = (f.scale ?? 1) >= T.hugeScale;
@@ -8081,15 +8096,56 @@ export class Simulation {
 
   // Piranha Plants in every loaded room. One at the bottom stays in its pipe
   // while the player or a living rescue NPC is within PLANT_CLEAR NES px of
-  // it. Mario does not hold it down.
-  private updatePlants() {
+  // it. Mario does not hold it down. Smashing the pipe mouth kills the plant,
+  // even one down inside it, and a dead plant hops and falls off the map.
+  private updatePlants(dt: number) {
+    const bottom = MAP_TOP + 15 * 32;
     for (const room of this.rooms.values()) {
       if (!room.plants.length) continue;
       for (const plant of room.plants) {
-        if (room.plantGone(plant)) continue;
+        if (!plant.death && room.plantMouthSmashed(plant)) this.killPlant(plant);
+        if (plant.death) {
+          if (plant.death.y < bottom) this.stepDeathHop(plant.death, dt);
+          continue;
+        }
         stepPlant(plant.motion, this.frame, this.plantHeld(room, plant));
       }
     }
+  }
+
+  // A fireball, a star, 8x contact, or a smashed pipe kills a plant. It flips
+  // and falls like a defeated actor, with no score and no tally change.
+  private killPlant(plant: Plant) {
+    if (plant.death) return;
+    plant.death = {
+      x: plant.x,
+      y: plantTop(plant),
+      vy: -T.deathHopSpeed,
+      age: 0,
+    };
+    this.events.push("splat");
+  }
+
+  // The live plant whose hurt box a box centered on x, y overlaps. A plant
+  // down in its pipe has no hurt box out.
+  private plantTouching(
+    rooms: Iterable<Room>,
+    x: number,
+    y: number,
+    halfW: number,
+    halfH: number,
+  ) {
+    for (const room of rooms)
+      for (const plant of room.plants) {
+        if (room.plantGone(plant) || plant.motion.rise === 0) continue;
+        const b = plantHurtBox(plant);
+        if (
+          Math.abs(x - b.x) < halfW + b.halfW &&
+          Math.abs(y - b.y) < halfH + b.halfH
+        )
+          return plant;
+      }
+    return undefined;
   }
 
   private plantHeld(room: Room, plant: Plant) {
@@ -8156,8 +8212,8 @@ export class Simulation {
       !this.plantHits(room, point.x, point.y, half, tall, point.frames);
   }
 
-  // A plant hurts like a firebar: the player and NPCs are hurt (a star or 8x
-  // body is immune), and Mario is damaged.
+  // A plant hurts like a firebar: the player and NPCs are hurt, and Mario is
+  // damaged. A star or 8x body kills the plant instead and is not hurt.
   private collidePlants() {
     const actors = [
       this.player,
@@ -8169,15 +8225,18 @@ export class Simulation {
       const room = this.roomFor(a);
       if (!room.plants.length) continue;
       const box = this.hurtBox(a);
-      const hit = room.plants.some((plant) => {
-        if (room.plantGone(plant) || plant.motion.rise === 0) return false;
-        const b = plantHurtBox(plant);
-        return (
-          Math.abs(box.x - b.x) < box.halfW + b.halfW &&
-          Math.abs(box.y - b.y) < box.halfH + b.halfH
-        );
-      });
-      if (!hit) continue;
+      const plant = this.plantTouching(
+        [room],
+        box.x,
+        box.y,
+        box.halfW,
+        box.halfH,
+      );
+      if (!plant) continue;
+      if (a.starLeft > 0 || this.isHuge(a)) {
+        this.killPlant(plant);
+        continue;
+      }
       if (a === this.mario) {
         if (this.marioStun > 0) continue;
         this.hitMarioByFireball(false);

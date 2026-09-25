@@ -100,13 +100,15 @@ export function enemyRole(type: number): EnemyRole {
 }
 
 // A Piranha Plant in a vertical pipe. x is the pipe's center and pipeTop the
-// top of its mouth.
+// top of its mouth. `death` is set once it is killed: its top edge hops and
+// falls from there, and the plant stays gone while the room is loaded.
 export type Plant = {
   x: number;
   pipeTop: number;
   column: number;
   row: number;
   motion: PlantMotion;
+  death?: { x: number; y: number; vy: number; age: number };
 };
 
 // The plant's top edge on screen.
@@ -802,8 +804,11 @@ export class Room {
       }));
   }
 
-  // A plant whose pipe mouth was smashed has nowhere to grow.
+  // A killed plant, or one whose pipe mouth was smashed, is out of play.
   plantGone(plant: Plant) {
+    return !!plant.death || this.plantMouthSmashed(plant);
+  }
+  plantMouthSmashed(plant: Plant) {
     return (
       this.smashedTiles.has(`${plant.column},${plant.row}`) ||
       this.smashedTiles.has(`${plant.column + 1},${plant.row}`)
