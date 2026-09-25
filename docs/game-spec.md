@@ -153,17 +153,22 @@ not the land jump cue. NPCs and Mario do not gain a swim sound from that press.
 Gravity is reduced and the
 player stays below the top of the playfield. Pipes have a short re-entry delay.
 
-The play camera is a hard lock on the player's center with no easing. While
-the player heads right, the center sits at 36% of the view width from the
-left. Pressing Left alone scrolls the camera on that same update so the center
-sits at 64%, which keeps 64% of the view ahead in the direction of travel.
-Right alone returns it to 36%. With neither or both held, the last anchor
-stays, so releasing a key never moves the camera. Every stage start, a death
-restart included, begins at 36%, and the scripted pipe-intro walk counts as
-Right. The scroll is clamped to the room and to any left limit, so near either
-end the player leaves the anchor. The title camera does not use this rule.
-Cannons, the Cheep Cheep frenzy, swimmers, Lakitu, and Bullet Bill checks
-read the same scroll as the drawn camera.
+The play camera locks onto the player's center. While the player heads right,
+the center sits at 36% of the view width from the left. Pressing Left alone
+turns the anchor to 64%, which keeps 64% of the view ahead in the direction of
+travel. Right alone turns it back to 36%. A turn starts on the update the new
+direction is pressed and moves the anchor over 300 ms (18 steps at 1/60 s)
+with a quadratic ease-out, fast at the start and soft at the end. Reversing
+before a turn finishes starts a new 300 ms ease from the in-between anchor
+toward the new side, with no jump and no leftover time. With neither or both
+held, no new turn starts and a running one finishes toward its current side,
+so releasing a key never starts a camera move. Every stage start, a death
+restart included, begins at 36% with no turn running, and the scripted
+pipe-intro walk counts as Right, easing to 36% if the anchor is elsewhere. The
+scroll is clamped to the room and to any left limit on every step, so near
+either end the player leaves the anchor. The title camera does not use this
+rule. Cannons, the Cheep Cheep frenzy, swimmers, Lakitu, and Bullet Bill checks
+read the same eased scroll as the drawn camera, with the same 32 px margin.
 
 On-screen layouts switch from a header button: Compact, NES, or hidden.
 Compact is the default and does not persist across sessions. Compact Up may also jump. NES D-pad Up does not

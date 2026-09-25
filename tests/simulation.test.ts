@@ -3566,7 +3566,7 @@ function followCamera(s: Simulation) {
   s.cameraX = s.playScrollX();
 }
 
-test("the play camera holds 36% heading right and 64% heading left", () => {
+test("the play camera eases 300 ms between 36% right and 64% left", () => {
   const s = game();
   const width = s.viewWidth;
   const view = () =>
@@ -3575,35 +3575,77 @@ test("the play camera holds 36% heading right and 64% heading left", () => {
   const share = () => (s.player.body.position.x - s.playScrollX()) / width;
   const near = (value: number, expected: number, why: string) =>
     assert.ok(Math.abs(value - expected) < 1e-9, `${why}: ${value}`);
+  const eased = (from: number, to: number, steps: number) => {
+    const u = steps / 18;
+    return from + (to - from) * u * (2 - u);
+  };
+  const steps = (count: number, input: Partial<Input> = {}) => {
+    for (let i = 0; i < count; i++) s.step(dt, { ...emptyInput(), ...input });
+  };
+  assert.equal(T.cameraTurn, 0.3);
   assert.equal(s.cameraLead, 1);
   at(s, s.activeRoom.offset + 2000);
   tick(s, 0.2, { right: true });
   near(share(), 0.36, "walking right");
-  s.step(dt, { ...emptyInput(), left: true });
-  near(share(), 0.64, "the turn left scrolls on the same update");
+
+  steps(1, { left: true });
+  near(share(), eased(0.36, 0.64, 1), "the turn left starts easing");
+  assert.equal(view().left, s.playScrollX() - 32, "viewWindow eases too");
+  assert.equal(view().right, s.playScrollX() + width + 32);
+  steps(8, { left: true });
+  near(share(), eased(0.36, 0.64, 9), "halfway in time, 75% of the move");
+  steps(8, { left: true });
+  assert.ok(share() < 0.64 - 1e-6, "17 steps are not there yet");
+  const late = share() - eased(0.36, 0.64, 16);
+  const early = eased(0.36, 0.64, 1) - 0.36;
+  assert.ok(early > late * 5, "fast start, soft end");
+  steps(1, { left: true });
+  near(share(), 0.64, "18 steps of 1/60 land on 64%");
   tick(s, 0.3, { left: true });
   near(share(), 0.64, "walking left");
-  assert.equal(view().left, s.playScrollX() - 32);
-  assert.equal(view().right, s.playScrollX() + width + 32);
   tick(s, 0.3);
   near(share(), 0.64, "release keeps the last anchor");
   tick(s, 0.2, { left: true, right: true });
   near(share(), 0.64, "both keys keep the last anchor");
-  s.step(dt, { ...emptyInput(), right: true });
-  near(share(), 0.36, "the turn right scrolls on the same update");
-  tick(s, 0.3, { right: true });
-  near(share(), 0.36, "walking right again");
 
-  s.step(dt, { ...emptyInput(), left: true });
+  steps(1, { right: true });
+  near(share(), eased(0.64, 0.36, 1), "the turn right starts easing");
+  steps(5);
+  near(share(), eased(0.64, 0.36, 6), "a release lets the ease finish");
+  steps(3, { left: true, right: true });
+  near(share(), eased(0.64, 0.36, 9), "both keys let the ease finish");
+  const between = share();
+  steps(1, { left: true });
+  near(share(), eased(between, 0.64, 1), "a reverse restarts from between");
+  steps(4, { left: true });
+  near(share(), eased(between, 0.64, 5), "the new ease runs a full 300 ms");
+  const again = share();
+  steps(1, { right: true });
+  steps(16, { right: true });
+  near(share(), eased(again, 0.36, 17), "a second reverse restarts too");
+  steps(1);
+  near(share(), 0.36, "the restart lands after 18 steps");
+
+  steps(3, { left: true });
+  const turning = share();
+  steps(15, { left: true });
+  near(share(), 0.64, "holding the same way does not restart the ease");
+  assert.ok(turning < 0.64);
+
   at(s, s.activeRoom.offset + 100);
   assert.equal(s.playScrollX(), s.roomLeft(s.activeRoom), "room edge wins");
   s.reset();
   assert.equal(s.cameraLead, 1, "a new stage starts at 36%");
+  assert.equal(s.cameraShare(), 0.36, "with no ease in progress");
+  assert.equal(s.cameraEase, T.cameraTurn);
 
   const intro = new Simulation(() => 0.5);
   intro.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
   intro.reset();
   intro.marioReturn = 1e6;
+  // Face left as if a turn had finished, so the scripted walk has to ease.
+  intro.cameraLead = -1;
+  intro.cameraFrom = 0.64;
   let scripted = 0;
   for (
     let frame = 0;
@@ -3614,8 +3656,11 @@ test("the play camera holds 36% heading right and 64% heading left", () => {
     if (!intro.pipeIntro) continue;
     scripted++;
     assert.equal(intro.cameraLead, 1, "the scripted pipe walk heads right");
+    if (scripted === 1)
+      near(intro.cameraShare(), eased(0.64, 0.36, 1), "the walk eases");
+    if (scripted === 18) near(intro.cameraShare(), 0.36, "the walk lands");
   }
-  assert.ok(scripted > 0);
+  assert.ok(scripted >= 18);
   intro.physics.clear();
 });
 

@@ -1106,10 +1106,26 @@ export class Simulation {
       ? this.leftLimit.x
       : room.offset;
   }
-  /** Play scroll: a hard lock on the player's center, clamped to the room. */
+  /** Where the player's center sits in the view, eased after a turn. */
+  cameraShare() {
+    const to = this.cameraLead < 0 ? 1 - T.cameraAnchor : T.cameraAnchor;
+    const u = Math.min(1, this.cameraEase / T.cameraTurn);
+    return this.cameraFrom + (to - this.cameraFrom) * u * (2 - u);
+  }
+  private leadCamera(lead: 1 | -1) {
+    if (lead === this.cameraLead) return;
+    this.cameraFrom = this.cameraShare();
+    this.cameraLead = lead;
+    this.cameraEase = 0;
+  }
+  private easeCamera(dt: number) {
+    // Snap the last step so 18 steps of 1/60 land on the target exactly.
+    const t = this.cameraEase + dt;
+    this.cameraEase = t >= T.cameraTurn - 1e-9 ? T.cameraTurn : t;
+  }
+  /** Play scroll: a lock on the player's center, clamped to the room. */
   playScrollX(room = this.activeRoom, width = this.viewWidth) {
-    const anchor =
-      this.cameraLead < 0 ? 1 - T.cameraAnchor : T.cameraAnchor;
+    const anchor = this.cameraShare();
     return Math.max(
       this.roomLeft(room),
       Math.min(
@@ -1464,8 +1480,11 @@ export class Simulation {
   cameraY = 0;
   cameraZoom = 1;
   viewWidth = 960;
-  // Last held left/right: 1 keeps the player at T.cameraAnchor, -1 at 1 minus it.
+  // Last held left/right: 1 eases the player to T.cameraAnchor, -1 to 1 minus
+  // it. cameraFrom is the share when that ease began, cameraEase its seconds.
   cameraLead: 1 | -1 = 1;
+  cameraFrom: number = T.cameraAnchor;
+  cameraEase: number = T.cameraTurn;
   // Set when a pipe rises into another stage's area, like the 1-2, 2-2, 4-2,
   // and 7-2 goal pipes onto page 11 of 1-1's area 25. Nothing in that area
   // scrolls or moves back left of the arrival page.
@@ -1635,6 +1654,8 @@ export class Simulation {
     this.cameraY = 0;
     this.cameraZoom = 1;
     this.cameraLead = 1;
+    this.cameraFrom = T.cameraAnchor;
+    this.cameraEase = T.cameraTurn;
     this.fireballs = [];
     this.bulletBills = [];
     this.cannonLfsr.fill(0);
@@ -5583,7 +5604,7 @@ export class Simulation {
         ? { ...emptyInput(), right: true }
         : input;
       const lead = Number(play.right) - Number(play.left);
-      if (lead) this.cameraLead = lead > 0 ? 1 : -1;
+      if (lead) this.leadCamera(lead > 0 ? 1 : -1);
       if (this.onVine(this.player)) {
         this.updateClimb(this.player, play, dt);
         this.player.jumpHeld = play.jump;
@@ -5639,6 +5660,7 @@ export class Simulation {
         }
       }
     } else if (this.mode === "playing") this.jumped = true;
+    this.easeCamera(dt);
     if (!scripted) {
       this.updateFrenzy();
       this.updateNpcs(dt);

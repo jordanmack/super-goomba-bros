@@ -8,6 +8,8 @@ async function frame(page: Page) {
     const drawn = g.renderer.play.cameras.main.scrollX;
     return {
       share: (s.player.body.position.x - drawn) / g.renderer.width,
+      eased: s.cameraShare(),
+      easing: s.cameraEase < 0.3,
       drawn,
       cameraX: s.cameraX,
       viewWidth: s.viewWidth,
@@ -23,7 +25,16 @@ async function frames(page: Page, count: number) {
   }, count);
 }
 
-test("the drawn camera holds 36% walking right and 64% walking left", async ({
+async function settle(page: Page) {
+  await page.waitForFunction(
+    () => (window as any).__game.sim.cameraEase >= 0.3,
+    undefined,
+    { polling: "raf" },
+  );
+  await frames(page, 2);
+}
+
+test("the drawn camera eases between 36% walking right and 64% walking left", async ({
   page,
 }) => {
   await page.goto("/");
@@ -51,9 +62,20 @@ test("the drawn camera holds 36% walking right and 64% walking left", async ({
 
   await page.keyboard.down("ArrowLeft");
   await page.waitForFunction(
-    () => (window as any).__game.sim.player.body.velocity.x < 0,
+    () => {
+      const s = (window as any).__game.sim;
+      return s.cameraLead === -1 && s.cameraEase > 0 && s.cameraEase < 0.2;
+    },
+    undefined,
+    { polling: "raf" },
   );
-  await frames(page, 2);
+  const mid = await frame(page);
+  expect(mid.easing, "the turn eases").toBe(true);
+  expect(mid.cameraX, "mid-ease").toBe(mid.drawn);
+  expect(mid.share, "drawn at the eased share").toBeCloseTo(mid.eased, 2);
+  expect(mid.share).toBeGreaterThan(0.36 + 0.005);
+  expect(mid.share).toBeLessThan(0.64 - 0.005);
+  await settle(page);
   await expectShare(0.64, "walking left");
   await page.keyboard.up("ArrowLeft");
   await frames(page, 10);
@@ -63,7 +85,7 @@ test("the drawn camera holds 36% walking right and 64% walking left", async ({
   await page.waitForFunction(
     () => (window as any).__game.sim.player.body.velocity.x > 0,
   );
-  await frames(page, 2);
+  await settle(page);
   await expectShare(0.36, "walking right again");
   await page.keyboard.up("ArrowRight");
 });
