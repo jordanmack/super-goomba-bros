@@ -271,7 +271,10 @@ export class Play extends Phaser.Scene {
       ).setRotation(0);
     if (room.axe && !room.bridgeDropped)
       image(room.axe.x, room.axe.y, 32, 32, "axe", 6).setRotation(0);
-    for (const ball of sim.firebarBalls(room))
+    for (const ball of [
+      ...sim.firebarBalls(room),
+      ...sim.firebarDebris.filter((ball) => ball.areaId === room.data.id),
+    ])
       image(ball.x, ball.y, 16, 16, "fireball", 10).setRotation(
         ((Math.floor(sim.elapsed * 12) % 4) * Math.PI) / 2,
       );

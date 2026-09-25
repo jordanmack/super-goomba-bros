@@ -1148,6 +1148,9 @@ export class Simulation {
   private cannonLfsr = Uint8Array.of(0xa5, 0, 0, 0, 0, 0, 0);
   bowsers: Bowser[] = [];
   bowserFlames: BowserFlame[] = [];
+  // Balls of a bar whose anchor cell broke. They fall through solids and hurt
+  // no one.
+  firebarDebris: { areaId: string; x: number; y: number; vy: number }[] = [];
   lakitus: Lakitu[] = [];
   hammerBros: HammerBro[] = [];
   hammers: Hammer[] = [];
@@ -1270,6 +1273,7 @@ export class Simulation {
     this.terrainId = 0;
     this.bowsers = [];
     this.bowserFlames = [];
+    this.firebarDebris = [];
     this.lakitus = [];
     this.hammerBros = [];
     this.hammers = [];
@@ -6689,8 +6693,35 @@ export class Simulation {
   private updateCastleHazards(dt: number) {
     this.updateBowsers(dt);
     this.updateBowserFlames(dt);
+    this.dropBrokenFirebars(dt);
     this.collideFirebars();
     this.checkAxes();
+  }
+
+  // A bar spins on one cell. Once that cell is gone, whatever removed it (an
+  // 8x body, a scale-8 fireball, or a bridge drop), the bar stops. Its balls
+  // fall from where they were and are dropped below the map.
+  private dropBrokenFirebars(dt: number) {
+    for (const room of this.rooms.values()) {
+      if (!room.firebars.length) continue;
+      const kept = room.firebars.filter((bar) => {
+        const column = Math.floor((bar.x - room.offset) / 32);
+        const row = Math.floor((bar.y - MAP_TOP) / 32);
+        if (!room.smashedTiles.has(`${column},${row}`)) return true;
+        for (const ball of colliderFirebarBalls(bar, this.frame, 1))
+          this.firebarDebris.push({ areaId: room.data.id, ...ball, vy: 0 });
+        return false;
+      });
+      if (kept.length !== room.firebars.length) room.firebars = kept;
+    }
+    // Loose balls fall like a defeated actor.
+    const fall = (T.deathFallGravity / 3600) * dt * 60;
+    for (const ball of this.firebarDebris) {
+      ball.vy += fall;
+      ball.y += ball.vy * dt * 60;
+    }
+    const bottom = MAP_TOP + 15 * 32 + T.firebarBallRadius;
+    this.firebarDebris = this.firebarDebris.filter((ball) => ball.y < bottom);
   }
 
   private collideFirebars() {

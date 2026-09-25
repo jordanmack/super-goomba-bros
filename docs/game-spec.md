@@ -515,9 +515,18 @@ Castle areas spawn the original rotating firebars from the enemy tables. Each
 bar is a chain of fireballs about a fixed block, at the original length and
 spin speed, including both rotation directions. Contact uses the same hurt and
 kill rules as other lethal hits. It kills or shrinks the player and NPCs, adds
-NPC deaths to DIED, and can damage Mario. A star makes the player immune. 8x
-does not smash a firebar. Warned NPCs path around a bar when they can. They
-may still die on one.
+NPC deaths to DIED, and can damage Mario. A star makes the player immune.
+Touching the balls, even at 8x, does not destroy a bar. Warned NPCs path around
+a bar when they can. They may still die on one.
+
+The bar spins on the one cell at its pivot, whatever that cell's metatile.
+When that cell is removed, by an 8x body, a scale-8 fireball, or the bridge
+drop, the bar stops. Each ball stays where it was, then falls through floors
+and other solids with the death-fall gravity and is removed below the map.
+Falling balls are harmless debris. They hurt no one, and warned NPCs no longer
+treat that bar as a hazard. A bar whose cell is still there keeps spinning.
+8x cannot smash a row-13 anchor, as in 2-4, so those bars always spin. The 4-4
+bar on bridge tile 137 stops when the bridge drops.
 
 Bowser stands on the bridge at the end of every castle, placed from that
 area's enemy data. He is an ally. He never harms the player or NPCs. He blocks

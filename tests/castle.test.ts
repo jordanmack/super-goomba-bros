@@ -209,22 +209,159 @@ test("a firebar kills an NPC and increments DIED", () => {
   s.physics.clear();
 });
 
-test("8x does not smash a firebar", () => {
-  const s = castleGame("1-4");
-  parkNpcs(s);
-  const before = s.activeRoom.firebars.length;
-  assert.ok(before > 0);
+function make8x(s: Simulation) {
   s.player.scale = T.hugeScale;
   s.player.hugeLeft = T.hugeSeconds;
   Body.scale(s.player.body, T.hugeScale, T.hugeScale);
+}
+
+function anchorKey(s: Simulation, bar: { x: number; y: number }) {
+  const room = s.activeRoom;
+  const column = Math.floor((bar.x - room.offset) / 32);
+  const row = Math.floor((bar.y - MAP_TOP) / 32);
+  return `${column},${row}`;
+}
+
+test("8x touching a firebar's balls leaves a bar whose anchor stands", () => {
+  const s = castleGame("1-4");
+  parkNpcs(s);
+  const room = s.activeRoom;
+  const before = room.firebars.length;
+  assert.ok(before > 0);
+  const bar = room.firebars[0]!;
+  make8x(s);
   let hit = false;
-  for (let frame = 0; frame < 90; frame++) {
-    hit = holdOnFireball(s, "player") || hit;
+  for (let frame = 0; frame < 240; frame++) {
+    // Beside the anchor cell and inside the swing, so balls cross the body.
+    Body.setPosition(s.player.body, {
+      x: bar.x + 24 + s.player.body.width / 2,
+      y: bar.y,
+    });
+    Body.setVelocity(s.player.body, { x: 0, y: 0 });
+    const box = s.player.body.bounds;
+    if (
+      s.firebarBalls(room).some(
+        (ball) =>
+          ball.x > box.min.x - T.firebarBallRadius &&
+          ball.x < box.max.x + T.firebarBallRadius &&
+          ball.y > box.min.y - T.firebarBallRadius &&
+          ball.y < box.max.y + T.firebarBallRadius,
+      )
+    )
+      hit = true;
     s.step(dt, emptyInput());
   }
-  assert.equal(hit, true, "an exposed fireball exists");
+  assert.equal(hit, true, "the swing crosses the 8x body");
   assert.equal(s.player.alive, true);
-  assert.equal(s.activeRoom.firebars.length, before);
+  assert.equal(room.smashedTiles.has(anchorKey(s, bar)), false);
+  assert.equal(room.firebars.length, before);
+  assert.equal(room.firebars.includes(bar), true);
+  assert.equal(s.firebarDebris.length, 0);
+  s.physics.clear();
+});
+
+test("breaking a firebar's anchor drops its balls as harmless debris", () => {
+  const s = castleGame("1-4");
+  parkNpcs(s);
+  const room = s.activeRoom;
+  const before = room.firebars.length;
+  const bar = room.firebars[0]!;
+  make8x(s);
+  // The anchor sits inside the 8x body, well above its feet.
+  Body.setPosition(s.player.body, { x: bar.x, y: bar.y });
+  Body.setVelocity(s.player.body, { x: 0, y: 0 });
+  const balls = colliderFirebarBalls(bar, s.frame + 1, 1);
+  s.step(dt, emptyInput());
+  assert.equal(room.smashedTiles.has(anchorKey(s, bar)), true);
+  assert.equal(room.firebars.includes(bar), false);
+  assert.equal(room.firebars.length, before - 1);
+  assert.equal(s.firebarDebris.length, bar.length);
+  for (const [i, ball] of balls.entries()) {
+    const debris = s.firebarDebris[i]!;
+    assert.equal(debris.areaId, room.data.id);
+    assert.equal(debris.x, ball.x);
+    assert.ok(debris.y > ball.y && debris.y - ball.y < 1, `${debris.y}`);
+  }
+  // Harmless: a small NPC and active Mario sit on a falling ball.
+  s.player.scale = 1;
+  s.player.hugeLeft = 0;
+  Body.scale(s.player.body, 1 / T.hugeScale, 1 / T.hugeScale);
+  const npc = s.npcs[0]!;
+  stillMario(s);
+  s.mario.areaId = room.data.id;
+  const diedBefore = s.died();
+  for (let frame = 0; frame < 20; frame++) {
+    const ball = s.firebarDebris[0]!;
+    for (const a of [s.player, npc, s.mario]) {
+      Body.setPosition(a.body, { x: ball.x, y: ball.y });
+      Body.setVelocity(a.body, { x: 0, y: 0 });
+    }
+    s.step(dt, emptyInput());
+  }
+  assert.equal(s.player.alive, true);
+  assert.equal(npc.alive, true);
+  assert.equal(s.mario.alive, true);
+  assert.equal(s.died(), diedBefore);
+  // They fall through solids and leave once below the map.
+  const tracked = s.firebarDebris[0]!;
+  let lastY = tracked.y;
+  for (let frame = 0; frame < 300 && s.firebarDebris.length; frame++) {
+    s.step(dt, emptyInput());
+    if (!s.firebarDebris.includes(tracked)) continue;
+    assert.ok(tracked.y > lastY);
+    lastY = tracked.y;
+  }
+  assert.equal(s.firebarDebris.length, 0);
+  assert.ok(lastY > T.groundY, "fell past the floor");
+  s.physics.clear();
+});
+
+test("a scale-8 fireball on the anchor stops the bar", () => {
+  const s = castleGame("1-4");
+  parkNpcs(s);
+  const room = s.activeRoom;
+  const bar = room.firebars[0]!;
+  s.fireballs = [
+    {
+      id: 9301,
+      x: bar.x,
+      y: bar.y,
+      vx: 0,
+      vy: 0,
+      age: 0,
+      owner: "player",
+      scale: T.hugeScale,
+    },
+  ];
+  s.step(dt, emptyInput());
+  assert.equal(room.smashedTiles.has(anchorKey(s, bar)), true);
+  assert.equal(room.firebars.includes(bar), false);
+  assert.equal(s.firebarDebris.length, bar.length);
+  s.physics.clear();
+});
+
+test("the 4-4 bridge drop stops the bar spinning on the bridge", () => {
+  const s = castleGame("4-4");
+  parkNpcs(s);
+  const room = s.activeRoom;
+  const bar = room.firebars.find((b) => anchorKey(s, b) === "162,10");
+  assert.ok(bar, "4-4 has a bar on bridge tile 137 at column 162");
+  assert.equal(room.data.tiles[10]![162], 137);
+  const others = room.firebars.length - 1;
+  const axe = room.axe!;
+  Body.setPosition(s.player.body, { x: axe.x - 400, y: T.groundY - 14 });
+  s.cameraX = axe.x - 400;
+  stillMario(s);
+  s.mario.areaId = room.data.id;
+  Body.setPosition(s.mario.body, { x: axe.x, y: axe.y });
+  Body.setVelocity(s.mario.body, { x: 0, y: 0 });
+  tick(s, dt);
+  assert.equal(room.bridgeDropped, true);
+  // checkAxes runs after the anchor check, so the bar lets go next frame.
+  s.step(dt, emptyInput());
+  assert.equal(room.firebars.includes(bar), false);
+  assert.equal(room.firebars.length, others);
+  assert.equal(s.firebarDebris.length, bar.length);
   s.physics.clear();
 });
 
