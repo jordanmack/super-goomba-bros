@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { makeArt } from "../art";
-import type { SpriteSources } from "../smb-sprites";
+import { CHEEP_BASES, type SpriteSources } from "../smb-sprites";
 import mario from "../../assets/smb/mario.png";
 import enemies from "../../assets/smb/enemies.png";
 import metatiles from "../../assets/smb/metatiles.png";
@@ -50,12 +50,12 @@ export class Boot extends Phaser.Scene {
     for (const base of [
       "goomba",
       "koopa",
-      "fish",
       "spike",
       "fireGoomba",
       "fireKoopa",
-      "fireFish",
       "fireSpike",
+      ...CHEEP_BASES,
+      ...CHEEP_BASES.map((base) => `fire${base[0]!.toUpperCase()}${base.slice(1)}`),
       "smallMario",
       "mario",
       "fireMario",

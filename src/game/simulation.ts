@@ -43,7 +43,26 @@ import {
   vineDestination,
   vineExitColumn,
 } from "./levels.ts";
-import { Room, enemyRole } from "./room.ts";
+import {
+  ENEMY_RED_CHEEP,
+  FRENZY_BILLS_OR_CHEEPS,
+  FRENZY_FLYING_CHEEPS,
+  Room,
+  enemyRole,
+} from "./room.ts";
+import {
+  FLY_START_Y,
+  FLY_TIMER,
+  initBlooper,
+  initFlyCheep,
+  stepBlooper,
+  stepFlyCheep,
+  stepSwimCheep,
+  swimCheepHeight,
+  swimCheepIsRed,
+  type Step,
+  type WaterMotion,
+} from "./water-enemies.ts";
 import { enclosedWell, firebarCrossing, planJump } from "./navigation.ts";
 import { firstEmptySpawnCell } from "./spawn-cell.ts";
 import { warpZoneSignage } from "./warp-zone.ts";
@@ -208,7 +227,17 @@ export type Actor = {
   swimPath?: { x: number; y: number }[];
   swimSize?: number;
   swimRepath?: number;
+  // Rescue swimmers (kind "fish"): which one, and its SMB1 motion until
+  // warned.
+  species?: FishSpecies;
+  waterMotion?: WaterMotion;
+  // The frenzy's enemy slot (0-2). A frenzy spawn leaves when it swims or
+  // falls out of view unwarned.
+  frenzySlot?: number;
+  // A Cheep Cheep leaves the view only after it has been in it.
+  seen?: boolean;
 };
+export type FishSpecies = "blooper" | "grey-cheep" | "red-cheep";
 export type Shout = {
   id: number;
   text: string;
@@ -476,6 +505,8 @@ const SPRING_POSE: SpringPose[] = ["mid", "compressed", "mid", "extended"];
 // point is more than the margin above its rise.
 const SWIM_AIM_AHEAD = 12;
 const SWIM_STROKE_MARGIN = 8;
+// Bloopers and Cheep Cheeps move while within this much of the view.
+const SWIMMER_VIEW_MARGIN = 128;
 export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
 const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
 /** SCORE change for one tally line: count times that line's points. */
@@ -1157,6 +1188,9 @@ export class Simulation {
   bulletBills: BulletBill[] = [];
   // SMB1 PseudoRandomBitReg. Cold boot seeds the first byte with $a5.
   private cannonLfsr = Uint8Array.of(0xa5, 0, 0, 0, 0, 0, 0);
+  // FrenzyEnemyTimer (frames) and BitMFilter for the Cheep Cheep frenzies.
+  private frenzyTimer = 0;
+  private cheepHeights = 0;
   bowsers: Bowser[] = [];
   bowserFlames: BowserFlame[] = [];
   // Balls of a bar whose anchor cell broke. They fall through solids and hurt
@@ -1395,6 +1429,8 @@ export class Simulation {
     this.bulletBills = [];
     this.cannonLfsr.fill(0);
     this.cannonLfsr[0] = 0xa5;
+    this.frenzyTimer = 0;
+    this.cheepHeights = 0;
     this.items = [];
     this.springRides = [];
     this.vines = [];
@@ -1428,17 +1464,48 @@ export class Simulation {
     if (room.spawnedActors) return;
     room.spawnedActors = true;
     this.spawnHammerBros(room);
-    if (room.data.type !== "water") return;
     for (const enemy of room.data.enemies) {
-      if (enemyRole(enemy.type) !== "fish") continue;
+      const role = enemyRole(enemy.type);
       const x = room.offset + enemy.column * 32 + 16;
       const y = MAP_TOP + enemy.row * 32 + 16;
-      const fish = this.actor(x, "fish");
-      fish.areaId = room.data.id;
-      Body.setPosition(fish.body, { x, y });
-      Body.setVelocity(fish.body, { x: 0, y: 0 });
-      fish.homeX = x;
-      fish.grounded = false;
+      // Type 7 is a Blooper. It only lives in water areas.
+      if (role === "fish" && room.data.type === "water")
+        this.spawnSwimmer(room, x, y, "blooper", initBlooper(), true);
+      // A placed Cheep Cheep: InitCheepCheep, never on a wobbling slot.
+      else if (role === "cheep") {
+        const red = enemy.type === ENEMY_RED_CHEEP;
+        this.spawnSwimmer(room, x, y, red ? "red-cheep" : "grey-cheep", {
+          kind: "swim",
+          red,
+          xForce: 0,
+          yDummy: 0,
+          down: false,
+          originY: enemy.row * 16,
+          wobble: false,
+        });
+      }
+    }
+  }
+
+  // Bloopers and Cheep Cheeps are rescue NPCs outside the land population.
+  private spawnSwimmer(
+    room: Room,
+    x: number,
+    y: number,
+    species: FishSpecies,
+    motion: WaterMotion,
+    fit = false,
+  ) {
+    const fish = this.actor(x, "fish");
+    fish.areaId = room.data.id;
+    fish.species = species;
+    fish.waterMotion = motion;
+    Body.setPosition(fish.body, { x, y });
+    Body.setVelocity(fish.body, { x: 0, y: 0 });
+    fish.homeX = x;
+    fish.facing = -1;
+    fish.grounded = false;
+    if (fit) {
       if (overlaps(fish.body, room.solids, 0.01).length) this.fitActor(fish);
       for (let nudge = 0; nudge < 4; nudge++) {
         if (!this.npcs.some((other) => this.overlapActors(fish, other))) break;
@@ -1449,8 +1516,149 @@ export class Simulation {
         fish.homeX = fish.body.position.x;
         if (overlaps(fish.body, room.solids, 0.01).length) this.fitActor(fish);
       }
-      this.npcs.push(fish);
     }
+    this.npcs.push(fish);
+    return fish;
+  }
+
+  // Frenzy objects 42 and 43 in the player's area. Flying Cheep Cheeps use
+  // InitFlyingCheepCheep. Opcode 43 in water is the swimming Cheep Cheep side
+  // of BulletBillCheepCheep; on land it is the Bullet Bill frenzy, which is
+  // not run here. Each frenzy uses enemy slots 0-2.
+  private updateFrenzy() {
+    if (this.mode !== "playing" || this.pipeIntro) return;
+    if (this.frenzyTimer > 0) this.frenzyTimer--;
+    const room = this.activeRoom;
+    // The view's right edge, without viewWindow's 32px margin.
+    const right = this.viewWindow(room).right - 32;
+    const frenzy = room.frenzyAt(right);
+    const water = room.data.type === "water";
+    if (
+      frenzy !== FRENZY_FLYING_CHEEPS &&
+      !(frenzy === FRENZY_BILLS_OR_CHEEPS && water)
+    )
+      return;
+    if (this.frenzyTimer > 0) return;
+    const lfsr = this.cannonLfsr;
+    const used = new Set(
+      this.npcs
+        .filter(
+          (n) =>
+            n.frenzySlot !== undefined &&
+            n.alive &&
+            !n.saved &&
+            !n.warned &&
+            n.areaId === room.data.id,
+        )
+        .map((n) => n.frenzySlot),
+    );
+    const slot = [0, 1, 2].find((i) => !used.has(i));
+    if (frenzy === FRENZY_FLYING_CHEEPS) {
+      // The timer is set before the slot check, so a full frenzy still waits.
+      this.frenzyTimer = FLY_TIMER[(lfsr[1 + (slot ?? 0)] ?? 0) & 3]!;
+      if (slot === undefined) return;
+      const p = this.player.body.position;
+      const { motion, offset } = initFlyCheep(
+        Math.round(this.player.body.velocity.x * 8),
+        [lfsr[slot] ?? 0, lfsr[slot + 1] ?? 0, lfsr[slot + 2] ?? 0],
+      );
+      const fish = this.spawnSwimmer(
+        room,
+        p.x + offset * 2,
+        MAP_TOP + FLY_START_Y * 2 + 16,
+        "red-cheep",
+        motion,
+      );
+      fish.frenzySlot = slot;
+      fish.facing = motion.xSpeed < 0 ? -1 : 1;
+      return;
+    }
+    if (slot === undefined) return;
+    const pick = lfsr[slot] ?? 0;
+    const red = swimCheepIsRed(this.level.world, pick);
+    const height = swimCheepHeight(this.cheepHeights, pick);
+    this.cheepHeights = height.filter;
+    // PutAtRightExtent: 32 NES px past the right edge of the screen.
+    const fish = this.spawnSwimmer(
+      room,
+      right + 64 + 16,
+      MAP_TOP + height.top * 2 + 16,
+      red ? "red-cheep" : "grey-cheep",
+      {
+        kind: "swim",
+        red,
+        xForce: 0,
+        yDummy: 0,
+        down: (pick & 0x10) !== 0,
+        originY: height.top,
+        wobble: slot === 2,
+      },
+    );
+    fish.frenzySlot = slot;
+    this.frenzyTimer = 0x20;
+  }
+
+  // One frame of a Blooper's or Cheep Cheep's own motion while unwarned. The
+  // body is frozen and moved directly: like SMB1, they pass through terrain.
+  // Returns false when the swimmer has left for good.
+  private stepSwimmer(n: Actor) {
+    const m = n.waterMotion;
+    if (!m) {
+      Body.setVelocity(n.body, { x: 0, y: 0 });
+      return true;
+    }
+    Body.setFrozen(n.body, true);
+    const room = this.roomFor(n);
+    const p = n.body.position;
+    const view = this.viewWindow(room);
+    const inView =
+      room === this.activeRoom &&
+      p.x > view.left - SWIMMER_VIEW_MARGIN &&
+      p.x < view.right + SWIMMER_VIEW_MARGIN;
+    if (!inView) {
+      Body.setVelocity(n.body, { x: 0, y: 0 });
+      // Bloopers wait off screen. A Cheep Cheep that has left is gone.
+      return m.kind === "blooper" || (!n.seen && n.frenzySlot === undefined);
+    }
+    n.seen = true;
+    const frame = Math.round(this.elapsed * 60);
+    const top = (p.y - 16 - MAP_TOP) / 2;
+    const slot = n.frenzySlot ?? n.id % 5;
+    let step: Step;
+    if (m.kind === "blooper") {
+      const player = this.player;
+      const near = this.roomFor(player) === room;
+      // PseudoRandomBitReg+1,x & $3f picks a new heading 1 frame in 64.
+      if (near && !((this.cannonLfsr[1 + slot] ?? 0) & 0x3f))
+        m.dir =
+          slot % 2
+            ? player.facing < 0
+              ? -1
+              : 1
+            : p.x >= player.body.position.x
+              ? -1
+              : 1;
+      // Player_Y_Position is the top of a 32px box over the player's feet.
+      const playerTop = (player.body.bounds.max.y - MAP_TOP) / 2 - 32;
+      step = stepBlooper(m, frame, top, near && top + 16 < playerTop);
+    } else if (m.kind === "swim") step = stepSwimCheep(m, top);
+    else {
+      step = stepFlyCheep(m);
+      // Back below the screen on the way down: the leap is over.
+      if (m.speed > 0 && m.y > FLY_START_Y) return false;
+    }
+    const dx = step.dx * 2,
+      dy = step.dy * 2;
+    Body.setPosition(n.body, { x: p.x + dx, y: p.y + dy });
+    Body.setVelocity(n.body, { x: dx, y: dy });
+    if (dx) n.facing = Math.sign(dx);
+    return true;
+  }
+
+  private dropSwimmers(gone: Set<Actor>) {
+    if (!gone.size) return;
+    for (const n of gone) this.physics.remove(n.body);
+    this.npcs = this.npcs.filter((n) => !gone.has(n));
   }
 
   // Type 5 is outside the land population and outside WARNED, SAVED, and DIED.
@@ -5077,6 +5285,7 @@ export class Simulation {
       }
     } else if (this.mode === "playing") this.jumped = true;
     if (!scripted) {
+      this.updateFrenzy();
       this.updateNpcs(dt);
       this.updateCrowd(dt);
       this.updateLakitu(dt);
@@ -5089,6 +5298,11 @@ export class Simulation {
         continue;
       }
       if (this.roomFor(a).data.type === "water") continue;
+      // Bloopers and Cheep Cheeps swim or leap on their own, even on land.
+      if (a.kind === "fish") {
+        a.body.gravityScale = 0;
+        continue;
+      }
       const hold = !!a.jumpHeld && a.body.velocity.y < 0 && !a.grounded;
       const holdG = a.jumpHoldG ?? T.jumpHoldGravity;
       const fallG =
@@ -5275,6 +5489,7 @@ export class Simulation {
   }
 
   private updateNpcs(dt: number) {
+    const gone = new Set<Actor>();
     for (const n of this.npcs) {
       if (!n.alive || n.saved || this.inPipe(n) || this.springLocked(n)) continue;
       if (n.kind === "koopa" && n.shell !== "none") {
@@ -5305,6 +5520,7 @@ export class Simulation {
       if (
         room.data.goal?.kind === "pipe" &&
         p.x >= room.goalX - 80 &&
+        (n.kind !== "fish" || n.warned) &&
         this.tryPipe(n, true, true)
       )
         continue;
@@ -5329,17 +5545,7 @@ export class Simulation {
             ? T.spinyWalkSpeed
             : T.idleSpeed * (0.8 + n.fear * 0.4);
         if (n.kind === "fish") {
-          n.idleWait -= dt;
-          if (n.idleWait <= 0) {
-            n.idleWalking = !n.idleWalking;
-            n.idleWait = n.idleWalking
-              ? 1.2 + this.random() * 1.8
-              : 0.3 + this.random() * 0.6;
-            if (n.idleWalking && this.random() < 0.5) n.facing *= -1;
-          }
-          if ((p.x - n.homeX) * n.facing >= T.idleRadius) n.facing *= -1;
-          this.move(n, n.idleWalking ? n.facing * speed : 0);
-          n.body.velocity.y = 0;
+          if (!this.stepSwimmer(n)) gone.add(n);
           continue;
         }
         const feet = n.body.bounds.max.y;
@@ -5424,12 +5630,21 @@ export class Simulation {
         this.move(n, n.idleWalking ? n.facing * speed : 0);
         continue;
       }
+      // A warned swimmer leaves its SMB1 pattern for the rescue door.
+      if (n.kind === "fish" && n.body.frozen && !this.pipeIntro) {
+        Body.setFrozen(n.body, false);
+        Body.setVelocity(n.body, { x: 0, y: 0 });
+      }
       n.wait -= dt;
       if (n.wait > 0) {
         this.move(n, 0);
         continue;
       }
       if (this.tryNpcPipeEscape(n)) continue;
+      if (n.kind === "fish") {
+        this.swim(n);
+        continue;
+      }
       if (room.data.type === "water") {
         if (this.strokeSwimmer(n)) this.strokeSwim(n, undefined, T.walkSpeed);
         else this.swim(n);
@@ -5534,6 +5749,7 @@ export class Simulation {
       )
         this.jump(n);
     }
+    this.dropSwimmers(gone);
   }
 
   // The player, Mario, and Goombas and Koopas out of a shell swim with the
@@ -5646,10 +5862,19 @@ export class Simulation {
     Body.setVelocity(a.body, { x: next, y: a.body.velocity.y });
   }
 
-  // Fish follow the swim path at a flat speed with gravity off.
+  // Fish follow the swim path at a flat speed with gravity off. On land a
+  // warned Blooper or Cheep Cheep flies to the door: just past goalX, with
+  // its feet on the door's floor, where atDoor saves it.
   private swim(actor: Actor, target?: { x: number; y: number }) {
+    const room = this.roomFor(actor);
+    const goal = room.data.goal;
+    if (!target && room.data.type !== "water" && goal && goal.kind !== "pipe")
+      target = {
+        x: room.goalX + 8,
+        y: MAP_TOP + (goal.row + 1) * 32 - actor.body.height / 2 - 1,
+      };
     if (!actor.swimPath || actor.swimSize !== actor.body.width) {
-      actor.swimPath = this.roomFor(actor).swimPath(actor, target);
+      actor.swimPath = room.swimPath(actor, target);
       actor.swimSize = actor.body.width;
     }
     const p = actor.body.position;

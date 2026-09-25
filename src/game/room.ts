@@ -47,7 +47,16 @@ export type Cannon = {
 
 /** SMB1 enemy IDs from the bundled disassembly InitEnemyRoutines table. */
 export const ENEMY_HAMMER_BRO = 5;
+// Bloober. Placed in water areas as a rescue Blooper.
 export const ENEMY_FISH = 7;
+// GreyCheepCheep and RedCheepCheep placements.
+export const ENEMY_GREY_CHEEP = 10;
+export const ENEMY_RED_CHEEP = 11;
+// Area objects that start a frenzy (flying Cheep Cheeps, or swimming Cheep
+// Cheeps in water and Bullet Bills on land) and the one that stops it.
+export const FRENZY_FLYING_CHEEPS = 42;
+export const FRENZY_BILLS_OR_CHEEPS = 43;
+export const FRENZY_STOP = 44;
 export const ENEMY_LAKITU = 17;
 export const ENEMY_BALANCE_LIFT = 36;
 export const ENEMY_RIGHT_LIFT = 42;
@@ -61,6 +70,7 @@ export const COIN_ROOM_AREA = "42";
 export type EnemyRole =
   | "hammer-bro"
   | "fish"
+  | "cheep"
   | "lakitu"
   | "balance-lift"
   | "platform"
@@ -71,6 +81,7 @@ export type EnemyRole =
 export function enemyRole(type: number): EnemyRole {
   if (type === ENEMY_HAMMER_BRO) return "hammer-bro";
   if (type === ENEMY_FISH) return "fish";
+  if (type === ENEMY_GREY_CHEEP || type === ENEMY_RED_CHEEP) return "cheep";
   if (type === ENEMY_LAKITU) return "lakitu";
   if (isFirebarType(type)) return "firebar";
   if (isBowserType(type)) return "bowser";
@@ -147,6 +158,8 @@ export class Room {
   private platformFrame?: number;
   private swimFields = new Map<string, (point: Point) => Point[]>();
   coins: { x: number; y: number; collected: boolean }[] = [];
+  // Frenzy objects by left edge, in column order.
+  frenzies: { x: number; opcode: number }[] = [];
 
   constructor(
     physics: PhysicsWorld,
@@ -298,6 +311,15 @@ export class Room {
       }
     }
     this.lakituPoints.sort((a, b) => a.x - b.x);
+    this.frenzies = this.data.objects
+      .filter(
+        (o) =>
+          o.opcode === FRENZY_FLYING_CHEEPS ||
+          o.opcode === FRENZY_BILLS_OR_CHEEPS ||
+          o.opcode === FRENZY_STOP,
+      )
+      .map((o) => ({ x: offset + o.column * 32, opcode: o.opcode }))
+      .sort((a, b) => a.x - b.x);
     this.lakituUsed = this.lakituPoints.map(() => false);
     this.pairBalanceLifts();
     for (const platform of this.platforms)
@@ -696,6 +718,16 @@ export class Room {
   }
   onSpring(actor: Actor) {
     return !!this.springAt(actor);
+  }
+  // The frenzy the level has reached at `right`, the view's right edge. The
+  // renderer meets an area object as it scrolls in; a stop object ends it.
+  frenzyAt(right: number) {
+    let opcode: number | undefined;
+    for (const f of this.frenzies) {
+      if (f.x > right) break;
+      opcode = f.opcode === FRENZY_STOP ? undefined : f.opcode;
+    }
+    return opcode;
   }
   swimPath(actor: Actor, target?: Point) {
     target ??= {

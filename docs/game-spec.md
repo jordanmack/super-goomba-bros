@@ -263,11 +263,47 @@ brick, question block, pipe lid, or moving platform when those tops exist. The
 rest start on the floor. Unrevealed hidden blocks are not standable starts.
 Two NPCs do not share a spawn cell. These traits stay fixed during an attempt.
 
-Water areas also spawn fish from original type-7 enemy placements. Those fish
-are rescue NPCs, not a synthetic extra population and not SMB1 chase-the-player
-Cheep Cheeps. They use Cheep Cheep art from the enemy sheet. Fish appear only
-in water areas. WARNED, SAVED, and DIED count every NPC including fish, so the
-tally uses the actual NPC count rather than the land population alone.
+Water areas spawn a Blooper from each original type-7 (`Bloober`) placement.
+Bloopers and Cheep Cheeps are rescue NPCs outside the land population of 30.
+WARNED, SAVED, and DIED count every NPC including them, so the tally uses the
+actual NPC count rather than the land population alone. Until warned, each
+keeps its SMB1 motion, stepped per frame in NES pixels and drawn at 2x, and
+passes through terrain as in SMB1.
+
+- A Blooper uses `MoveBloober`. It pulses up and sideways together at force
+  0, 1, 2, 1, 0 in 8-frame steps (32 NES px each way), then floats down 1 px
+  every other frame until its interval timer runs out and it is no more than
+  16 px above the top of the player's 32 px box. It picks a heading 1 frame in
+  64 from the LSFR: toward the player, or the player's facing on odd slots.
+  It moves only near the view and waits off screen. It draws the tall
+  16x24 frame 3 NES px lower, and the short 16x16 frame only while its
+  interval timer is 1.
+- A swimming Cheep Cheep uses `MoveSwimmingCheepCheep`. It always swims left:
+  grey 1 px every 4 frames (force $40) and red every 2 ($80). One on frenzy
+  slot 2 also drifts 1 px every 8 frames and turns 15 px from where it
+  started.
+- Opcode 43 in a water area runs the swimming Cheep Cheep frenzy. Every 32
+  frames, while a frenzy slot (0-2) is free, a Cheep Cheep enters 32 NES px
+  past the right edge of the view at one of eight heights, each used once
+  before any repeats. World 2 picks grey unless the LSFR byte is $aa or more;
+  other worlds reverse that, so red is usual. On land, opcode 43 is the Bullet
+  Bill frenzy, which is not run.
+- Opcode 42 runs flying Cheep Cheeps (`InitFlyingCheepCheep`). They are red,
+  use slots 0-2, and wait 16, 96, 32, or 72 frames between leaps. Each leaps
+  from below the screen ($f8) at 5 NES px/frame, placed and aimed from the
+  player's position and speed, and falls under gravity $0d to at most 5.
+- A frenzy runs while its object has reached the right edge of the view and a
+  stop object (opcode 44) has not: 2-2 and 7-2 swim from column 80 to 192,
+  the water area 00 that 5-2 and 6-2 reach by pipe swims from 32 to 71, 2-3
+  and 7-3 fly from 26 to 197, and 8-4 flies from 221 to 234.
+- The grey Cheep Cheep that SMB1 places on area 27 (page 9, row 15, under the
+  bridges of 2-3 and 7-3) is kept.
+- A Cheep Cheep that leaves the view unwarned is gone and does not count. A
+  warned frenzy Cheep Cheep frees its slot.
+- After a warning, a Blooper or Cheep Cheep leaves its pattern for the rescue
+  door: by the swim path in water, and flying to the door on land.
+- Art is from the enemy sheet: the Blooper's two frames, and the Cheep Cheep's
+  two frames in red, grey in water, and green on land (sprite palette 1).
 
 4-1, 6-1, and 8-2 spawn one Lakitu from original type-17 placements. Those
 records are spawn points along the stage, not three Lakitus at once. He rides
@@ -518,8 +554,8 @@ water pace (`walkSpeed`). Mario's water pace keeps his land shape with
 smaller numbers, where p is crowd pressure from 0 to 1: 2.8 + 0.2p when not
 chasing and 3.2 + 0.4p when chasing. He eases into it with his land
 acceleration. He is faster than a swimming player only while chasing. An
-unwarned Goomba or Koopa still walks the floor. Fish keep the flat
-`npcSwimSpeed` path swim with gravity off. Shells in water sink until
+unwarned Goomba or Koopa still walks the floor. Warned Bloopers and Cheep
+Cheeps use the flat `npcSwimSpeed` path swim with gravity off. Shells in water sink until
 they meet the floor, then travel along it. A stopped shell rests on the floor.
 A kick above the floor does not teleport down. `shellWake` and `shellShake`
 are unchanged.

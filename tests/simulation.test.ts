@@ -11675,7 +11675,7 @@ test("balance lifts are not land NPC spawn lids", () => {
   }
 });
 
-test("water stages spawn type-7 fish and land stages do not", () => {
+test("water stages spawn type-7 Bloopers and land stages do not", () => {
   const land = game();
   assert.equal(
     land.npcs.filter((n) => n.kind === "fish").length,
@@ -11687,6 +11687,8 @@ test("water stages spawn type-7 fish and land stages do not", () => {
   const fish = water.npcs.filter((n) => n.kind === "fish");
   const placed = areaData("01").enemies.filter((e) => e.type === ENEMY_FISH);
   assert.equal(fish.length, placed.length);
+  assert.ok(fish.every((n) => n.species === "blooper"));
+  assert.ok(fish.every((n) => n.waterMotion?.kind === "blooper"));
   assert.ok(fish.length >= 14);
   assert.equal(water.npcs.length, T.population + fish.length);
   assert.equal(
@@ -11739,6 +11741,209 @@ test("a warned fish reaches the 2-2 rescue door", { timeout: 20000 }, () => {
     alive: fish.alive,
   }));
   assert.ok(s.saved >= 1);
+});
+
+function stageAt(id: string) {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === id);
+  s.reset();
+  s.marioReturn = 1e6;
+  finishPipeIntro(s);
+  return s;
+}
+
+// Hold the player at a column of its current area for `seconds`.
+function holdAt(
+  s: Simulation,
+  column: number,
+  seconds: number,
+  each?: (frame: number) => void,
+) {
+  const x = s.activeRoom.offset + column * 32 + 16;
+  for (let f = 0; f < Math.round(seconds * 60); f++) {
+    at(s, x, 200);
+    s.step(dt, emptyInput());
+    each?.(f);
+  }
+}
+
+const frenzied = (s: Simulation) =>
+  s.npcs.filter(
+    (n) => n.frenzySlot !== undefined && n.alive && !n.saved && !n.warned,
+  );
+
+test("an unwarned Blooper pulses up and sideways together, then sinks", () => {
+  const s = stageAt("2-2");
+  s.player.starLeft = 1e6;
+  const px = s.player.body.position.x;
+  const blooper = s.npcs
+    .filter((n) => n.species === "blooper" && n.areaId === s.player.areaId)
+    .sort(
+      (a, b) =>
+        Math.abs(a.body.position.x - px) - Math.abs(b.body.position.x - px),
+    )[0]!;
+  let rises = 0,
+    sinks = 0;
+  for (let f = 0; f < 60 * 6; f++) {
+    const before = { ...blooper.body.position };
+    s.step(dt, emptyInput());
+    const dx = blooper.body.position.x - before.x,
+      dy = blooper.body.position.y - before.y;
+    assert.ok(dy >= -4 && dy <= 2, `frame ${f} dy ${dy}`);
+    if (dy < 0) {
+      rises++;
+      // MoveBloober moves sideways by the same force it rises by.
+      assert.equal(Math.abs(dx), -dy, `frame ${f}`);
+    }
+    if (dy > 0) {
+      sinks++;
+      assert.equal(dx, 0);
+    }
+  }
+  assert.ok(rises > 20 && sinks > 20, `rises ${rises} sinks ${sinks}`);
+  assert.equal(blooper.warned, false);
+  assert.equal(blooper.body.frozen, true, "passes through terrain like SMB1");
+});
+
+test("opcode 43 in water runs the swimming Cheep Cheep frenzy at the right edge", () => {
+  const s = stageAt("2-2");
+  s.player.starLeft = 1e6;
+  const before = new Set(s.npcs);
+  const room = s.activeRoom;
+  let most = 0;
+  const spawned: Actor[] = [];
+  const dead = s.died();
+  // Swim right through the frenzy, so the view keeps moving.
+  for (let column = 90; column <= 160; column += 5)
+    holdAt(s, column, 2, () => {
+      most = Math.max(most, frenzied(s).length);
+      for (const n of s.npcs)
+        if (!before.has(n)) {
+          before.add(n);
+          spawned.push(n);
+          const view = (
+            s as unknown as { viewWindow(r: typeof room): { right: number } }
+          ).viewWindow(room);
+          // 32 NES px past the edge, then the spawn frame's own move.
+          const x = view.right - 32 + 80;
+          assert.ok(
+            n.body.position.x <= x && n.body.position.x >= x - 2,
+            `${n.body.position.x} vs ${x}`,
+          );
+          assert.equal(n.waterMotion?.kind, "swim");
+          assert.ok(n.frenzySlot !== undefined && n.frenzySlot <= 2);
+        }
+    });
+  assert.ok(spawned.length >= 6, `spawned ${spawned.length}`);
+  assert.ok(most <= 3 && most >= 2, `at once ${most}`);
+  // World 2 is mostly grey. Red swims twice as fast.
+  const grey = spawned.filter((n) => n.species === "grey-cheep");
+  assert.ok(grey.length > spawned.length / 2, `grey ${grey.length}`);
+  // Out of view they leave without counting as died.
+  assert.ok(spawned.some((n) => !s.npcs.includes(n)), "some swam away");
+  assert.equal(s.died(), dead);
+});
+
+test("world 7 swimming Cheep Cheeps are mostly red and swim 2px every 2 frames", () => {
+  const s = stageAt("7-2");
+  s.player.starLeft = 1e6;
+  const before = new Set(s.npcs);
+  const moves = new Map<Actor, number[]>();
+  holdAt(s, 100, 12, () => {
+    for (const n of s.npcs) {
+      if (before.has(n) && !moves.has(n)) continue;
+      if (!moves.has(n)) moves.set(n, []);
+      moves.get(n)!.push(n.body.position.x);
+    }
+  });
+  const spawned = [...moves.keys()];
+  const red = spawned.filter((n) => n.species === "red-cheep");
+  assert.ok(red.length > spawned.length / 2, `red ${red.length}/${spawned.length}`);
+  for (const [n, xs] of moves) {
+    if (xs.length < 41) continue;
+    const moved = xs[0]! - xs[40]!;
+    assert.equal(moved, n.species === "red-cheep" ? 40 : 20, n.species);
+  }
+});
+
+test("opcode 43 on land is not a Cheep Cheep frenzy", () => {
+  const s = stageAt("6-3");
+  const count = s.npcs.length;
+  holdAt(s, 120, 6);
+  assert.equal(s.npcs.filter((n) => n.kind === "fish").length, 0);
+  assert.equal(s.npcs.length, count);
+});
+
+test("opcode 42 runs flying Cheep Cheeps on 2-3 until the stop object", () => {
+  const s = stageAt("2-3");
+  s.player.starLeft = 1e6;
+  // SMB1 also creates the one grey Cheep Cheep placed on page 9.
+  const placed = s.npcs.filter((n) => n.kind === "fish");
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0]!.species, "grey-cheep");
+  assert.equal(placed[0]!.waterMotion?.kind, "swim");
+  const before = new Set(s.npcs);
+  const flyers: Actor[] = [];
+  let most = 0,
+    rose = false;
+  holdAt(s, 60, 15, () => {
+    most = Math.max(most, frenzied(s).length);
+    for (const n of s.npcs)
+      if (!before.has(n)) {
+        before.add(n);
+        flyers.push(n);
+        assert.equal(n.species, "red-cheep");
+        assert.equal(n.waterMotion?.kind, "fly");
+        // Below the screen at $f8, after the spawn frame's 5px rise.
+        assert.equal(n.body.position.y, MAP_TOP + (0xf8 - 5) * 2 + 16);
+      }
+    for (const n of flyers)
+      if (s.npcs.includes(n) && n.body.position.y < MAP_TOP + 100) rose = true;
+  });
+  assert.ok(flyers.length >= 4, `flyers ${flyers.length}`);
+  assert.ok(most <= 3);
+  assert.ok(rose, "they leap near the top of the screen");
+  // Past the stop object at column 197, no new ones.
+  holdAt(s, 215, 3);
+  const after = new Set(s.npcs);
+  holdAt(s, 215, 6);
+  assert.equal(
+    s.npcs.filter((n) => !after.has(n)).length,
+    0,
+    "the frenzy stopped",
+  );
+});
+
+test("a warned flying Cheep Cheep leaves its leap and flies to the rescue door", { timeout: 30000 }, () => {
+  const s = stageAt("2-3");
+  s.player.starLeft = 1e6;
+  const before = new Set(s.npcs);
+  let flyer: Actor | undefined;
+  holdAt(s, 60, 10, () => {
+    flyer ??= s.npcs.find(
+      (n) => !before.has(n) && n.body.position.y < MAP_TOP + 300,
+    );
+  });
+  assert.ok(flyer, "a flyer is in the air");
+  const saved = s.saved;
+  flyer.warned = true;
+  flyer.wait = 0;
+  flyer.state = "run";
+  for (let f = 0; f < 60 * 60 && !flyer.saved && flyer.alive; f++) {
+    at(s, s.activeRoom.offset + 60 * 32, 200);
+    s.step(dt, emptyInput());
+  }
+  assert.equal(flyer.alive, true);
+  assert.equal(flyer.saved, true, JSON.stringify(flyer.body.position));
+  assert.ok(s.saved >= saved + 1);
+});
+
+test("8-4 runs flying Cheep Cheeps between columns 221 and 234", () => {
+  const s = stageAt("8-4");
+  const room = s.loadRoom("65");
+  assert.equal(room.frenzyAt(room.offset + 220 * 32), undefined);
+  assert.equal(room.frenzyAt(room.offset + 221 * 32), 42);
+  assert.equal(room.frenzyAt(room.offset + 240 * 32), undefined);
 });
 
 test("lift decks are six girder tiles, four in a castle, and three when small", () => {

@@ -30,6 +30,15 @@ import {
   SWEAT_DROP_WIDTH,
 } from "../smb-sprites";
 import { WARP_TEXT, type WarpSignage } from "../warp-zone";
+import { blooperExtended } from "../water-enemies";
+
+// Texture base for a Blooper or Cheep Cheep. Grey Cheep Cheeps use sprite
+// palette 1, which is grey in water and green on land.
+function fishArt(actor: Actor, inWater: boolean) {
+  if (actor.species === "red-cheep") return "redCheep";
+  if (actor.species === "grey-cheep") return inWater ? "greyCheep" : "greenCheep";
+  return "blooper";
+}
 
 export class Play extends Phaser.Scene {
   actors = new Map<number, Phaser.GameObjects.Sprite>();
@@ -515,22 +524,25 @@ export class Play extends Phaser.Scene {
     const shown = sim.displayScale(actor);
     const smallMario = mario && shown < 1;
     const shelled = actor.kind === "koopa" && actor.shell !== "none";
+    const inWater = sim.roomFor(actor).data.type === "water";
+    const fish = actor.kind === "fish" ? fishArt(actor, inWater) : undefined;
     const base = mario
       ? smallMario
         ? "smallMario"
         : sim.marioStage === 2
           ? "fireMario"
           : "mario"
-      : actor.flower
-        ? actor.kind === "goomba"
-          ? "fireGoomba"
-          : actor.kind === "koopa"
-            ? "fireKoopa"
-            : actor.kind === "spike"
-              ? "fireSpike"
-              : "fireFish"
-        : actor.kind;
-    const inWater = sim.roomFor(actor).data.type === "water";
+      : fish
+        ? actor.flower
+          ? `fire${fish[0]!.toUpperCase()}${fish.slice(1)}`
+          : fish
+        : actor.flower
+          ? actor.kind === "goomba"
+            ? "fireGoomba"
+            : actor.kind === "koopa"
+              ? "fireKoopa"
+              : "fireSpike"
+          : actor.kind;
     const pace = walkPace(actor, inWater);
     const moving = actorWalkMoving(actor, inWater);
     const skid =
@@ -542,7 +554,22 @@ export class Play extends Phaser.Scene {
       shelled &&
       actor.shell === "stopped" &&
       actor.wakeLeft <= T.shellShake;
-    if (actor.egg) {
+    // A Blooper is short only while its interval timer is 1. Cheep Cheeps
+    // flap every 8 frames whether or not they move.
+    const tallBlooper =
+      actor.species === "blooper" &&
+      (actor.warned ||
+        actor.waterMotion?.kind !== "blooper" ||
+        blooperExtended(actor.waterMotion));
+    if (fish) {
+      sprite
+        .stop()
+        .setTexture(
+          actor.species === "blooper"
+            ? base + (tallBlooper ? "Tall" : "")
+            : base + (Math.floor((sim.elapsed * 60) / 8) % 2 ? "Walk" : ""),
+        );
+    } else if (actor.egg) {
       sprite
         .stop()
         .setTexture(
@@ -567,10 +594,12 @@ export class Play extends Phaser.Scene {
           base + (mario && !actor.grounded ? "Jump" : skid ? "Skid" : ""),
         );
     const box = actorSpriteBox(actor, shown);
+    // The tall Blooper frame is 24 NES px and drawn 3 NES px lower.
+    if (tallBlooper) box.h = 48 * shown;
     sprite.setPosition(
       Math.round(actor.body.position.x) +
         (shake && Math.floor(sim.elapsed * 16) % 2 ? shown : 0),
-      Math.round(actor.body.bounds.max.y),
+      Math.round(actor.body.bounds.max.y + (tallBlooper ? 6 * shown : 0)),
     );
     sprite.setDisplaySize(box.w, box.h).setFlipX(!actor.egg && actor.facing < 0);
     sprite.setAlpha(

@@ -60,11 +60,52 @@ export const SPINY_SHEET = {
   eggTurn: { x: 240, y: 154 },
 } as const;
 
+// Bloober frame 1 ($3c) is the short pose and frame 2 ($42) the tall one.
+// Cheep Cheep frames at y=184 face left, so they are flipped. Red is sprite
+// palette 2. Grey uses palette 1: grey in water, green on land.
+export const WATER_ENEMY_SHEET = {
+  blooperShort: { x: 390, y: 4, width: 16, height: 16 },
+  blooperTall: { x: 420, y: 0, width: 16, height: 24 },
+  cheepY: 184,
+  redCheep: [0, 30],
+  greenCheep: [120, 150],
+  greyCheep: [240, 270],
+} as const;
+
+function waterEnemySprites(enemies: HTMLImageElement) {
+  const sheet = WATER_ENEMY_SHEET;
+  const art: Record<string, HTMLCanvasElement> = {
+    blooper: crop(
+      enemies,
+      sheet.blooperShort.x,
+      sheet.blooperShort.y,
+      sheet.blooperShort.width,
+      sheet.blooperShort.height,
+    ),
+    blooperTall: crop(
+      enemies,
+      sheet.blooperTall.x,
+      sheet.blooperTall.y,
+      sheet.blooperTall.width,
+      sheet.blooperTall.height,
+    ),
+  };
+  for (const key of ["redCheep", "greenCheep", "greyCheep"] as const) {
+    const [x, walkX] = sheet[key];
+    art[key] = crop(enemies, x, sheet.cheepY, 16, 16, true);
+    art[`${key}Walk`] = crop(enemies, walkX, sheet.cheepY, 16, 16, true);
+  }
+  for (const [key, canvas] of Object.entries(art))
+    art[`fire${key[0]!.toUpperCase()}${key.slice(1)}`] = firePalette(canvas);
+  return art;
+}
+
+// Cheep Cheep animation bases, each with a Walk frame and a fire variant.
+export const CHEEP_BASES = ["redCheep", "greenCheep", "greyCheep"] as const;
+
 export function characterSprites({ mario, enemies }: SpriteSources) {
   const goomba = crop(enemies, 0, 4, 16, 16);
   const goombaWalk = crop(enemies, 30, 4, 16, 16);
-  const fish = crop(enemies, 0, 32, 16, 16, true);
-  const fishWalk = crop(enemies, 32, 32, 16, 16, true);
   const lakitu = crop(
     enemies,
     LAKITU_SHEET.ride.x,
@@ -144,8 +185,7 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
   return {
     goomba,
     goombaWalk,
-    fish,
-    fishWalk,
+    ...waterEnemySprites(enemies),
     lakitu,
     lakituDrop,
     hammerBro,
@@ -161,8 +201,6 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     koopaShellWake,
     fireGoomba: firePalette(goomba),
     fireGoombaWalk: firePalette(goombaWalk),
-    fireFish: firePalette(fish),
-    fireFishWalk: firePalette(fishWalk),
     fireSpike: firePalette(spike),
     fireSpikeWalk: firePalette(spikeWalk),
     fireKoopa: firePalette(koopa),

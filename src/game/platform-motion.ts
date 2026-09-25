@@ -72,9 +72,17 @@ export function initPlatformMotion(kind: number, y: number): PlatformMotion {
 
 const signed = (byte: number) => ((byte & 0xff) ^ 0x80) - 0x80;
 
+// The Y bytes ImposeGravity works on.
+export type GravityBytes = {
+  y: number;
+  speed: number;
+  force: number;
+  dummy: number;
+};
+
 // ImposeGravity on the Y speed, force, and dummy bytes. dir 0 pulls down only.
-function imposeGravity(
-  m: PlatformMotion,
+export function imposeGravity(
+  m: GravityBytes,
   dir: number,
   down: number,
   up: number,
