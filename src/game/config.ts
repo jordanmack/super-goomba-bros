@@ -324,18 +324,3 @@ export const VIEW_HEIGHT = 540;
 export function titleCamera() {
   return { scrollX: 0, scrollY: 0, zoom: 1 };
 }
-
-export function cameraWorldView(
-  scrollX: number,
-  scrollY: number,
-  zoom: number,
-  viewWidth: number,
-  viewHeight: number,
-) {
-  return {
-    x: scrollX + viewWidth / 2 - viewWidth / (2 * zoom),
-    y: scrollY + viewHeight / 2 - viewHeight / (2 * zoom),
-    w: viewWidth / zoom,
-    h: viewHeight / zoom,
-  };
-}

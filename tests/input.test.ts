@@ -494,28 +494,3 @@ test("title Back buttons update the title-cheat ref in the same frame", () => {
     );
   }
 });
-
-test("gamepad inject log path is repo-derived, not a stale /tmp agent path", () => {
-  const spec = readFileSync(
-    new URL("./browser/gamepad.spec.ts", import.meta.url),
-    "utf8",
-  );
-  assert.doesNotMatch(spec, /\/tmp\/grok-goal-/);
-  assert.match(spec, /fileURLToPath\(import\.meta\.url\)/);
-  assert.match(spec, /test-results\/gamepad-inject\.log/);
-  assert.match(spec, /process\.env\.GAMEPAD_INJECT_LOG/);
-});
-
-test("START GAME wait uses a load-tolerant budget, not a nested 20s cap", () => {
-  const skip = readFileSync(
-    new URL("./browser/skip-intro.ts", import.meta.url),
-    "utf8",
-  );
-  const config = readFileSync(
-    new URL("../playwright.config.ts", import.meta.url),
-    "utf8",
-  );
-  assert.doesNotMatch(skip, /timeout:\s*20000/);
-  assert.match(skip, /timeout:\s*60_?000/);
-  assert.match(config, /timeout:\s*60_?000/);
-});

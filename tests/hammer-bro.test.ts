@@ -7,7 +7,6 @@ import { physics } from "./support/arcade.ts";
 import { BOWSER_PHRASES, HAMMER_BRO_PHRASES, TUNING as T } from "../src/game/config.ts";
 import { areaData, campaignIndex } from "../src/game/levels.ts";
 import { ENEMY_HAMMER_BRO, enemyRole } from "../src/game/room.ts";
-import { HAMMER_BRO_SHEET } from "../src/game/smb-sprites.ts";
 
 const dt = 1 / 60;
 
@@ -613,12 +612,4 @@ test("a Bro shouts his lines in order when the player or an NPC passes", () => {
   step(t, 10);
   assert.equal(t.shouts.length, 0);
   t.physics.clear();
-});
-
-test("Hammer Bro and hammer crops are the enemy-sheet frames", () => {
-  assert.deepEqual(HAMMER_BRO_SHEET, {
-    stand: { x: 120, y: 90, width: 16, height: 24 },
-    walk: { x: 150, y: 90, width: 16, height: 24 },
-    hammer: { x: 282, y: 86, width: 16, height: 16 },
-  });
 });

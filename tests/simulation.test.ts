@@ -12251,6 +12251,17 @@ test("head-hit and smash item spawns do not use the cheat-drop hold", () => {
   assert.equal(flying.drop, undefined);
 });
 
+test("title does not spawn the live NPC population", () => {
+  const title = new Simulation(() => 0.5);
+  assert.equal(title.mode, "title");
+  assert.equal(title.npcs.length, 0);
+  title.reset("intro");
+  assert.equal(title.npcs.length, T.population);
+  title.reset("title");
+  assert.equal(title.mode, "title");
+  assert.equal(title.npcs.length, 0);
+});
+
 test("cheat drop ignores title, intro, dead, finishing, and pipe travel", () => {
   const title = new Simulation(() => 0.5);
   assert.equal(title.mode, "title");

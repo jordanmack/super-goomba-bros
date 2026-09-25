@@ -36,7 +36,7 @@ function crop(
 
 // Overworld Hammer Bro frames face left. (180, 90) and (210, 90) are the
 // right-facing mirrors. The hammer is the vertical frame beside that row.
-export const HAMMER_BRO_SHEET = {
+const HAMMER_BRO_SHEET = {
   stand: { x: 120, y: 90, width: 16, height: 24 },
   walk: { x: 150, y: 90, width: 16, height: 24 },
   hammer: { x: 282, y: 86, width: 16, height: 16 },
@@ -479,24 +479,6 @@ export function stampEmblemInCloth(
     }
   }
   return flag;
-}
-
-export function stampMushroomFlag(
-  flag: Uint8ClampedArray,
-  mushroom: Uint8ClampedArray,
-  width: number,
-  height: number,
-  mushroomWidth = width,
-  mushroomHeight = height,
-) {
-  return stampEmblemInCloth(
-    flag,
-    mushroom,
-    width,
-    height,
-    mushroomWidth,
-    mushroomHeight,
-  );
 }
 
 function emblemFlag(flag: HTMLCanvasElement, emblem: HTMLCanvasElement) {

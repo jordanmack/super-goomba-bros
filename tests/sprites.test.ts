@@ -15,7 +15,6 @@ import {
   SPRING_SHEET,
   stampAxe,
   stampEmblemInCloth,
-  stampMushroomFlag,
   stampSweatDrop,
   SWEAT_DROP_HEIGHT,
   SWEAT_DROP_KEY,
@@ -123,7 +122,7 @@ test("player flag scales a mushroom into the red mark only, not the whole cloth"
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) setPx(mushroom, x, y, ...cap);
   const before = new Uint8ClampedArray(flag);
-  stampMushroomFlag(flag, mushroom, W, H);
+  stampEmblemInCloth(flag, mushroom, W, H, W, H);
   assertOutsideMarkUnchanged(flag, before, PLUS_MARK);
   // 16x16 scales to the 5x5 mark, so the cap covers the mark box exactly.
   for (let y = PLUS_MARK.y0; y <= PLUS_MARK.y1; y++)
@@ -169,9 +168,11 @@ test("shipped flags keep the 16x16 pole flag and stamp only its red star", () =>
       star.y1 = Math.max(star.y1, y);
     }
   assert.deepEqual(star, { x0: 5, y0: 6, x1: 11, y1: 12 });
-  const mushroomFlag = stampMushroomFlag(
+  const mushroomFlag = stampEmblemInCloth(
     new Uint8ClampedArray(source),
     mushroom,
+    W,
+    H,
     W,
     H,
   );
