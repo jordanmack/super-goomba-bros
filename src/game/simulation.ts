@@ -76,7 +76,12 @@ import {
   type Step,
   type WaterMotion,
 } from "./water-enemies.ts";
-import { enclosedWell, firebarCrossing, planJump } from "./navigation.ts";
+import {
+  enclosedWell,
+  firebarCrossing,
+  planHop,
+  planJump,
+} from "./navigation.ts";
 import { firstEmptySpawnCell } from "./spawn-cell.ts";
 import { warpZoneSignage } from "./warp-zone.ts";
 import { stepRandomBits } from "./lfsr.ts";
@@ -5703,7 +5708,8 @@ export class Simulation {
       }
       if (this.roomFor(a).data.type === "water") continue;
       // Bloopers and Cheep Cheeps swim or leap on their own, even on land.
-      if (a.kind === "fish") {
+      // A warned one on land hops under gravity instead (#229).
+      if (a.kind === "fish" && !a.warned) {
         a.body.gravityScale = 0;
         continue;
       }
@@ -6486,7 +6492,7 @@ export class Simulation {
         this.stepSwimmer(n, n.wait > 0 ? undefined : mouth);
         continue;
       }
-      // Elsewhere, a warned swimmer leaves its SMB1 pattern for the door.
+      // On land, a warned swimmer drops its SMB1 pattern and falls to hop.
       if (n.kind === "fish" && n.body.frozen && !this.pipeIntro) {
         Body.setFrozen(n.body, false);
         Body.setVelocity(n.body, { x: 0, y: 0 });
@@ -6496,11 +6502,15 @@ export class Simulation {
         this.move(n, 0);
         continue;
       }
+      const water = room.data.type === "water";
+      if (n.kind === "fish" && !water) {
+        this.fishHop(n);
+        continue;
+      }
       if (this.tryNpcPipeEscape(n)) continue;
       // #218: in water, a warned swimmer swims to a close power-up first.
-      const water = room.data.type === "water";
-      if (water || n.kind === "fish") {
-        const prize = water ? this.easyPowerUp(n, NPC_EASY_STEP) : undefined;
+      if (water) {
+        const prize = this.easyPowerUp(n, NPC_EASY_STEP);
         const target = prize && { ...prize.body.position };
         // A new prize, none, or one that has drifted off the path's end.
         const end = n.swimPath?.at(-1);
@@ -6511,8 +6521,7 @@ export class Simulation {
           n.itemDetour = prize?.id;
           n.swimPath = undefined;
         }
-        if (water && this.strokeSwimmer(n))
-          this.strokeSwim(n, target, T.walkSpeed);
+        if (this.strokeSwimmer(n)) this.strokeSwim(n, target, T.walkSpeed);
         else this.swim(n, target);
         continue;
       }
@@ -6741,17 +6750,9 @@ export class Simulation {
     Body.setVelocity(a.body, { x: next, y: a.body.velocity.y });
   }
 
-  // Fish follow the swim path at a flat speed with gravity off. On land a
-  // warned Blooper or Cheep Cheep flies to the door: just past goalX, with
-  // its feet on the door's floor, where atDoor saves it.
+  // Fish follow the swim path at a flat speed with gravity off.
   private swim(actor: Actor, target?: { x: number; y: number }) {
     const room = this.roomFor(actor);
-    const goal = room.data.goal;
-    if (!target && room.data.type !== "water" && goal && goal.kind !== "pipe")
-      target = {
-        x: room.goalX + 8,
-        y: MAP_TOP + (goal.row + 1) * 32 - actor.body.height / 2 - 1,
-      };
     if (!actor.swimPath || actor.swimSize !== actor.body.width) {
       actor.swimPath = room.swimPath(actor, target);
       actor.swimSize = actor.body.width;
@@ -6777,6 +6778,38 @@ export class Simulation {
       y: length ? (dy / length) * pace : 0,
     });
     if (Math.abs(dx) > 1) actor.facing = Math.sign(dx);
+  }
+
+  // #229: a warned Blooper or Cheep Cheep on land hops toward the door. It
+  // never walks or flies: each landing launches the next hop, and in the air
+  // it keeps that hop's pace. Each hop takes the pace that lands farthest
+  // along on a floor, never in a pit; with none, it hops in place.
+  private fishHop(n: Actor) {
+    if (!n.grounded) {
+      this.move(n, n.navVx ?? 0);
+      return;
+    }
+    const room = this.roomFor(n);
+    const direction =
+      room.data.goal?.kind === "pipe" && n.body.position.x > room.goalX + 20
+        ? -1
+        : 1;
+    const plan = planHop(
+      n.body,
+      this.solids,
+      direction,
+      [1, 2 / 3, 1 / 3, 0].map((part) => part * T.fishHopPace),
+      T.fishHopSpeed,
+      T.npcJumpFallGravity / 3600,
+    );
+    const vx = plan?.vx ?? 0;
+    this.move(n, vx);
+    n.facing = direction;
+    this.jump(n, T.fishHopSpeed);
+    // No held-jump float: the whole hop falls at npcJumpFallGravity.
+    n.jumpHeld = false;
+    n.navVx = vx;
+    n.navDelay = 0;
   }
 
   private runningCrowd() {

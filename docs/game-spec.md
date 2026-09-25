@@ -368,8 +368,19 @@ passes through terrain as in SMB1.
   moves 1 px toward the mouth hole's height. A wobbling one moves its wobble
   center with it and still turns 15 px either side. A warned one keeps moving
   out of view and is never dropped for leaving it. It does not detour for a
-  power-up. Overlapping the mouth enters the pipe as before. On land, a warned
-  Blooper or Cheep Cheep flies to the rescue door.
+  power-up. Overlapping the mouth enters the pipe as before.
+- On land, a warned Blooper or Cheep Cheep, flying Cheep Cheeps included,
+  neither flies nor walks. It falls under `npcJumpFallGravity` onto blocks and
+  hops toward the rescue door. Each hop (`fishHopSpeed`) rises about 58 px
+  from the takeoff surface, never more than two blocks, and holds one pace in
+  the air. Of the paces 3, 2, 1, and 0 px/frame (`fishHopPace` and its
+  thirds), it takes the one that lands farthest along, leaving out any that
+  would fall into a pit. Each landing starts the next hop, so it never slides
+  along the floor. Up a staircase, each hop lands on the
+  next step. After a goal-pipe arrival, the rise out of the pipe is unchanged
+  and the first hop starts once it is out. A gap or wall that no such hop can
+  cross stops it: it hops in place at the edge. It is saved at the door as
+  before.
 - Art is from the enemy sheet: the Blooper's two frames, and the Cheep Cheep's
   two frames in red, grey in water, and green on land (sprite palette 1).
 

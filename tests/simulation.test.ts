@@ -12545,27 +12545,134 @@ test("opcode 42 runs flying Cheep Cheeps on 2-3 until the stop object", () => {
   );
 });
 
-test("a warned flying Cheep Cheep leaves its leap and flies to the rescue door", { timeout: 30000 }, () => {
+// #229: the hops of a warned fish on land. Each starts at the feet it
+// took off from, and keeps its apex and its held pace on every frame.
+type Hop = { x: number; feet: number; apex: number; vx: number[] };
+function trackHops(
+  s: Simulation,
+  fish: Actor,
+  frames: number,
+  each?: () => void,
+) {
+  const hops: Hop[] = [];
+  const room = s.roomFor(fish);
+  let feet = fish.body.bounds.max.y,
+    vy = fish.body.velocity.y,
+    x = fish.body.position.x,
+    slid = 0;
+  for (let f = 0; f < frames && !fish.saved && fish.alive; f++) {
+    each?.();
+    s.step(dt, emptyInput());
+    if (fish.saved) break;
+    const v = fish.body.velocity;
+    if (v.y < -6 && vy > -1)
+      hops.push({ x: fish.body.position.x, feet, apex: feet, vx: [] });
+    const hop = hops.at(-1);
+    if (hop) {
+      hop.apex = Math.min(hop.apex, fish.body.bounds.max.y);
+      // The pace it holds; a wall it presses against zeros only the body's.
+      hop.vx.push(fish.navVx ?? NaN);
+    }
+    assert.equal(
+      overlaps(fish.body, room.solids, 1).length,
+      0,
+      `inside a block at ${JSON.stringify(fish.body.position)}`,
+    );
+    // Resting twice in a row at one height while moving is a slide.
+    if (vy === 0 && v.y === 0 && fish.body.bounds.max.y === feet && fish.body.position.x !== x)
+      slid++;
+    feet = fish.body.bounds.max.y;
+    vy = v.y;
+    x = fish.body.position.x;
+  }
+  assert.equal(slid, 0, "never slides along the floor");
+  for (const hop of hops.slice(0, -1)) {
+    const rise = hop.feet - hop.apex;
+    assert.ok(rise >= 48 && rise <= 64, `rise ${rise}`);
+    // No steering in the air: one pace for the whole hop.
+    assert.ok(hop.vx.every((vx) => vx === hop.vx[0]), JSON.stringify(hop.vx));
+  }
+  return hops;
+}
+
+test("a warned fish climbs the 2-2 ending stairs by hops instead of a straight line over the wall", { timeout: 30000 }, () => {
+  const s = stageAt("2-2");
+  s.marioActive = false;
+  const fish = s.npcs
+    .filter((n) => n.species === "blooper" && n.areaId === s.level.main)
+    .sort((a, b) => b.body.position.x - a.body.position.x)[0]!;
+  parkNpcs(s, [fish]);
+  warnNow(fish);
+  for (let f = 0; f < 60 * 30 && fish.areaId !== "25"; f++)
+    s.step(dt, emptyInput());
+  assert.equal(fish.areaId, "25");
+  // The rise out of the goal pipe stays, straight up.
+  const riseX = fish.body.position.x;
+  while (fish.pipeTravel) {
+    s.step(dt, emptyInput());
+    if (fish.pipeTravel) assert.equal(fish.body.position.x, riseX);
+  }
+  const hops = trackHops(s, fish, 60 * 30);
+  assert.equal(fish.saved, true, JSON.stringify(fish.body.position));
+  const row = (feet: number) => (feet - MAP_TOP) / 32;
+  const rows = hops.map((hop) => row(hop.feet));
+  // Off the pipe (row 11), one step per hop up to the top (row 5).
+  for (let top = 10; top >= 5; top--)
+    assert.ok(rows.includes(top), `lands on row ${top}: ${rows}`);
+  for (let i = 1; i < hops.length; i++)
+    assert.ok(rows[i]! >= rows[i - 1]! - 1, `one step at a time: ${rows}`);
+  // Down the far side, it still hops on the flat floor to the door.
+  const floor = hops.filter((hop) => hop.feet === T.groundY);
+  assert.ok(floor.length >= 2, `floor hops ${floor.length}`);
+});
+
+test("a warned flying Cheep Cheep drops out of its leap and hops, and hops the 2-3 ending to the door", { timeout: 30000 }, () => {
   const s = stageAt("2-3");
   s.player.starLeft = 1e6;
+  const room = s.activeRoom;
+  const column = (x: number) => (x - room.offset) / 32;
   const before = new Set(s.npcs);
   let flyer: Actor | undefined;
-  holdAt(s, 60, 10, () => {
-    flyer ??= s.npcs.find(
-      (n) => !before.has(n) && n.body.position.y < MAP_TOP + 300,
+  // In the air over the long bridge (columns 12 to 63, top row 10).
+  for (let f = 0; f < 60 * 10 && !flyer; f++) {
+    at(s, room.offset + 40 * 32 + 16, 200);
+    s.step(dt, emptyInput());
+    flyer = s.npcs.find(
+      (n) =>
+        !before.has(n) &&
+        n.body.position.y < MAP_TOP + 250 &&
+        column(n.body.position.x) > 20 &&
+        column(n.body.position.x) < 56,
     );
-  });
+  }
   assert.ok(flyer, "a flyer is in the air");
-  const saved = s.saved;
-  flyer.warned = true;
-  flyer.wait = 0;
-  flyer.state = "run";
-  for (let f = 0; f < 60 * 60 && !flyer.saved && flyer.alive; f++) {
-    at(s, s.activeRoom.offset + 60 * 32, 200);
+  const fish = flyer;
+  warnNow(fish);
+  const away = () => at(s, room.offset + 2 * 32, 200);
+  // It does not fly: it falls until it lands on the bridge.
+  let vy = -Infinity;
+  for (let f = 0; f < 60 * 3 && fish.body.velocity.y >= vy; f++) {
+    vy = fish.body.velocity.y;
+    away();
     s.step(dt, emptyInput());
   }
-  assert.equal(flyer.alive, true);
-  assert.equal(flyer.saved, true, JSON.stringify(flyer.body.position));
+  assert.equal(fish.body.frozen, false);
+  assert.equal(fish.body.bounds.max.y, MAP_TOP + 10 * 32, "on the bridge");
+  // It hops right to the 4-column gap at column 64 and no farther.
+  const hops = trackHops(s, fish, 60 * 12, away);
+  assert.ok(fish.alive && !fish.saved);
+  assert.ok(hops.length >= 10, `hops ${hops.length}`);
+  const x = column(fish.body.position.x);
+  assert.ok(x > 62.5 && x < 64.5, `stops at the gap: column ${x}`);
+  // From the last bridge, it hops down, then up the staircase to the door.
+  const saved = s.saved;
+  Body.setPosition(fish.body, {
+    x: room.offset + 186 * 32 + 16,
+    y: MAP_TOP + 10 * 32 - fish.body.height / 2,
+  });
+  Body.setVelocity(fish.body, { x: 0, y: 0 });
+  trackHops(s, fish, 60 * 30, away);
+  assert.equal(fish.saved, true, JSON.stringify(fish.body.position));
   assert.ok(s.saved >= saved + 1);
 });
 

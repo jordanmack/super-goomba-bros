@@ -177,6 +177,63 @@ export function planJump(
   )[0];
 }
 
+// A warned fish's hop on land (#229). Each pace flies a discrete 60 Hz arc
+// with one gravity, sliding along a wall face as Arcade does, to its first
+// landing. An arc that falls below the ground line has no floor and is left
+// out. Returns the pace that lands farthest along `direction`, or undefined.
+export function planHop(
+  body: Body,
+  solids: Body[],
+  direction: number,
+  paces: number[],
+  impulse: number,
+  gravity: number,
+) {
+  const half = body.width / 2,
+    tall = body.height / 2;
+  const start = body.position;
+  const nearby = solids.filter(
+    (s) => s.bounds.max.x > start.x - 300 && s.bounds.min.x < start.x + 300,
+  );
+  let best: { vx: number; x: number; y: number } | undefined;
+  for (const pace of paces) {
+    const vx = pace * direction;
+    let x = start.x,
+      y = start.y,
+      vy = -impulse,
+      landing: Point | undefined;
+    for (let frame = 0; frame < 140 && !landing && y < 630; frame++) {
+      const oldX = x,
+        oldY = y;
+      vy += gravity;
+      x += vx;
+      y += vy;
+      for (const solid of nearby) {
+        const b = solid.bounds;
+        if (
+          x + half <= b.min.x ||
+          x - half >= b.max.x ||
+          y + tall <= b.min.y ||
+          y - tall >= b.max.y
+        )
+          continue;
+        if (vy > 0 && oldY + tall <= b.min.y + 0.1 && !solid.headOnly) {
+          if (b.min.y <= T.groundY + 0.5) landing = { x, y: b.min.y - tall };
+          else y = 630;
+          break;
+        }
+        if (vy < 0 && oldY - tall >= b.max.y - 0.1) {
+          y = b.max.y + tall;
+          vy = 0;
+        } else if (!solid.headOnly) x = oldX;
+      }
+    }
+    if (landing && (!best || (landing.x - best.x) * direction > 0))
+      best = { vx, ...landing };
+  }
+  return best;
+}
+
 // Frame-by-frame walk from here to exitX: 1 steps at vx, 0 holds. Undefined
 // when no route stays off every bar and every x where `wall` is true. A
 // crossing usually advances, waits out a ball, then advances again.

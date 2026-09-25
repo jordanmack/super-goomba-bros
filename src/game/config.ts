@@ -107,6 +107,11 @@ export const TUNING = {
   swimFallSpeed: 3,
   // Fish follow the swim path at this flat speed.
   npcSwimSpeed: 2,
+  // A warned fish on land hops (#229). Under npcJumpFallGravity this impulse
+  // rises about 58 px, under two blocks. Each hop takes whichever of
+  // fishHopPace and its thirds lands farthest along on a floor.
+  fishHopSpeed: 7.2,
+  fishHopPace: 3,
   // Mario's water pace keeps the land shape with smaller numbers. Idle is
   // 2.8 + 0.2 * crowd pressure, chasing 3.2 + 0.4 * crowd pressure.
   marioSwimPace: 2.8,
