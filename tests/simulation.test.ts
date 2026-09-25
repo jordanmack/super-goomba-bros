@@ -12369,6 +12369,35 @@ test("a calm NPC waits out a plant and crosses; with Mario near it panics", () =
   assert.equal(sim.plantAhead(n, 1), false);
 });
 
+// #217: jump arcs keep off a rising plant, not just the walk up to its pipe.
+test("an NPC's jump arc keeps off a Piranha Plant's rise", () => {
+  const { s, room, plant } = plantStage();
+  const ground = MAP_TOP + 13 * 32;
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  n.areaId = room.data.id;
+  n.warned = true;
+  pin(n, plant.x - 200, ground);
+  // Rising now, 1 px every other frame from 4 px out.
+  plant.motion = { rise: 4, speed: -1, moving: true, timer: 0 };
+  const sim = s as unknown as {
+    npcPlantClear(
+      a: Actor,
+    ): ((point: { x: number; y: number; frames: number }) => boolean) | undefined;
+  };
+  const clear = sim.npcPlantClear(n);
+  assert.ok(clear, "a room with plants times them");
+  // Where its box will be 30 frames on: 19 px out, top 38 px above the lid.
+  const at = plant.pipeTop - 19 * 2 + 34;
+  assert.equal(clear({ x: plant.x, y: at, frames: 30 }), false);
+  assert.equal(clear({ x: plant.x + 120, y: at, frames: 30 }), true);
+  assert.equal(clear({ x: plant.x, y: at - 120, frames: 30 }), true);
+  // With Mario near, the NPC panics and does not time it.
+  s.marioActive = true;
+  s.mario.areaId = room.data.id;
+  pin(s.mario, plant.x - 300, ground);
+  assert.equal(sim.npcPlantClear(n), undefined);
+});
+
 test("with Mario near, NPCs stop timing firebars too", () => {
   const s = stageAt("1-4");
   const room = s.activeRoom;

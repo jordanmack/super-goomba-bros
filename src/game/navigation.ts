@@ -100,13 +100,19 @@ export function planJump(
         let landed = false,
           blocked = false;
         for (const solid of nearby) {
-          let b = solid.bounds;
+          let b = solid.bounds,
+            was = b;
           if (solid.motion) {
-            const { x: mx, y: my } = solid.motion.at(frame);
-            b = {
-              min: { x: mx - solid.width / 2, y: my - solid.height / 2 },
-              max: { x: mx + solid.width / 2, y: my + solid.height / 2 },
-            };
+            const box = (at: Point) => ({
+              min: { x: at.x - solid.width / 2, y: at.y - solid.height / 2 },
+              max: { x: at.x + solid.width / 2, y: at.y + solid.height / 2 },
+            });
+            b = box(solid.motion.at(frame));
+            // Which side the body came from is judged against where the
+            // solid was a frame ago. A lift sinking onto a rising head
+            // otherwise reads as neither a ceiling nor a side, and the arc
+            // passes through it.
+            was = box(solid.motion.at(Math.max(0, frame - 1)));
           }
           if (
             x + half <= b.min.x ||
@@ -115,7 +121,7 @@ export function planJump(
             y - tall >= b.max.y
           )
             continue;
-          if (vy > 0 && oldY + tall <= b.min.y + 0.1 && !solid.headOnly) {
+          if (vy > 0 && oldY + tall <= was.min.y + 0.1 && !solid.headOnly) {
             const progress = (x - start.x) * direction;
             // Pace 0 has no horizontal progress. Count it only for a lower
             // floor, so a body still standing on its ledge does not "land".
@@ -124,6 +130,9 @@ export function planJump(
             if (
               (progress > 16 || verticalDrop) &&
               b.max.x - b.min.x >= half &&
+              // No floor lies below the ground line. A lift down there is
+              // sinking out of a pit, not a landing.
+              b.min.y <= T.groundY + 0.5 &&
               // The touchdown cell is part of the arc, so it gets the same
               // hazard probe as every airborne frame before it.
               (!clear ||
@@ -143,14 +152,14 @@ export function planJump(
             landed = true;
             break;
           }
-          if (vy < 0 && oldY - tall >= b.max.y - 0.1) {
+          if (vy < 0 && oldY - tall >= was.max.y - 0.1) {
             y = b.max.y + tall;
             vy = 0;
             continue;
           }
           if (
             !solid.headOnly &&
-            (oldX + half <= b.min.x + 0.1 || oldX - half >= b.max.x - 0.1)
+            (oldX + half <= was.min.x + 0.1 || oldX - half >= was.max.x - 0.1)
           ) {
             blocked = true;
             break;

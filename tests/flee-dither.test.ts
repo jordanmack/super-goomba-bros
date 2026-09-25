@@ -463,13 +463,17 @@ test("unwarned patrol, Mario, a swimmer, Lakitu, a shell, and a firebar plan do 
   guard.wait = 0;
   let followed = 0;
   let barHop = false;
+  let dithered = false;
   for (let frame = 0; frame < 60 * 25 && guard.alive && !guard.saved; frame++) {
     const plan = guard.navFirebarGo;
     const stepIndex = plan?.step;
     const moves = plan?.moves;
     castle.step(dt, emptyInput());
-    if ((guard.fleeHold ?? 0) > 0 || (guard.fleeEdge ?? 0) > 0 || guard.fleeEarly)
-      barHop = true;
+    const choice =
+      (guard.fleeHold ?? 0) > 0 || (guard.fleeEdge ?? 0) > 0 || guard.fleeEarly;
+    // #217: the approach in a firebar room varies, the bar plan does not.
+    if (choice && (plan || guard.navFirebarGo)) barHop = true;
+    if (choice) dithered = true;
     if (
       plan &&
       moves &&
@@ -485,8 +489,100 @@ test("unwarned patrol, Mario, a swimmer, Lakitu, a shell, and a firebar plan do 
       followed++;
     }
   }
-  assert.equal(barHop, false, "firebar room took a flee dither choice");
+  assert.equal(barHop, false, "a firebar plan took a flee dither choice");
+  assert.equal(dithered, true, "the firebar room approach never varied");
   assert.ok(followed > 0, "firebar plan never played");
   assert.equal(guard.alive, true, "firebar NPC died");
   castle.physics.clear();
+});
+
+// #217: a pack warned together splits up.
+test("a crowd warned together takes different jumps at different spots", { timeout: 120000 }, () => {
+  const sim = new Simulation(mulberry32(7), physics());
+  sim.reset();
+  sim.marioReturn = 1e6;
+  sim.timeLeft = 9999;
+  const pack = sim.npcs.filter((n) => n.kind !== "fish").slice(0, 6);
+  for (const npc of sim.npcs) if (!pack.includes(npc)) sim.physics.remove(npc.body);
+  sim.npcs = pack;
+  parkPlayer(sim);
+  const room = sim.roomFor(pack[0]!);
+  pack.forEach((n, i) => {
+    stand(n, room.offset + 200 + i * 12);
+    n.warned = true;
+    n.state = "run";
+    n.wait = 0;
+    n.scale = 1;
+  });
+  const takeoffs = pack.map(() => [] as number[]);
+  const was = pack.map((n) => n.grounded);
+  for (let frame = 0; frame < 60 * 12; frame++) {
+    sim.step(dt, emptyInput());
+    pack.forEach((n, i) => {
+      if (was[i] && !n.grounded && n.body.velocity.y < -1)
+        takeoffs[i]!.push(Math.round((n.body.position.x - room.offset) / 16));
+      was[i] = n.grounded;
+    });
+  }
+  for (const n of pack) assert.equal(n.alive, true, "Mario is far, so every jump is safe");
+  const patterns = new Set(takeoffs.map((list) => list.join(",")));
+  assert.ok(patterns.size >= 4, `jumps ${JSON.stringify(takeoffs)}`);
+  // Somebody jumps where somebody else keeps running.
+  const spots = new Set(takeoffs.flat());
+  const shared = [...spots].filter((spot) =>
+    takeoffs.every((list) => list.includes(spot)),
+  );
+  assert.ok(shared.length < spots.size, `jumps ${JSON.stringify(takeoffs)}`);
+  sim.physics.clear();
+});
+
+test("a room with moving platforms still varies the approach", { timeout: 180000 }, () => {
+  let varied = false;
+  const notes: unknown[] = [];
+  for (let seed = 1; seed <= 12 && !varied; seed++) {
+    const run = watchFlee(seed, 60 * 8, "1-3", 120);
+    notes.push(run.report);
+    assert.equal(run.runnerAlive, true, `seed ${seed} ${JSON.stringify(run.report)}`);
+    varied = run.report.hop || run.report.hesitate || run.report.early || run.report.late;
+  }
+  assert.ok(varied, JSON.stringify(notes));
+});
+
+test("with Mario near, a panicked NPC can leap a gap it has no landing for", { timeout: 120000 }, () => {
+  let leapt = 0;
+  const seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  for (const seed of seeds) {
+    const sim = new Simulation(mulberry32(seed), physics());
+    sim.reset();
+    sim.marioReturn = 1e6;
+    sim.timeLeft = 9999;
+    const runner = sim.npcs.find((n) => n.kind !== "fish")!;
+    keepOnly(sim, runner);
+    parkPlayer(sim);
+    const room = sim.roomFor(runner);
+    const lip = room.offset + 400;
+    openPit(sim, lip);
+    stand(runner, lip - 220);
+    runner.warned = true;
+    runner.state = "run";
+    runner.wait = 0;
+    // Mario stays near, standing still, so the NPC panics.
+    sim.marioActive = true;
+    sim.mario.alive = true;
+    sim.mario.areaId = room.data.id;
+    Body.setFrozen(sim.mario.body, true);
+    for (let frame = 0; frame < 60 * 8 && runner.alive; frame++) {
+      Body.setPosition(sim.mario.body, {
+        x: runner.body.position.x - 200,
+        y: T.groundY - 40,
+      });
+      sim.cameraX = runner.body.position.x - 300;
+      sim.step(dt, emptyInput());
+    }
+    // The pit has no landing, so a leap is a fall and the existing death.
+    if (!runner.alive) leapt++;
+    sim.physics.clear();
+  }
+  assert.ok(leapt > 0, "no panicked NPC ever leapt the gap");
+  assert.ok(leapt < seeds.length, "every panicked NPC leapt; some should hold");
 });

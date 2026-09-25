@@ -406,18 +406,36 @@ kind that wakes unwarned starts its patrol again.
 
 Warned NPCs move toward a rescue door. They plan landings, use platforms and
 springs, back up for higher routes, and find lower paths through castle passages
-and down from a ceiling above an exit. A fleeing NPC that meets a non-goal
+and down from a ceiling above an exit. A planned arc meets a moving platform
+where it will be each frame, and whether the body hits it from below, above, or
+the side is judged by where the platform was the frame before, so a lift sinking
+onto a rising head is a ceiling. No landing lies below the ground line, so a
+lift sinking out of a pit is not one. After backing up in a room with a firebar
+or a moving platform, the NPC plans the jump again from where it stands. A fleeing NPC that meets a non-goal
 enterable pipe may duck in and count as saved after the entry animation.
-A warned land NPC fleeing to a door does not repeat one path. The choices
-come from that NPC's traits, which are drawn from the simulation random
-stream, so one seed replays the same path. On ground
-that stays safe ahead, the NPC sometimes makes a short hop and lands on that
-same ground. At a pit, a hole, or a break between platforms, the NPC sometimes
-leaves before the lip and sometimes waits a short time at the edge, then goes.
-Each of those jumps has a planned landing that is safe. The NPC sometimes stops
-briefly, then runs again. A stop always ends. Mario, an unwarned patrol, a
-swimmer, Lakitu, a shell, and a room with a firebar or a moving platform do
-not use these choices. A firebar crossing stays on its timer. A gap that would kill the NPC is not taken.
+A warned land NPC fleeing to a door does not repeat one path, and a crowd
+warned together splits up: each NPC makes its own choices, at its own spots.
+The choices come from that NPC's traits, which are drawn from the simulation
+random stream, so one seed replays the same path.
+
+- With Mario not near (the 340 px panic range), every jump is a smart one. On
+  ground that stays safe ahead, the NPC hops about three times in ten, every
+  32-64 frames of its own, and lands on that same ground, or stops for 6-13
+  frames. At a pit, a hole, or a break between platforms, it leaves before the
+  lip three times in ten, or waits 6-17 frames at the edge three times in ten,
+  then goes. Each of those jumps has a planned landing that is safe, and a gap
+  that would kill the NPC is not taken.
+- With Mario near, the jumps are panicked. On open ground it hops without a
+  planned landing. At a lip it may leave early (60-120 px out), make a short
+  standing hop from the edge, or wait at the edge and go late, and none of
+  those is checked for a landing. At a gap it has no landing for, it may leap
+  anyway, deciding once per lip. A miss uses the existing results, such as a
+  fall, and the others keep going.
+- A stop always ends. These choices also apply in rooms with a firebar or a
+  moving platform, but not within 200 px of a firebar's zone or while walking
+  its timed crossing, which stays on its timer, and not within 200 px of a
+  moving platform. Mario, an unwarned patrol, a swimmer, Lakitu, and a shell
+  do not use these choices.
 Swimmers, including warned fish, route around coral and pipes toward the rescue
 door. They do not route around actors. Mario swimming through a pack hurts at
 most one NPC per 0.15s reaction lock; that lock is the bound, not a water dash.
@@ -689,7 +707,8 @@ DIED. The player cannot rescue it.
   player and NPCs, adds NPC deaths to DIED, and can damage Mario. A star or an
   8x body makes the player immune.
 - A calm NPC waits short of a pipe whose plant is up or moving, including
-  before it ducks into that pipe. Once it is within 66 px the plant stays down,
+  before it ducks into that pipe. Its jump arcs also keep off a plant's rise,
+  replayed from the plant's cycle with the holders it has at takeoff. Once it is within 66 px the plant stays down,
   so the crossing is safe. With Mario within 340 px the NPC panics and may run
   into the plant and die.
 - SMB1 loads an area with its plants down, so the player always rises clear

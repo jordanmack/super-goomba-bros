@@ -51,6 +51,7 @@ import {
   enemyRole,
   plantHurtBox,
   podobooHurtBox,
+  type Plant,
   type Podoboo,
 } from "./room.ts";
 import {
@@ -618,6 +619,8 @@ const PODOBOO_SLACK = 30;
 // Frames of each Podoboo's leap replayed ahead for NPC timing. It covers the
 // firebar walking plan's horizon.
 const PODOBOO_TRACK = 480;
+// Frames of each plant's cycle replayed ahead for NPC jump arcs.
+const PLANT_TRACK = 160;
 // #214 starts. A red Koopa needs a ledge this near on its floor. A hopper
 // needs its 43 NES px hop plus a margin clear above it. A green flyer sweeps
 // 95 NES px left and back and sways 16.
@@ -628,6 +631,12 @@ const FLY_SWAY = 16;
 // A flyer's start is searched this many columns either side of its slot.
 const FLY_SEARCH = 8;
 const FLY_LIFT_MAX = 288;
+// #217: flee dither keeps this far from a firebar zone or a moving platform
+// ahead. A panicked NPC hops at FLEE_HOP_IMPULSE, and leaps a gap with no
+// landing when its roll there is under PANIC_LEAP.
+const DITHER_CLEAR = 200;
+const FLEE_HOP_IMPULSE = 4;
+const PANIC_LEAP = 0.35;
 // Frames and px either side a patrol's landing is looked for.
 const PATROL_LOOKAHEAD = 240;
 // Unwarned patrols turn this far short of the goal.
@@ -1350,6 +1359,7 @@ export class Simulation {
     Podoboo,
     { next: number; ys: Int16Array }
   >();
+  private plantTracks = new WeakMap<Plant, { frame: number; rises: Int8Array }>();
   // FrenzyEnemyTimer (frames) and BitMFilter for the Cheep Cheep frenzies.
   private frenzyTimer = 0;
   private cheepHeights = 0;
@@ -2751,6 +2761,14 @@ export class Simulation {
         half + PODOBOO_MARGIN,
         tall + PODOBOO_MARGIN,
         point.frames,
+      ) &&
+      !this.plantHits(
+        room,
+        point.x,
+        point.y,
+        half + PODOBOO_MARGIN,
+        tall + PODOBOO_MARGIN,
+        point.frames,
       );
   }
   // Jump plan from the body that is about to leave the ground. Backoff stores
@@ -2780,7 +2798,7 @@ export class Simulation {
       undefined,
       false,
       undefined,
-      this.npcFirebarClear(a),
+      this.npcFirebarClear(a) ?? this.npcPlantClear(a),
     );
   }
   // Stable outer edge of the floor under the body, across abutting rects.
@@ -2971,14 +2989,15 @@ export class Simulation {
       a.shell !== "none" ||
       a.navDetourBelow ||
       room.data.type === "water" ||
-      room.firebars.length ||
-      room.platforms.length > 0 ||
-      room.onSpring(a)
+      room.onSpring(a) ||
+      this.ditherBlocked(a, direction)
     ) {
       this.clearFlee(a);
       return false;
     }
     if ((a.navRetry ?? 0) > 0) return false;
+    // #217: with Mario near, the jumps are panicked, not planned.
+    const panic = this.marioThreat(a);
     if (a.fleeGrid !== undefined) {
       const speed = this.runSpeedFor(a);
       const mod = (value: number) => ((value % speed) + speed) % speed;
@@ -3015,6 +3034,7 @@ export class Simulation {
     }
     if (reach <= 140) {
       const lipKey = Math.round(lip);
+      if (panic) return this.panicLip(a, direction, reach, lipKey);
       if (a.fleeLip !== lipKey) {
         a.fleeLip = lipKey;
         // No safe arc from the lip: do not pause or leave early. The old
@@ -3040,12 +3060,13 @@ export class Simulation {
           // Traits already came from the simulation random stream. A new
           // draw here would shift Mario and pipe rolls.
           const roll = this.fleeRoll(a, 1, lipKey);
-          if (roll < 0.2) {
+          if (roll < 0.3) {
             a.fleeEarly = true;
             a.fleeEdge = 0;
-          } else if (roll < 0.45) {
+          } else if (roll < 0.6) {
+            // A pause at the edge, its length from the NPC's own traits.
             a.fleeEarly = false;
-            a.fleeEdge = 6;
+            a.fleeEdge = 6 + Math.floor(this.fleeRoll(a, 3, lipKey) * 12);
           } else {
             a.fleeEarly = false;
             a.fleeEdge = 0;
@@ -3069,18 +3090,74 @@ export class Simulation {
       a.fleeLock -= 1;
       return false;
     }
-    const roll = this.fleeRoll(a, 2, Math.round(a.body.position.x / 96));
-    if (roll < 0.16 && this.tryFleeHop(a, direction, solids, lip)) {
-      a.fleeLock = 48;
+    const key = Math.round(a.body.position.x / 96);
+    const roll = this.fleeRoll(a, 2, key);
+    const cadence = 32 + Math.floor(this.fleeRoll(a, 4, key) * 32);
+    if (panic && roll < 0.3) {
+      // An unplanned hop, wherever it lands.
+      this.launchJump(a, direction * this.runSpeedFor(a), FLEE_HOP_IMPULSE, 0);
+      a.fleeLock = cadence;
       return true;
     }
-    if (roll < 0.28) {
-      a.fleeHold = 6;
-      a.fleeLock = 64;
+    if (roll < 0.3 && this.tryFleeHop(a, direction, solids, lip)) {
+      a.fleeLock = cadence;
+      return true;
+    }
+    if (roll < 0.42) {
+      a.fleeHold = 6 + Math.floor(this.fleeRoll(a, 6, key) * 8);
+      a.fleeLock = cadence + 16;
       this.move(a, 0);
       return true;
     }
-    a.fleeLock = 48;
+    a.fleeLock = cadence;
+    return false;
+  }
+
+  // Dither stays out of a timed hazard's way: a firebar's zone or walking
+  // plan, and a moving platform, near the NPC or just ahead of it.
+  private ditherBlocked(a: Actor, direction: number) {
+    const room = this.roomFor(a);
+    const p = a.body.position;
+    if (room.firebars.length) {
+      if (a.navFirebarGo) return true;
+      const zone = this.firebarZone(a, direction);
+      if (zone && (zone.hold - p.x) * direction < DITHER_CLEAR) return true;
+    }
+    return room.platforms.some((platform) => {
+      const b = platform.body.bounds;
+      const near = direction > 0 ? [p.x - 64, p.x + DITHER_CLEAR] : [p.x - DITHER_CLEAR, p.x + 64];
+      return b.max.x > near[0]! && b.min.x < near[1]!;
+    });
+  }
+
+  // #217: a panicking NPC at a lip leaves early, short, or late, from its
+  // own traits, with no planned landing. Some of those miss.
+  private panicLip(a: Actor, direction: number, reach: number, lipKey: number) {
+    const roll = this.fleeRoll(a, 7, lipKey);
+    const pace = this.runSpeedFor(a);
+    if (roll < 0.3) {
+      const at = 60 + this.fleeRoll(a, 8, lipKey) * 60;
+      if (reach <= at && a.fleeLip !== lipKey) {
+        a.fleeLip = lipKey;
+        this.launchJump(a, direction * pace, jumpArc(pace).impulse, 0);
+        a.fleeLock = 24;
+        return true;
+      }
+      return false;
+    }
+    if (roll < 0.5) {
+      if (reach <= 24 && a.fleeLip !== lipKey) {
+        a.fleeLip = lipKey;
+        this.launchJump(a, direction * pace, STANDING_JUMP_IMPULSE, 0);
+        a.fleeLock = 24;
+        return true;
+      }
+      return false;
+    }
+    if (roll < 0.65 && a.fleeLip !== lipKey) {
+      a.fleeLip = lipKey;
+      a.fleeEdge = 10 + Math.floor(this.fleeRoll(a, 9, lipKey) * 10);
+    }
     return false;
   }
   private autoJump(a: Actor, direction: number) {
@@ -3135,6 +3212,9 @@ export class Simulation {
       return;
     }
     const firebarFree = this.npcFirebarClear(a);
+    // Jump arcs also keep off a Piranha Plant's rise. Only the arcs: a plant
+    // does not switch on the firebar room's other rules.
+    const hazardFree = firebarFree ?? this.npcPlantClear(a);
     // A bar mounted at walking height can only be jumped, so a halt falls
     // through to the jump planner instead of standing until a ball arrives.
     // A panicked NPC, with Mario near, does not time the bars at all.
@@ -3269,7 +3349,7 @@ export class Simulation {
           (landing) => landing.y > p.y + 16,
           true,
           undefined,
-          firebarFree,
+          hazardFree,
           0,
           !!a.navDetourBelow,
         );
@@ -3331,7 +3411,7 @@ export class Simulation {
         firebarLandingFree,
         true,
         undefined,
-        firebarFree,
+        hazardFree,
         0,
       );
       // The replay forces navDelay 0, so a delayed arc is not the one cleared.
@@ -3359,7 +3439,7 @@ export class Simulation {
       (landing) => !firebarLandingFree || firebarLandingFree(landing),
       dropDown,
       undefined,
-      firebarFree,
+      hazardFree,
     );
     if (launch) {
       this.launchJump(a, launch.vx, impulse, launch.delay);
@@ -3375,7 +3455,7 @@ export class Simulation {
           (!firebarLandingFree || firebarLandingFree(landing)),
         false,
         undefined,
-        firebarFree,
+        hazardFree,
       );
       if (reverse) {
         this.launchJump(a, reverse.vx, impulse, reverse.delay);
@@ -3394,7 +3474,7 @@ export class Simulation {
           firebarLandingFree,
           false,
           undefined,
-          firebarFree,
+          hazardFree,
           // A firebar replay flies delay 0, so that is the arc to rank.
           // Elsewhere a delayed option is still accepted, then flown with no hold.
           firebarFree ? 0 : undefined,
@@ -3405,6 +3485,20 @@ export class Simulation {
           a.navDelay = 0;
           return;
         }
+      }
+      // #217: a panicking NPC may leap a gap it has no landing for. It
+      // decides once per lip, so backing off and coming again does not roll
+      // again.
+      const edge = this.floorLip(a, direction, this.solids, feet);
+      if (
+        !wall &&
+        !supported &&
+        edge !== undefined &&
+        this.marioThreat(a) &&
+        this.fleeRoll(a, 5, Math.round(edge)) < PANIC_LEAP
+      ) {
+        this.launchJump(a, direction * pace, impulse, 0);
+        return;
       }
       a.navRetry = 0.15;
       if (support && !support.motion && !room.onSpring(a)) {
@@ -3441,7 +3535,7 @@ export class Simulation {
             undefined,
             false,
             undefined,
-            firebarFree,
+            hazardFree,
           );
           if (
             retry &&
@@ -3467,7 +3561,7 @@ export class Simulation {
             (!firebarLandingFree || firebarLandingFree(landing)),
           false,
           undefined,
-          firebarFree,
+          hazardFree,
         );
         if (reverse) {
           this.launchJump(a, reverse.vx, impulse, reverse.delay);
@@ -6362,8 +6456,10 @@ export class Simulation {
         const target = n.navBackoff;
         if (n.grounded && Math.abs(p.x - target.x) <= n.speed) {
           // Firebar clearance belongs to the body that jumps, not the probe
-          // that picked this x. Re-solve here. Other rooms keep the stored arc.
-          if (this.roomFor(n).firebars.length) {
+          // that picked this x, and a moving platform has moved since the
+          // probe. Re-solve here. Other rooms keep the stored arc.
+          const backRoom = this.roomFor(n);
+          if (backRoom.firebars.length || backRoom.platforms.length) {
             const solved = this.resolveBackoff(n);
             n.navBackoff = undefined;
             if (solved) {
@@ -7878,17 +7974,75 @@ export class Simulation {
   private updatePlants() {
     for (const room of this.rooms.values()) {
       if (!room.plants.length) continue;
-      const holders = [this.player, ...this.npcs].filter(
-        (a) => a.alive && !a.saved && this.roomFor(a) === room,
-      );
       for (const plant of room.plants) {
         if (room.plantGone(plant)) continue;
-        const near = holders.some(
-          (a) => Math.abs(a.body.position.x - plant.x) < PLANT_CLEAR * 2,
-        );
-        stepPlant(plant.motion, this.frame, near);
+        stepPlant(plant.motion, this.frame, this.plantHeld(room, plant));
       }
     }
+  }
+
+  private plantHeld(room: Room, plant: Plant) {
+    return [this.player, ...this.npcs].some(
+      (a) =>
+        a.alive &&
+        !a.saved &&
+        this.roomFor(a) === room &&
+        Math.abs(a.body.position.x - plant.x) < PLANT_CLEAR * 2,
+    );
+  }
+
+  // A plant's rise at planner flight `flight` (1 is this frame's step),
+  // replayed with the holders it has now. Plants step after NPCs choose.
+  private plantRiseAt(room: Room, plant: Plant, flight: number) {
+    let track = this.plantTracks.get(plant);
+    if (track?.frame !== this.frame) {
+      const near = this.plantHeld(room, plant);
+      const m = { ...plant.motion };
+      const rises = new Int8Array(PLANT_TRACK);
+      for (let k = 0; k < PLANT_TRACK; k++) {
+        stepPlant(m, this.frame + k, near);
+        rises[k] = m.rise;
+      }
+      track = { frame: this.frame, rises };
+      this.plantTracks.set(plant, track);
+    }
+    const index = Math.max(0, Math.min(PLANT_TRACK, flight) - 1);
+    return track.rises[index]!;
+  }
+
+  // Whether a plant, at planner flight `flight`, overlaps a box centered on
+  // x, y.
+  private plantHits(
+    room: Room,
+    x: number,
+    y: number,
+    halfW: number,
+    halfH: number,
+    flight: number,
+  ) {
+    const boxW = PLANT_BOX.halfW * 2,
+      boxH = PLANT_BOX.bottom - PLANT_BOX.top;
+    for (const plant of room.plants) {
+      if (Math.abs(plant.x - x) >= halfW + boxW || room.plantGone(plant))
+        continue;
+      const rise = this.plantRiseAt(room, plant, flight);
+      if (!rise) continue;
+      const center =
+        plant.pipeTop - rise * 2 + PLANT_BOX.top + PLANT_BOX.bottom;
+      if (Math.abs(center - y) < halfH + boxH) return true;
+    }
+    return false;
+  }
+
+  // Plant clearance for a jump arc in a room with no firebar or Podoboo.
+  // Undefined when there is nothing to time, or the NPC panics.
+  private npcPlantClear(a: Actor) {
+    const room = this.roomFor(a);
+    if (a === this.mario || !room.plants.length || this.marioThreat(a)) return;
+    const half = a.body.width / 2 + PODOBOO_MARGIN,
+      tall = a.body.height / 2 + PODOBOO_MARGIN;
+    return (point: { x: number; y: number; frames: number }) =>
+      !this.plantHits(room, point.x, point.y, half, tall, point.frames);
   }
 
   // A plant hurts like a firebar: the player and NPCs are hurt (a star or 8x

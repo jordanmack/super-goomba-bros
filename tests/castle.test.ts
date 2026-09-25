@@ -901,7 +901,9 @@ test("planJump keeps a delay-0 landing when a delayed arc scores higher", () => 
   // floor, and that longer run scores higher, so the old single-best return
   // was the delayed arc.
   const near = new Body(100, 256, 80, 32, true);
-  const far = new Body(180, 516, 200, 32, true);
+  // No level has floor below the ground line, and planJump does not land
+  // there, so the lower floor sits on it.
+  const far = new Body(180, T.groundY + 16, 200, 32, true);
   const solids = [near, far];
   const best = planJump(body, solids, 1, T.runSpeed, 0);
   const immediate = planJump(
@@ -928,6 +930,44 @@ test("planJump keeps a delay-0 landing when a delayed arc scores higher", () => 
     immediate.y < best.y,
     "the kept arc is the upper ledge, not the lower floor the hold reaches",
   );
+});
+
+// #217: a lift sinking onto a rising head is a ceiling, judged against where
+// it was a frame ago. Before, the arc went through it and "landed" beyond.
+test("planJump bumps a head on a lift that sinks into the arc", () => {
+  const body = new Body(0, 400, 24, 28);
+  const floor = new Body(420, T.groundY + 16, 200, 32, true);
+  const lift = new Body(60, 312, 96, 16, true);
+  // It sinks 2 px a frame. At flight frame 5 its bottom (330) is just above
+  // the rising head (331); a frame later it has sunk 2 px onto a head that
+  // rose 8, so the head was never below the lift's new bottom.
+  lift.motion = { at: (frames) => ({ x: 60, y: 312 + frames * 2 }) };
+  const free = planJump(body, [floor], 1, T.runSpeed, jumpArc(T.runSpeed).impulse);
+  assert.ok(free, "open air: the jump reaches the far floor");
+  const under = planJump(
+    body,
+    [floor, lift],
+    1,
+    T.runSpeed,
+    jumpArc(T.runSpeed).impulse,
+    undefined,
+    false,
+    undefined,
+    undefined,
+    0,
+  );
+  assert.equal(under, undefined, "the sinking lift stops the rise short");
+});
+
+test("planJump does not land below the ground line", () => {
+  const body = new Body(0, 400, 24, 28);
+  const low = new Body(160, T.groundY + 60, 200, 32, true);
+  assert.equal(
+    planJump(body, [low], 1, T.runSpeed, jumpArc(T.runSpeed).impulse),
+    undefined,
+  );
+  const level = new Body(160, T.groundY + 16, 200, 32, true);
+  assert.ok(planJump(body, [level], 1, T.runSpeed, jumpArc(T.runSpeed).impulse));
 });
 
 // #154: updateNpcs used to fly the probe's vx and delay from wherever the NPC
