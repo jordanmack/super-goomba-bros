@@ -79,6 +79,25 @@ import { firstEmptySpawnCell } from "./spawn-cell.ts";
 import { warpZoneSignage } from "./warp-zone.ts";
 import { stepRandomBits } from "./lfsr.ts";
 import { PODOBOO_BOX, stepPodoboo } from "./podoboo.ts";
+import { landCast, type LandSpecies } from "./cast.ts";
+import {
+  HOP_GRAVITY,
+  TROOPA_FALL_GRAVITY,
+  TROOPA_WALK,
+  flyFacing,
+  flyX,
+  hopTakeoff,
+  initFlyParatroopa,
+  bobRange,
+  initRedParatroopa,
+  restingBytes,
+  stepFlyParatroopa,
+  stepRedParatroopa,
+  troopaFall,
+  type BobMotion,
+  type FlyMotion,
+  type VerticalBytes,
+} from "./troopa.ts";
 
 export type Input = {
   left: boolean;
@@ -249,8 +268,44 @@ export type Actor = {
   frenzySlot?: number;
   // A Cheep Cheep leaves the view only after it has been in it.
   seen?: boolean;
+  // #214: a Koopa kind's shell, when it is not a green Koopa, and a
+  // Paratroopa's wings. A red Paratroopa is red with "bob" wings.
+  troopa?: "red" | "buzzy";
+  wings?: "hop" | "fly" | "bob";
+  // Unwarned SMB1 motion for every Koopa kind. Goombas keep the patrol.
+  patrol?: TroopaPatrol;
 };
 export type FishSpecies = "blooper" | "grey-cheep" | "red-cheep";
+// A walker falls with its own bytes off a ledge; `ledge` turns it at every
+// drop, as a red Koopa. `still` holds a walker or hopper with no safe way
+// either side in place until it next lands. Flyers pass through terrain from
+// a fixed origin.
+export type TroopaPatrol =
+  | { kind: "walk"; ledge: boolean; v: VerticalBytes; still: boolean }
+  | { kind: "hop"; v: VerticalBytes; still: boolean }
+  | { kind: "fly"; motion: FlyMotion; origin: { x: number; y: number } }
+  | { kind: "bob"; motion: BobMotion; origin: { x: number; y: number } };
+
+/** The rescue species an NPC is, for the land cast. */
+export function landSpecies(actor: Actor): LandSpecies | undefined {
+  if (actor.kind === "goomba") return "goomba";
+  if (actor.kind !== "koopa") return;
+  if (actor.wings === "hop") return "hop-paratroopa";
+  if (actor.wings === "fly") return "fly-paratroopa";
+  if (actor.wings === "bob") return "red-paratroopa";
+  if (actor.troopa === "red") return "red-koopa";
+  if (actor.troopa === "buzzy") return "buzzy";
+  return "green-koopa";
+}
+
+/** Texture base for an actor's species, before any fire palette. */
+export function actorArt(actor: Actor) {
+  if (actor.kind !== "koopa") return actor.kind;
+  if (actor.wings) return actor.troopa === "red" ? "paraRedKoopa" : "paraKoopa";
+  if (actor.troopa === "red") return "redKoopa";
+  if (actor.troopa === "buzzy") return "buzzy";
+  return "koopa";
+}
 export type Shout = {
   id: number;
   text: string;
@@ -444,7 +499,7 @@ export function solidScale(scale: number) {
 export function actorSpriteBox(actor: Actor, shown: number) {
   const shelled = actor.kind === "koopa" && actor.shell !== "none";
   const h =
-    (shelled
+    (shelled || actor.troopa === "buzzy"
       ? 32
       : actor.kind === "koopa"
         ? 48
@@ -552,6 +607,20 @@ const PODOBOO_SLACK = 30;
 // Frames of each Podoboo's leap replayed ahead for NPC timing. It covers the
 // firebar walking plan's horizon.
 const PODOBOO_TRACK = 480;
+// #214 starts. A red Koopa needs a ledge this near on its floor. A hopper
+// needs its 43 NES px hop plus a margin clear above it. A green flyer sweeps
+// 95 NES px left and back and sways 16.
+const RED_LEDGE_REACH = 512;
+const HOP_ROOM = 96;
+const FLY_SPAN = 95;
+const FLY_SWAY = 16;
+// A flyer's start is searched this many columns either side of its slot.
+const FLY_SEARCH = 8;
+const FLY_LIFT_MAX = 288;
+// Frames and px either side a patrol's landing is looked for.
+const PATROL_LOOKAHEAD = 240;
+// Unwarned patrols turn this far short of the goal.
+const PATROL_GOAL_GAP = 96;
 export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
 const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
 /** SCORE change for one tally line: count times that line's points. */
@@ -625,7 +694,12 @@ export class Simulation {
     const mario = actor === this.mario;
     return {
       w: mario && this.marioStage === 0 ? 32 : 32 * actor.scale,
-      h: (actor.kind === "koopa" ? 48 : mario ? 64 : 32) * actor.scale,
+      h:
+        (actor.kind === "koopa" && actor.troopa !== "buzzy"
+          ? 48
+          : mario
+            ? 64
+            : 32) * actor.scale,
     };
   }
   private pipeOnPage(room: Room, page: number) {
@@ -1415,13 +1489,16 @@ export class Simulation {
     if (mode !== "title") {
       const occupied = new Set<string>();
       let raisedLeft = Math.round(T.population * T.elevatedSpawnShare);
+      const cast = landCast(this.level.route, T.population);
       this.npcs = Array.from({ length: T.population }, (_, i) => {
         const x =
           main.offset +
           390 +
           i * ((main.goalX - main.offset - 650) / T.population) +
           this.random() * 65;
-        return this.actor(x, i % 3 === 1 ? "koopa" : "goomba");
+        const actor = this.actor(x, "goomba");
+        this.setSpecies(actor, cast[i]!);
+        return actor;
       });
       for (const actor of this.npcs) {
         if (raisedLeft && main.place(actor, actor.homeX, "brick", occupied))
@@ -1438,6 +1515,7 @@ export class Simulation {
       for (const actor of this.npcs) {
         if (!actor.grounded) main.place(actor, actor.homeX, "low", occupied);
       }
+      this.fitLandCast(main, cast);
     }
     for (const room of this.rooms.values()) this.spawnLevelActors(room);
     if (this.pipeIntro)
@@ -4741,6 +4819,7 @@ export class Simulation {
   }
 
   private enterShell(n: Actor, stomper?: Actor) {
+    n.patrol = undefined;
     n.shell = "stopped";
     n.wakeLeft = T.shellWake;
     n.kickIgnore = stomper?.id ?? 0;
@@ -4798,6 +4877,7 @@ export class Simulation {
       n.idleWalking = true;
       n.idleWait = 0.4;
       n.homeX = n.body.position.x;
+      this.startPatrol(n);
     }
   }
 
@@ -5409,6 +5489,17 @@ export class Simulation {
         a.body.gravityScale = 0;
         continue;
       }
+      // A running SMB1 patrol sets its own fall; a walker on the ground
+      // does not.
+      if (
+        a.patrol &&
+        !a.warned &&
+        a.shell === "none" &&
+        (a.patrol.kind !== "walk" || !a.grounded)
+      ) {
+        a.body.gravityScale = 0;
+        continue;
+      }
       const hold = !!a.jumpHeld && a.body.velocity.y < 0 && !a.grounded;
       const holdG = a.jumpHoldG ?? T.jumpHoldGravity;
       const fallG =
@@ -5598,6 +5689,470 @@ export class Simulation {
       return 1;
   }
 
+  private setSpecies(a: Actor, species: LandSpecies) {
+    a.kind = species === "goomba" ? "goomba" : "koopa";
+    a.troopa =
+      species === "red-koopa" || species === "red-paratroopa"
+        ? "red"
+        : species === "buzzy"
+          ? "buzzy"
+          : undefined;
+    a.wings =
+      species === "hop-paratroopa"
+        ? "hop"
+        : species === "fly-paratroopa"
+          ? "fly"
+          : species === "red-paratroopa"
+            ? "bob"
+            : undefined;
+  }
+
+  // Every NPC is on the ground now. Each Koopa kind needs a start that fits
+  // its motion; a slot that does not fit goes to another species from the
+  // stage, most common first. Then Koopa kinds start their SMB1 patrol,
+  // facing left like SMB1's enemies.
+  private fitLandCast(room: Room, cast: LandSpecies[]) {
+    const counts = new Map<LandSpecies, number>();
+    for (const species of cast)
+      counts.set(species, (counts.get(species) ?? 0) + 1);
+    const others = [...counts.keys()].sort(
+      (a, b) => counts.get(b)! - counts.get(a)!,
+    );
+    for (const a of this.npcs) {
+      const species = landSpecies(a)!;
+      if (!this.startFits(room, a)) {
+        const swap = others.find((other) => {
+          if (other === species) return false;
+          this.setSpecies(a, other);
+          return this.startFits(room, a);
+        });
+        if (!swap) this.setSpecies(a, species);
+      }
+      if (a.kind === "koopa") a.facing = -1;
+      this.startPatrol(a);
+    }
+  }
+
+  // A red Koopa needs a ledge on its floor before a wall, a hopping
+  // Paratroopa room to hop, and a flyer a clear flight band over floor. A
+  // flyer that fits is moved up into its band.
+  private startFits(room: Room, a: Actor) {
+    if (a.kind !== "koopa") return true;
+    if (a.wings === "fly" || a.wings === "bob") return this.flyerStart(room, a);
+    if (a.wings === "hop") {
+      // Not on a moving platform: it would hop off it.
+      if (
+        room.platforms.some(
+          (p) =>
+            Math.abs(p.body.bounds.min.y - a.body.bounds.max.y) < 4 &&
+            p.body.bounds.max.x > a.body.bounds.min.x &&
+            p.body.bounds.min.x < a.body.bounds.max.x,
+        )
+      )
+        return false;
+      const top = a.body.bounds.min.y - HOP_ROOM;
+      return !this.solids.some(
+        (s) =>
+          !s.headOnly &&
+          s.bounds.max.x > a.body.bounds.min.x &&
+          s.bounds.min.x < a.body.bounds.max.x &&
+          s.bounds.max.y > top &&
+          s.bounds.min.y < a.body.bounds.min.y,
+      );
+    }
+    if (a.troopa !== "red") return true;
+    for (const direction of [-1, 1])
+      for (let d = 0; d <= RED_LEDGE_REACH; d += 8) {
+        const next = this.patrolRoute(
+          a,
+          direction,
+          a.body.position.x + direction * d,
+        );
+        if (next === "wall") break;
+        if (next !== "walk") return true;
+      }
+    return false;
+  }
+
+  // The rectangle a flyer's body sweeps from a start whose bottom is at y.
+  private flyerBand(a: Actor, x: number, bottom: number) {
+    const half = a.body.width / 2,
+      tall = a.body.height;
+    if (a.wings === "fly")
+      return {
+        left: x - FLY_SPAN * 2 - half,
+        right: x + half,
+        top: bottom - tall - FLY_SWAY * 2,
+        bottom: bottom + FLY_SWAY * 2,
+      };
+    // The red Paratroopa's y is its 24 px sprite's top.
+    const y0 = Math.round((bottom - 48 - MAP_TOP) / 2);
+    const { lo, hi } = bobRange(y0);
+    return {
+      left: x - half,
+      right: x + half,
+      top: bottom - tall + (lo - y0) * 2,
+      bottom: bottom + (hi - y0) * 2,
+    };
+  }
+
+  // Nearest column, then lowest start from a tile above a floor up, whose
+  // band is clear of solids and stays over floor, so a warned flyer drops
+  // onto ground.
+  private flyerStart(room: Room, a: Actor) {
+    const lifts = new Set(room.platforms.map((p) => p.body));
+    for (let step = 0; step <= FLY_SEARCH * 2; step++) {
+      const x =
+        a.body.position.x + (step % 2 ? 1 : -1) * Math.ceil(step / 2) * 32;
+      const floors = this.solids
+        .filter(
+          (s) =>
+            !s.headOnly &&
+            !lifts.has(s) &&
+            x > s.bounds.min.x &&
+            x < s.bounds.max.x &&
+            s.bounds.min.y <= T.groundY,
+        )
+        .map((s) => s.bounds.min.y);
+      for (const floor of [...new Set(floors)].sort((p, q) => q - p))
+        if (this.flyerAbove(room, a, x, floor)) return true;
+    }
+    return false;
+  }
+
+  private flyerAbove(room: Room, a: Actor, x: number, floor: number) {
+    for (let lift = 32; lift <= FLY_LIFT_MAX; lift += 16) {
+      const band = this.flyerBand(a, x, floor - lift);
+      if (band.top < MAP_TOP + 64) break;
+      if (band.left < room.offset + 32 || band.right > room.goalX - 96)
+        return false;
+      if (
+        this.solids.some(
+          (s) =>
+            s.bounds.max.x > band.left &&
+            s.bounds.min.x < band.right &&
+            s.bounds.max.y > band.top &&
+            s.bounds.min.y < band.bottom,
+        )
+      )
+        continue;
+      let over = true;
+      for (let sx = band.left; sx <= band.right && over; sx += 8)
+        over = this.solids.some(
+          (s) =>
+            !s.headOnly &&
+            sx >= s.bounds.min.x &&
+            sx <= s.bounds.max.x &&
+            s.bounds.min.y >= band.bottom &&
+            s.bounds.min.y <= T.groundY,
+        );
+      if (!over) continue;
+      Body.setPosition(a.body, {
+        x,
+        y: floor - lift - a.body.height / 2,
+      });
+      a.grounded = false;
+      a.homeX = x;
+      return true;
+    }
+    return false;
+  }
+
+  // The unwarned SMB1 motion for this NPC's species, from where it is now.
+  private startPatrol(a: Actor) {
+    a.patrol = undefined;
+    if (a.kind !== "koopa") return;
+    const p = a.body.position;
+    if (a.wings === "fly")
+      a.patrol = {
+        kind: "fly",
+        motion: initFlyParatroopa(),
+        origin: { x: p.x, y: p.y },
+      };
+    else if (a.wings === "bob")
+      a.patrol = {
+        kind: "bob",
+        motion: initRedParatroopa(
+          Math.round((a.body.bounds.max.y - 48 - MAP_TOP) / 2),
+        ),
+        origin: { x: p.x, y: p.y },
+      };
+    else if (a.wings === "hop")
+      a.patrol = { kind: "hop", v: restingBytes(), still: false };
+    else
+      a.patrol = {
+        kind: "walk",
+        ledge: a.troopa === "red",
+        v: restingBytes(),
+        still: false,
+      };
+    if (a.patrol.kind === "fly" || a.patrol.kind === "bob")
+      Body.setFrozen(a.body, true);
+  }
+
+  // A warning ends the patrol. A flyer starts to fall.
+  private endPatrol(a: Actor) {
+    const flying = a.patrol?.kind === "fly" || a.patrol?.kind === "bob";
+    a.patrol = undefined;
+    if (flying && !this.pipeIntro) {
+      Body.setFrozen(a.body, false);
+      Body.setVelocity(a.body, { x: 0, y: 0 });
+    }
+  }
+
+  // Mario's stomp takes a Paratroopa's wings. It is a green Koopa now.
+  private clipWings(a: Actor) {
+    const flying = a.patrol?.kind === "fly" || a.patrol?.kind === "bob";
+    a.wings = undefined;
+    a.troopa = undefined;
+    if (flying) {
+      Body.setFrozen(a.body, false);
+      Body.setVelocity(a.body, { x: 0, y: 0 });
+    }
+    if (a.warned) a.patrol = undefined;
+    else {
+      this.startPatrol(a);
+      a.grounded = false;
+    }
+  }
+
+  // Frozen flyers move from their origin in NES px, through terrain.
+  private stepFlyer(
+    a: Actor,
+    patrol: Extract<TroopaPatrol, { kind: "fly" | "bob" }>,
+  ) {
+    Body.setFrozen(a.body, true);
+    let x = patrol.origin.x,
+      y = patrol.origin.y;
+    if (patrol.kind === "fly") {
+      stepFlyParatroopa(patrol.motion, this.frame);
+      x += flyX(patrol.motion) * 2;
+      y += patrol.motion.y * 2;
+      a.facing = flyFacing(patrol.motion);
+    } else {
+      stepRedParatroopa(patrol.motion, this.frame);
+      y += (patrol.motion.y - patrol.motion.orig) * 2;
+      a.facing = -1;
+    }
+    Body.setPosition(a.body, { x, y });
+    Body.setVelocity(a.body, { x: 0, y: 0 });
+  }
+
+  // Whether a patrol that leaves the ground at x, with these vertical bytes
+  // and 1 px a frame toward `direction`, lands on something. It drifts while
+  // it falls, so the floor under the lip is not enough. A moving platform
+  // does not count: it will not be where it is now.
+  private patrolLands(
+    a: Actor,
+    x: number,
+    direction: number,
+    v: VerticalBytes,
+    gravity: number,
+  ) {
+    const half = a.body.width / 2;
+    const lifts = new Set(this.roomFor(a).platforms.map((p) => p.body));
+    const solids = this.solids.filter(
+      (s) =>
+        !s.headOnly &&
+        !lifts.has(s) &&
+        s.bounds.max.x > x - PATROL_LOOKAHEAD &&
+        s.bounds.min.x < x + PATROL_LOOKAHEAD,
+    );
+    const bytes = { ...v };
+    const tall = a.body.height;
+    let feet = a.body.bounds.max.y;
+    for (let frame = 0; frame < PATROL_LOOKAHEAD; frame++) {
+      let next = feet + troopaFall(bytes, gravity) * 2;
+      // A ceiling stops the rise, as the physics does.
+      if (next < feet)
+        for (const s of solids)
+          if (
+            x + half > s.bounds.min.x &&
+            x - half < s.bounds.max.x &&
+            s.bounds.max.y <= feet - tall + 0.5 &&
+            next - tall < s.bounds.max.y
+          )
+            next = s.bounds.max.y + tall;
+      // A solid side turns it, as it does in flight.
+      const ahead = x + direction * (half + 2);
+      if (
+        solids.some(
+          (s) =>
+            ahead > s.bounds.min.x &&
+            ahead < s.bounds.max.x &&
+            s.bounds.min.y < feet - 5 &&
+            s.bounds.max.y > feet - tall,
+        )
+      )
+        direction = -direction;
+      x += direction * TROOPA_WALK * 2;
+      // Like ChkUnderEnemy, the middle must come down over the solid, with
+      // a pixel to spare for the flight's rounding.
+      if (
+        next > feet &&
+        solids.some(
+          (s) =>
+            x > s.bounds.min.x + 2 &&
+            x < s.bounds.max.x - 2 &&
+            feet <= s.bounds.min.y + 0.5 &&
+            next >= s.bounds.min.y,
+        )
+      )
+        return true;
+      feet = next;
+      if (feet > T.groundY + 8) return false;
+    }
+    return false;
+  }
+
+  // SMB1 walkers move 1 px a frame and turn at a wall, a hazard, a pit, and
+  // for a red Koopa any ledge. Others step down onto a lower floor they will
+  // land on, and fall with their own bytes. A hopper leaves the ground at $fd
+  // each landing and turns first if the hop would come down in a pit. Nobody
+  // walks up to the goal.
+  private stepTroopaPatrol(
+    a: Actor,
+    patrol: Extract<TroopaPatrol, { kind: "walk" | "hop" }>,
+  ) {
+    const room = this.roomFor(a);
+    const p = a.body.position;
+    const half = a.body.width / 2;
+    const hop = patrol.kind === "hop";
+    const turns = (direction: number) => {
+      if (
+        direction > 0 &&
+        room.data.goal &&
+        p.x + half >= room.goalX - PATROL_GOAL_GAP
+      )
+        return true;
+      const next = this.patrolRoute(a, direction);
+      if (next === "pit" || next === "wall") return true;
+      if (hop || next !== "drop") return false;
+      if (patrol.ledge) return true;
+      const support = this.solids.find(
+        (s) =>
+          !s.headOnly &&
+          p.x > s.bounds.min.x - half &&
+          p.x < s.bounds.max.x + half &&
+          Math.abs(s.bounds.min.y - a.body.bounds.max.y) < 4,
+      );
+      const lip = support
+        ? support.bounds[direction > 0 ? "max" : "min"].x
+        : p.x;
+      return !this.patrolLands(
+        a,
+        lip + direction * half,
+        direction,
+        restingBytes(),
+        TROOPA_FALL_GRAVITY,
+      );
+    };
+    const hopLands = (direction: number) => {
+      const v = restingBytes();
+      hopTakeoff(v);
+      return this.patrolLands(a, p.x, direction, v, HOP_GRAVITY);
+    };
+    let pace = TROOPA_WALK * 2;
+    // EnemyJump lands a hopper only while it falls. Just after takeoff the
+    // body can still read as grounded.
+    const landed = a.grounded && patrol.v.speed >= 0;
+    if (landed) {
+      patrol.v = restingBytes();
+      if (turns(a.facing) || (hop && !hopLands(a.facing))) {
+        if (turns(-a.facing) || (hop && !hopLands(-a.facing))) pace = 0;
+        else a.facing *= -1;
+      }
+      patrol.still = pace === 0;
+      if (hop) hopTakeoff(patrol.v);
+    } else {
+      if (patrol.still) pace = 0;
+      // In the air only a solid side turns it, as EnemyTurnAround. Hazards
+      // were weighed at takeoff, and turning from one now could land it in
+      // a pit.
+      const ahead = p.x + a.facing * (half + 2);
+      const feet = a.body.bounds.max.y;
+      if (
+        this.solids.some(
+          (s) =>
+            !s.headOnly &&
+            ahead > s.bounds.min.x &&
+            ahead < s.bounds.max.x &&
+            s.bounds.min.y < feet - 5 &&
+            s.bounds.max.y > a.body.bounds.min.y,
+        )
+      )
+        a.facing *= -1;
+    }
+    this.move(a, a.facing * pace);
+    if (hop || !landed) {
+      const dy = troopaFall(
+        patrol.v,
+        hop ? HOP_GRAVITY : TROOPA_FALL_GRAVITY,
+      );
+      Body.setVelocity(a.body, { x: a.body.velocity.x, y: dy * 2 });
+    }
+  }
+
+  // What is ahead of a patrolling NPC at x: floor to walk on, a drop to a
+  // lower floor, a pit, or a wall. A hazard it times counts as a wall.
+  private patrolRoute(
+    n: Actor,
+    direction: number,
+    x = n.body.position.x,
+  ): "walk" | "drop" | "pit" | "wall" {
+    const p = n.body.position;
+    const feet = n.body.bounds.max.y;
+    const ahead = x + direction * (n.body.width / 2 + 8);
+    const below = this.solids.filter(
+      (s) => ahead >= s.bounds.min.x && ahead <= s.bounds.max.x,
+    );
+    if (
+      !n.body.ignoreWalls &&
+      below.some(
+        (s) =>
+          s.bounds.min.y < feet - 5 &&
+          s.bounds.max.y > n.body.bounds.min.y,
+      )
+    )
+      return "wall";
+    if (
+      !this.marioThreat(n) &&
+      this.firebarBlocks(
+        this.roomFor(n),
+        ahead,
+        p.y,
+        n.body.width / 2,
+        n.body.height / 2,
+      )
+    )
+      return "wall";
+    if (
+      this.plantAhead(n, direction) ||
+      this.podobooAhead(n, direction)
+    )
+      return "wall";
+    if (below.some((s) => Math.abs(s.bounds.min.y - feet) < 6))
+      return "walk";
+    if (
+      n.body.ignoreWalls &&
+      hugeHoldAt(feet, ahead, 1, this.solids, n.body) &&
+      below.some(
+        (s) =>
+          s.passHuge !== "top" &&
+          s.bounds.min.y < feet - 5 &&
+          s.bounds.max.y >= feet - 5,
+      )
+    )
+      return "walk";
+    if (
+      below.some(
+        (s) => s.bounds.min.y > feet + 5 && s.bounds.min.y <= T.groundY,
+      )
+    )
+      return "drop";
+    return "pit";
+  }
+
   private updateNpcs(dt: number) {
     const gone = new Set<Actor>();
     for (const n of this.npcs) {
@@ -5658,7 +6213,12 @@ export class Simulation {
           if (!this.stepSwimmer(n)) gone.add(n);
           continue;
         }
-        const feet = n.body.bounds.max.y;
+        if (n.patrol && room.data.type !== "water") {
+          if (n.patrol.kind === "fly" || n.patrol.kind === "bob")
+            this.stepFlyer(n, n.patrol);
+          else this.stepTroopaPatrol(n, n.patrol);
+          continue;
+        }
         if (n.idleDrop || !n.grounded) {
           n.idleDrop ??= { airborne: !n.grounded };
           n.idleDrop.airborne ||= !n.grounded;
@@ -5682,55 +6242,8 @@ export class Simulation {
         }
         if (n.idleWalking) {
           const route = (direction: number) => {
-            const ahead = p.x + direction * (n.body.width / 2 + 8);
-            const below = this.solids.filter(
-              (s) => ahead >= s.bounds.min.x && ahead <= s.bounds.max.x,
-            );
-            if (
-              !n.body.ignoreWalls &&
-              below.some(
-                (s) =>
-                  s.bounds.min.y < feet - 5 &&
-                  s.bounds.max.y > n.body.bounds.min.y,
-              )
-            )
-              return "blocked";
-            if (
-              !this.marioThreat(n) &&
-              this.firebarBlocks(
-                this.roomFor(n),
-                ahead,
-                p.y,
-                n.body.width / 2,
-                n.body.height / 2,
-              )
-            )
-              return "blocked";
-            if (
-              this.plantAhead(n, direction) ||
-              this.podobooAhead(n, direction)
-            )
-              return "blocked";
-            if (below.some((s) => Math.abs(s.bounds.min.y - feet) < 6))
-              return "walk";
-            if (
-              n.body.ignoreWalls &&
-              hugeHoldAt(feet, ahead, 1, this.solids, n.body) &&
-              below.some(
-                (s) =>
-                  s.passHuge !== "top" &&
-                  s.bounds.min.y < feet - 5 &&
-                  s.bounds.max.y >= feet - 5,
-              )
-            )
-              return "walk";
-            if (
-              below.some(
-                (s) => s.bounds.min.y > feet + 5 && s.bounds.min.y <= T.groundY,
-              )
-            )
-              return "drop";
-            return "blocked";
+            const next = this.patrolRoute(n, direction);
+            return next === "pit" || next === "wall" ? "blocked" : next;
           };
           if ((p.x - n.homeX) * n.facing >= T.idleRadius) n.facing *= -1;
           let next = route(n.facing);
@@ -5746,6 +6259,7 @@ export class Simulation {
         this.move(n, n.idleWalking ? n.facing * speed : 0);
         continue;
       }
+      if (n.patrol) this.endPatrol(n);
       // A warned swimmer leaves its SMB1 pattern for the rescue door.
       if (n.kind === "fish" && n.body.frozen && !this.pipeIntro) {
         Body.setFrozen(n.body, false);
@@ -6719,7 +7233,8 @@ export class Simulation {
             continue;
           }
           if (a.kind === "koopa") {
-            this.koopaStomp(a, this.mario);
+            if (a.wings) this.clipWings(a);
+            else this.koopaStomp(a, this.mario);
             Body.setVelocity(this.mario.body, {
               x: this.mario.body.velocity.x,
               y: -T.stompBounce,
@@ -6874,7 +7389,8 @@ export class Simulation {
           !this.inPipe(a) &&
           this.overlapFireball(a, f.x, f.y, radius)
         ) {
-          if (a.starLeft <= 0) {
+          // A Buzzy Beetle is fireproof: the ball bursts on it.
+          if (a.starLeft <= 0 && a.troopa !== "buzzy") {
             if (this.isHuge(a) && this.isHuge(this.mario)) this.demoteHuge(a);
             else this.hurt(a);
           }

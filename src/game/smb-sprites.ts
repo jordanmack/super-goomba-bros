@@ -119,6 +119,47 @@ function piranhaSprites(enemies: HTMLImageElement) {
   };
 }
 
+// #214 Koopa kinds. Frames face left, so they are flipped like the green
+// Koopa. Red is the y=30 row. Paratroopa frames are the two wing poses. The
+// Buzzy Beetle row has two walk frames and one shell, used for both shell
+// poses.
+export const TROOPA_SHEET = {
+  redKoopa: { stand: [150, 30], walk: [180, 30], shell: [360, 34], wake: [330, 34] },
+  paraKoopa: [
+    [90, 0],
+    [120, 0],
+  ],
+  paraRedKoopa: [
+    [90, 30],
+    [120, 30],
+  ],
+  buzzy: { stand: [300, 94], walk: [330, 94], shell: [360, 94] },
+} as const;
+
+// Walk bases for the Koopa kinds beyond the green Koopa, fire variants too.
+export const TROOPA_BASES = ["redKoopa", "buzzy", "paraKoopa", "paraRedKoopa"] as const;
+
+function troopaSprites(enemies: HTMLImageElement) {
+  const { redKoopa, paraKoopa, paraRedKoopa, buzzy } = TROOPA_SHEET;
+  const art: Record<string, HTMLCanvasElement> = {
+    redKoopa: crop(enemies, redKoopa.stand[0], redKoopa.stand[1], 16, 24, true),
+    redKoopaWalk: crop(enemies, redKoopa.walk[0], redKoopa.walk[1], 16, 24, true),
+    redKoopaShell: crop(enemies, redKoopa.shell[0], redKoopa.shell[1], 16, 16),
+    redKoopaShellWake: crop(enemies, redKoopa.wake[0], redKoopa.wake[1], 16, 16),
+    paraKoopa: crop(enemies, paraKoopa[0][0], paraKoopa[0][1], 16, 24, true),
+    paraKoopaWalk: crop(enemies, paraKoopa[1][0], paraKoopa[1][1], 16, 24, true),
+    paraRedKoopa: crop(enemies, paraRedKoopa[0][0], paraRedKoopa[0][1], 16, 24, true),
+    paraRedKoopaWalk: crop(enemies, paraRedKoopa[1][0], paraRedKoopa[1][1], 16, 24, true),
+    buzzy: crop(enemies, buzzy.stand[0], buzzy.stand[1], 16, 16, true),
+    buzzyWalk: crop(enemies, buzzy.walk[0], buzzy.walk[1], 16, 16, true),
+    buzzyShell: crop(enemies, buzzy.shell[0], buzzy.shell[1], 16, 16),
+    buzzyShellWake: crop(enemies, buzzy.shell[0], buzzy.shell[1], 16, 16),
+  };
+  for (const [key, canvas] of Object.entries(art))
+    art[`fire${key[0]!.toUpperCase()}${key.slice(1)}`] = firePalette(canvas);
+  return art;
+}
+
 // Cheep Cheep animation bases, each with a Walk frame and a fire variant.
 export const CHEEP_BASES = ["redCheep", "greenCheep", "greyCheep"] as const;
 
@@ -207,6 +248,7 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     ...waterEnemySprites(enemies),
     ...piranhaSprites(enemies),
     podoboo: crop(enemies, PODOBOO_SHEET.x, PODOBOO_SHEET.y, 16, 16),
+    ...troopaSprites(enemies),
     lakitu,
     lakituDrop,
     hammerBro,

@@ -11,6 +11,7 @@ import { plantShown } from "../piranha";
 import { podobooFalling } from "../podoboo";
 import atlas from "../../assets/smb/metatiles.json";
 import {
+  actorArt,
   actorSpriteBox,
   actorWalkMoving,
   fireworkFrame,
@@ -555,12 +556,8 @@ export class Play extends Phaser.Scene {
           ? `fire${fish[0]!.toUpperCase()}${fish.slice(1)}`
           : fish
         : actor.flower
-          ? actor.kind === "goomba"
-            ? "fireGoomba"
-            : actor.kind === "koopa"
-              ? "fireKoopa"
-              : "fireSpike"
-          : actor.kind;
+          ? `fire${actorArt(actor)[0]!.toUpperCase()}${actorArt(actor).slice(1)}`
+          : actorArt(actor);
     const pace = walkPace(actor, inWater);
     const moving = actorWalkMoving(actor, inWater);
     const skid =
@@ -602,6 +599,11 @@ export class Play extends Phaser.Scene {
           base +
             (shake && Math.floor(sim.elapsed * 8) % 2 ? "ShellWake" : "Shell"),
         );
+    } else if (actor.wings) {
+      // Paratroopa wings flap every 8 frames, flying or not.
+      sprite
+        .stop()
+        .setTexture(base + (Math.floor(sim.frame / 8) % 2 ? "Walk" : ""));
     } else if (moving && !skid) {
       sprite.play(`${base}-walk`, true);
       sprite.anims.timeScale = (pace * 60) / 90;

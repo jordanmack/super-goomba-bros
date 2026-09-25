@@ -263,6 +263,28 @@ brick, question block, pipe lid, or moving platform when those tops exist. The
 rest start on the floor. Unrevealed hidden blocks are not standable starts.
 Two NPCs do not share a spawn cell. These traits stay fixed during an attempt.
 
+The land cast mixes the species that stage places, counted over the areas in
+its `route`, hard-mode rows included: Goomba `$06`, green Koopa `$00`, red
+Koopa `$03`, Buzzy Beetle `$02`, green hopping Paratroopa `$0e`, green flying
+Paratroopa `$10`, and red Paratroopa `$0f`. The 30 are split in proportion to
+those rows by largest remainder, and each slot along the stage takes the
+species furthest behind its share, so every species is spread out. A stage
+whose rows are only Goombas and green Koopas, or none of the seven (1-4, 2-4,
+3-4, 4-4, 5-4, 6-4, 7-4, 2-2, 7-2, 4-1, 6-1, and 6-3), keeps every third NPC a
+green Koopa and the rest Goombas. Group rows, Lakitu, fish, platforms, and
+castle objects are not part of the mix. All of them are in WARNED, SAVED, and
+DIED.
+
+Each start must fit its species' motion, and a slot that does not fit goes to
+the stage's most common other species that does:
+
+- A red Koopa needs a ledge on its floor within 512 px before a wall.
+- A hopping Paratroopa needs 96 px clear above it and not a moving platform.
+- A flyer starts in the air at the nearest column, within 8 either side, and
+  the lowest height from a tile above a floor up, where its whole flight band
+  is clear of solids, below the top two rows, short of the goal, and over
+  floor everywhere, so a warned flyer drops onto ground.
+
 Water areas spawn a Blooper from each original type-7 (`Bloober`) placement.
 Bloopers and Cheep Cheeps are rescue NPCs outside the land population of 30.
 WARNED, SAVED, and DIED count every NPC including them, so the tally uses the
@@ -341,9 +363,39 @@ or rescue him. He shouts through the existing shout system, in short lines
 about holding Mario off, defending the kingdom, and protecting the people and
 the king. The Bro and the hammer use art from the enemy sheet.
 
-Unwarned NPCs patrol, pause, turn, and step off safe surfaces. They avoid lethal
-gaps and do not rapidly flip direction on a small block. A warning starts their
-reaction delay and then their escape.
+Unwarned Goombas patrol near their start at their own randomized speed:
+they walk, pause, turn, and step off safe surfaces. They avoid lethal gaps and
+do not rapidly flip direction on a small block.
+
+Unwarned Koopa kinds use SMB1 motion, stepped per frame in NES pixels and
+drawn at 2x. They start facing left.
+
+- Green and red Koopas, Buzzy Beetles, and hopping Paratroopas move at `$f8`,
+  1 px a frame, not the hard-mode `$0c`. They turn at a wall, at a hazard they
+  time (a firebar, a Piranha Plant, a Podoboo), and 96 px short of the goal.
+- A red Koopa turns at every ledge (`InitRedKoopa`, `ChkForRedKoopa`). A green
+  Koopa or Buzzy steps down onto a lower floor only when its fall, drifting at
+  1 px a frame under `MoveD_EnemyVertically` (`$3d`, at most 3), comes down
+  with its middle over a fixed solid. Otherwise it turns, so no unwarned NPC
+  walks into a pit or lava.
+- A hopping Paratroopa (`MoveJumpingEnemy`) falls with `$1c` gravity, at most
+  3, and leaves the ground at `$fd` each time it lands (`EnemyJump`), about 43
+  NES px high and 56 frames long. Before each hop it replays the arc, with
+  ceilings and walls, and turns or hops in place when the arc would come down
+  in a pit. A moving platform is never a landing it counts on. In the air only
+  a solid side turns it.
+- A green flying Paratroopa (`MoveFlyGreenPTroopa`) passes through terrain. Its
+  speed steps 1/16 px every 4th frame up to `$13` and back, left first, so it
+  sweeps 95 NES px left and back every 320 frames, and it sways 1 px every 4th
+  frame, down while frame counter d6 is set.
+- A red Paratroopa (`ProcMoveRedPTroopa`) flies straight up and down through
+  terrain around a center 48 NES px below a start in the top half of the
+  screen, or 32 above a start in the bottom half, pulled with `$03` toward it
+  and `$06 - $03` past it, at most 2 px a frame.
+
+A warning ends a patrol, starts the reaction delay, and then the escape with
+the rescue movement below. A flyer falls to the ground first. A shelled Koopa
+kind that wakes unwarned starts its patrol again.
 
 Warned NPCs move toward a rescue door. They plan landings, use platforms and
 springs, back up for higher routes, and find lower paths through castle passages
@@ -375,8 +427,14 @@ that stomp and feet comparison; see [Mario](#mario).
 A falling player that lands on an NPC does not bounce upward. That landing does
 not kill or warn the NPC. Side contact is not a bounce. After the landing
 contact ends, the NPC can be warned without leaving the warning radius.
-A Mario stomp on a walking Koopa turns the Koopa into a
-stationary shell. Mario bounces from that stomp. The player cannot shell, kick,
+A Mario stomp on a Paratroopa takes its wings and leaves a green Koopa. A
+later stomp uses the shell rules. A Mario stomp on a walking Koopa, red Koopa,
+or Buzzy Beetle turns it into a stationary shell. Mario bounces from that
+stomp. A Buzzy Beetle is fireproof: a fireball bursts on it without harm.
+Other hazards hurt it as any NPC. Art is from the enemy sheet: red Koopa
+frames and shells on the y=30 row, the two wing poses at (90, 0) and (120, 0)
+(red at y=30), which flap every 8 frames, and the Buzzy's two walk frames and
+shell at (300, 94), (330, 94), and (360, 94), drawn 32x32. The player cannot shell, kick,
 or stop a Koopa. Landing on a walking Koopa leaves it walking. The player does
 not hop. That is not a death and has no blood.
 A stopped shell is kicked by Mario's side bump or stomp, in Mario's direction.

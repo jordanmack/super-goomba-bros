@@ -2989,9 +2989,14 @@ test("a loud crowd draws Mario from beyond normal sight range", () => {
   }
 });
 
-test("unwarned NPCs patrol locally, pause, and never count as warned or saved", () => {
+test("unwarned Goombas patrol locally, pause, and never count as warned or saved", () => {
   const s = game();
   const n = s.npcs[0];
+  assert.equal(n.kind, "goomba");
+  // #214: Koopa kinds walk like SMB1 and can reach the player, so only this
+  // Goomba stays.
+  for (const other of s.npcs.slice(1)) s.physics.remove(other.body);
+  s.npcs = [n];
   Body.setPosition(n.body, { x: 400, y: 415 });
   n.homeX = 400;
   const start = n.body.position.x;
