@@ -2025,7 +2025,8 @@ test("flowers enable player fireballs; hits stun Mario and never hurt NPCs", () 
   const s = game();
   give(s, s.player, "flower");
   s.marioActive = true;
-  s.marioStun = 0.1;
+  // #223: a shot during a running stun does nothing, so start without one.
+  s.marioStun = 0;
   Body.setFrozen(s.mario.body, false);
   Body.setPosition(s.mario.body, { x: 150, y: 411 });
   Body.setPosition(s.npcs[0].body, { x: 130, y: 415 });
@@ -9434,10 +9435,22 @@ test("mutual 8x land stomp demotes once and does not chain", () => {
   tick(player, dt);
   assert.equal(player.player.scale, T.giantScale);
   assert.equal(shrinkCount(player), 1);
-  stillMario(player);
-  standOnGround(player.player, 180);
-  standOnGround(player.mario, 180);
-  tick(player, dt);
+  // #223: that damage blink holds off 8x Mario's contact until it ends.
+  const together = () => {
+    stillMario(player);
+    standOnGround(player.player, 180);
+    standOnGround(player.mario, 180);
+    tick(player, dt);
+  };
+  let held = 0;
+  while (player.player.scale === T.giantScale && held < 120) {
+    together();
+    held++;
+  }
+  assert.ok(actorsOverlap(player.player, player.mario));
+  // The next contact lands only once the blink is over.
+  assert.ok(held >= Math.round(T.transformSeconds * 60) - 3, `${held}`);
+  assert.ok(held < 120, `${held}`);
   assert.equal(player.player.alive, true);
   assert.equal(player.player.scale, 1);
 
