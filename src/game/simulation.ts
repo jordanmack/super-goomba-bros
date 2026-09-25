@@ -9,6 +9,7 @@ import {
   hugeHoldVolume,
   overlaps,
   rayBlocked,
+  type Point,
 } from "./physics.ts";
 import {
   BOWSER_PHRASES,
@@ -470,6 +471,11 @@ type SpringRide = {
   riders: SpringRider[];
 };
 const SPRING_POSE: SpringPose[] = ["mid", "compressed", "mid", "extended"];
+// A stroke swimmer steers at the farthest swim-path point it can reach in a
+// straight line, up to this many 16px cells ahead, and strokes when that
+// point is more than the margin above its rise.
+const SWIM_AIM_AHEAD = 12;
+const SWIM_STROKE_MARGIN = 8;
 export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
 const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
 /** SCORE change for one tally line: count times that line's points. */
@@ -4967,8 +4973,9 @@ export class Simulation {
       a.swimRepath = Math.max(0, (a.swimRepath ?? 0) - dt);
       const water = this.roomFor(a).data.type === "water";
       if (water) {
-        a.body.gravityScale = a === this.player ? T.swimGravity : 0;
-        if (a === this.player)
+        const strokes = this.strokeSwimmer(a);
+        a.body.gravityScale = strokes ? T.swimGravity : 0;
+        if (strokes)
           a.body.velocity.y = Math.min(T.swimFallSpeed, a.body.velocity.y);
         if (a.body.position.y < MAP_TOP + 64 + a.body.height / 2) {
           a.body.position.y = MAP_TOP + 64 + a.body.height / 2;
@@ -5424,7 +5431,8 @@ export class Simulation {
       }
       if (this.tryNpcPipeEscape(n)) continue;
       if (room.data.type === "water") {
-        this.swim(n);
+        if (this.strokeSwimmer(n)) this.strokeSwim(n, undefined, T.walkSpeed);
+        else this.swim(n);
         continue;
       }
       if (n.navDrop) {
@@ -5528,15 +5536,121 @@ export class Simulation {
     }
   }
 
-  private swim(actor: Actor, target?: { x: number; y: number }) {
+  // The player, Mario, and Goombas and Koopas out of a shell swim with the
+  // player's water motion. Fish, shells, and other kinds keep their own.
+  private strokeSwimmer(a: Actor) {
+    return (
+      a === this.player ||
+      a === this.mario ||
+      ((a.kind === "goomba" || a.kind === "koopa") && a.shell === "none")
+    );
+  }
+
+  // Swim like the player: a stroke sets the swimImpulse rise, and otherwise
+  // the swimmer sinks under swimGravity. Sideways pace is its own axis. The
+  // swimmer steers along the swim path, and strokes when its aim is above
+  // where the current rise tops out. With `ease`,
+  // the sideways speed changes by at most that much per frame.
+  private strokeSwim(
+    actor: Actor,
+    target: Point | undefined,
+    pace: number,
+    ease?: number,
+  ) {
     if (
       !actor.swimPath ||
       actor.swimSize !== actor.body.width ||
-      (actor === this.mario && actor.swimRepath === 0)
+      actor.swimRepath === 0
     ) {
       actor.swimPath = this.roomFor(actor).swimPath(actor, target);
       actor.swimSize = actor.body.width;
       actor.swimRepath = 0.5;
+    }
+    const p = actor.body.position;
+    const path = actor.swimPath;
+    while (path.length > 1 && Math.hypot(p.x - path[0].x, p.y - path[0].y) < 16)
+      path.shift();
+    const aim = this.swimAim(actor, path);
+    if (!aim) {
+      this.swimSideways(actor, 0, ease);
+      return;
+    }
+    const dx = aim.x - p.x;
+    this.swimSideways(actor, Math.sign(dx) * Math.min(pace, Math.abs(dx)), ease);
+    if (Math.abs(dx) > 1) actor.facing = Math.sign(dx);
+    const vy = actor.body.velocity.y;
+    const sink = (T.gravity * T.swimGravity) / 3600;
+    const apex = p.y - (vy < 0 ? (vy * vy) / (2 * sink) : 0);
+    if (aim.y < apex - SWIM_STROKE_MARGIN && vy > -1) this.stroke(actor);
+  }
+
+  // The 16px path is 4-connected, so it steps. Aim past the steps at the
+  // farthest point the whole body can reach in a straight line.
+  private swimAim(actor: Actor, path: Point[]) {
+    const last = Math.min(path.length - 1, SWIM_AIM_AHEAD);
+    if (last <= 0) return path[0];
+    const p = actor.body.position;
+    const hw = actor.body.width / 2 - 1,
+      hh = actor.body.height / 2 - 1;
+    let minX = p.x,
+      maxX = p.x,
+      minY = p.y,
+      maxY = p.y;
+    for (let i = 0; i <= last; i++) {
+      minX = Math.min(minX, path[i].x);
+      maxX = Math.max(maxX, path[i].x);
+      minY = Math.min(minY, path[i].y);
+      maxY = Math.max(maxY, path[i].y);
+    }
+    const near = this.roomFor(actor).solids.filter(
+      (solid) =>
+        !solid.headOnly &&
+        solid.bounds.max.x >= minX - hw &&
+        solid.bounds.min.x <= maxX + hw &&
+        solid.bounds.max.y >= minY - hh &&
+        solid.bounds.min.y <= maxY + hh,
+    );
+    const corners = [
+      [-hw, -hh],
+      [hw, -hh],
+      [-hw, hh],
+      [hw, hh],
+    ];
+    for (let i = last; i > 0; i--) {
+      const q = path[i];
+      if (
+        corners.every(
+          ([ox, oy]) =>
+            !rayBlocked(
+              near,
+              { x: p.x + ox, y: p.y + oy },
+              { x: q.x + ox, y: q.y + oy },
+            ),
+        )
+      )
+        return q;
+    }
+    return path[0];
+  }
+
+  // The player's upward stroke without the player's sound.
+  private stroke(a: Actor) {
+    Body.setVelocity(a.body, { x: a.body.velocity.x, y: -T.swimImpulse });
+    a.grounded = false;
+  }
+
+  private swimSideways(a: Actor, vx: number, ease?: number) {
+    const now = a.body.velocity.x;
+    const next =
+      ease === undefined ? vx : now + Math.max(-ease, Math.min(ease, vx - now));
+    Body.setVelocity(a.body, { x: next, y: a.body.velocity.y });
+  }
+
+  // Fish follow the swim path at a flat speed with gravity off.
+  private swim(actor: Actor, target?: { x: number; y: number }) {
+    if (!actor.swimPath || actor.swimSize !== actor.body.width) {
+      actor.swimPath = this.roomFor(actor).swimPath(actor, target);
+      actor.swimSize = actor.body.width;
     }
     const p = actor.body.position;
     while (
@@ -5549,8 +5663,7 @@ export class Simulation {
       Body.setVelocity(actor.body, { x: 0, y: 0 });
       return;
     }
-    const speed =
-      actor === this.mario ? T.marioSwimSpeed : T.npcSwimSpeed;
+    const speed = T.npcSwimSpeed;
     const dx = next.x - p.x,
       dy = next.y - p.y;
     const length = Math.hypot(dx, dy),
@@ -5939,6 +6052,17 @@ export class Simulation {
     );
   }
 
+  // The land shape with the water numbers. He pulls ahead only on a chase.
+  private marioSwimPace() {
+    return this.marioRunning
+      ? T.marioSwimChasePace + this.marioPressure * T.marioSwimChaseCrowdBonus
+      : T.marioSwimPace + this.marioPressure * T.marioSwimCrowdBonus;
+  }
+
+  private marioAcceleration() {
+    return 0.16 + this.marioPressure * 0.16;
+  }
+
   private updateMario(dt: number) {
     if (!this.marioActive) {
       if (this.marioEntered) return;
@@ -6050,7 +6174,12 @@ export class Simulation {
       this.marioChase = 0;
       const direction = Math.sign(m.x - starThreat.body.position.x) || -1;
       if (water) {
-        this.swim(this.mario, { x: m.x + direction * 240, y: m.y });
+        this.strokeSwim(
+          this.mario,
+          { x: m.x + direction * 240, y: m.y },
+          this.marioSwimPace(),
+          this.marioAcceleration(),
+        );
       } else if (!this.mario.grounded && this.mario.navVx !== undefined) {
         this.move(this.mario, this.mario.navVx);
       } else if (this.mario.grounded) {
@@ -6202,18 +6331,20 @@ export class Simulation {
         ? this.items.find((item) => item.id === this.marioTarget)
         : undefined;
       if (this.marioReaction > 0 || this.marioPause > 0)
-        Body.setVelocity(this.mario.body, { x: 0, y: 0 });
+        this.swimSideways(this.mario, 0, this.marioAcceleration());
       else
-        this.swim(
+        this.strokeSwim(
           this.mario,
           target?.body.position ??
             huntItem?.body.position ?? { x: m.x + direction * 200, y: m.y },
+          this.marioSwimPace(),
+          this.marioAcceleration(),
         );
     } else if (!this.mario.grounded && this.mario.navVx !== undefined) {
       this.move(this.mario, this.mario.navVx);
     } else if (this.mario.grounded) {
       const vx = this.mario.body.velocity.x;
-      const acceleration = 0.16 + this.marioPressure * 0.16;
+      const acceleration = this.marioAcceleration();
       this.move(
         this.mario,
         vx + Math.max(-acceleration, Math.min(acceleration, desired - vx)),

@@ -10797,27 +10797,136 @@ test("star and 8x still defeat on water contact", () => {
   assert.equal(huge.marioStun > 0, true);
 });
 
-test("a swimming player pulls away from a pursuing water Mario", () => {
+test("in water, Goombas and Koopas sink and stroke like the player; fish and shells do not", () => {
+  const s = waterGame();
+  s.player.starLeft = 1e6;
+  const here = s.npcs.filter((n) => n.areaId === s.player.areaId);
+  const goomba = here.find((n) => n.kind === "goomba")!;
+  const koopas = here.filter((n) => n.kind === "koopa");
+  const fish = here.find((n) => n.kind === "fish")!;
+  assert.ok(goomba && koopas.length >= 2 && fish);
+  const [koopa, shell] = koopas as [Actor, Actor];
+  shell.shell = "stopped";
+  for (const n of here) {
+    n.warned = true;
+    n.wait = 0;
+    n.state = "run";
+  }
+  s.events.splice(0);
+  s.step(dt, emptyInput());
+  for (const a of [goomba, koopa, s.player, s.mario])
+    assert.equal(a.body.gravityScale, T.swimGravity, a.kind);
+  assert.equal(fish.body.gravityScale, 0);
+  assert.equal(shell.body.gravityScale, 0);
+  // The cap is applied before the frame's swim gravity, as for the player.
+  const sinkCap = T.swimFallSpeed + (T.gravity * T.swimGravity) / 3600 + 1e-9;
+  const swimmers = [goomba, koopa];
+  const seen = new Map(
+    swimmers.map((n) => [n, { strokes: 0, sinking: 0, maxVy: 0, maxVx: 0 }]),
+  );
+  const sim = s as unknown as {
+    roomFor(a: Actor): { data: { type: string } };
+    inPipe(a: Actor): boolean;
+  };
+  for (let f = 0; f < 60 * 60 && !swimmers.every((n) => n.saved); f++) {
+    const before = swimmers.map((n) => n.body.velocity.y);
+    s.step(dt, emptyInput());
+    swimmers.forEach((n, i) => {
+      if (!n.alive || n.saved || sim.inPipe(n)) return;
+      if (sim.roomFor(n).data.type !== "water") return;
+      const stat = seen.get(n)!;
+      const vy = n.body.velocity.y;
+      if (before[i]! > -1 && vy < -T.swimImpulse + 0.2) stat.strokes++;
+      if (vy > 0) stat.sinking++;
+      stat.maxVy = Math.max(stat.maxVy, vy);
+      stat.maxVx = Math.max(stat.maxVx, Math.abs(n.body.velocity.x));
+    });
+  }
+  for (const [n, stat] of seen) {
+    assert.ok(stat.strokes > 0, `${n.kind} strokes`);
+    assert.ok(stat.sinking > 0, `${n.kind} sinks`);
+    assert.ok(stat.maxVy <= sinkCap, `${n.kind} falls at ${stat.maxVy}`);
+    assert.equal(stat.maxVx, T.walkSpeed, `${n.kind} sideways pace`);
+    assert.ok(n.saved, `${n.kind} reaches the rescue door`);
+  }
+  // Their strokes are silent. The player never pressed jump.
+  assert.ok(!s.events.includes("splat"));
+});
+
+test("water Mario keeps the land pace shape with the smaller water numbers", () => {
+  const s = waterGame();
+  const pace = (running: boolean, pressure: number) => {
+    s.marioRunning = running;
+    s.marioPressure = pressure;
+    return (s as unknown as { marioSwimPace(): number }).marioSwimPace();
+  };
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  assert.ok(near(pace(false, 0), 2.8));
+  assert.ok(near(pace(false, 1), 3.0));
+  assert.ok(near(pace(true, 0), 3.2));
+  assert.ok(near(pace(true, 0.5), 3.4));
+  assert.ok(near(pace(true, 1), 3.6));
+  // He pulls ahead of the player's water pace only while chasing.
+  assert.ok(pace(false, 1) <= T.walkSpeed);
+  assert.ok(pace(true, 0) > T.walkSpeed);
+});
+
+// Hold right and stroke every half second, so the player stays mid-water.
+const swimRight = (frame: number) => ({
+  ...emptyInput(),
+  right: true,
+  jump: frame % 30 === 0,
+});
+
+function waterChase(running: boolean) {
   const s = waterGame();
   parkNpcs(s, []);
-  assert.ok(T.marioSwimSpeed < T.walkSpeed);
   const x = openWaterX(s);
   at(s, x + 40, 240);
   waterStillMario(s);
   s.marioPause = 0;
-  s.marioChase = 6;
-  s.marioTarget = s.player.id;
-  s.marioRunning = true;
-  s.mario.areaId = s.player.areaId;
+  s.marioReaction = 0;
+  s.marioChase = running ? 6 : 0;
+  s.marioTarget = running ? s.player.id : null;
+  s.marioRunning = running;
   Body.setPosition(s.mario.body, { x, y: 240 });
   Body.setVelocity(s.mario.body, { x: 0, y: 0 });
-  const start = Math.abs(s.player.body.position.x - s.mario.body.position.x);
-  tick(s, 0.8, { right: true });
-  const later = Math.abs(s.player.body.position.x - s.mario.body.position.x);
-  assert.ok(
-    later > start + 8,
-    `player did not pull away: start ${start} later ${later}`,
-  );
+  return s;
+}
+
+test("a chasing water Mario eases up to 3.2 and closes on a swimming player", () => {
+  const s = waterChase(true);
+  const speeds: number[] = [];
+  const gap = () => s.player.body.position.x - s.mario.body.position.x;
+  let eased = 0;
+  for (let f = 1; f <= 80; f++) {
+    s.step(dt, swimRight(f));
+    speeds.push(s.mario.body.velocity.x);
+    if (f === 30) eased = gap();
+  }
+  // He eases in at the land acceleration, 0.16 a frame with no crowd.
+  assert.ok(Math.abs(speeds[0]! - 0.16) < 1e-6, `first ${speeds[0]}`);
+  for (let i = 1; i < 20; i++)
+    assert.ok(speeds[i]! - speeds[i - 1]! <= 0.16 + 1e-6);
+  const top = Math.max(...speeds);
+  assert.ok(Math.abs(top - T.marioSwimChasePace) < 1e-6, `top ${top}`);
+  assert.equal(s.player.body.velocity.x, T.walkSpeed);
+  // At full chase pace he gains 0.2px a frame on the player.
+  assert.ok(gap() < eased - 5, `gap ${eased} then ${gap()}`);
+  assert.ok(s.player.alive);
+});
+
+test("a swimming player pulls away from a water Mario that is not chasing", () => {
+  const s = waterChase(false);
+  const start = s.player.body.position.x - s.mario.body.position.x;
+  let top = 0;
+  for (let f = 1; f <= 60; f++) {
+    s.step(dt, swimRight(f));
+    top = Math.max(top, Math.abs(s.mario.body.velocity.x));
+  }
+  assert.ok(top <= T.marioSwimPace + 1e-6, `top ${top}`);
+  const later = s.player.body.position.x - s.mario.body.position.x;
+  assert.ok(later > start + 8, `start ${start} later ${later}`);
   assert.ok(s.player.alive);
 });
 

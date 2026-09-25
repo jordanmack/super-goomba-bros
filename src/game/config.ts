@@ -100,9 +100,14 @@ export const TUNING = {
   swimImpulse: 4.5,
   swimGravity: 0.25,
   swimFallSpeed: 3,
-  // Water rooms only. Below walkSpeed so a swimming player can pull away.
-  marioSwimSpeed: 2,
+  // Fish follow the swim path at this flat speed.
   npcSwimSpeed: 2,
+  // Mario's water pace keeps the land shape with smaller numbers. Idle is
+  // 2.8 + 0.2 * crowd pressure, chasing 3.2 + 0.4 * crowd pressure.
+  marioSwimPace: 2.8,
+  marioSwimCrowdBonus: 0.2,
+  marioSwimChasePace: 3.2,
+  marioSwimChaseCrowdBonus: 0.4,
   deathSequenceSeconds: 2.8,
   deathHopSpeed: 420,
   deathHopDelay: 0.15,

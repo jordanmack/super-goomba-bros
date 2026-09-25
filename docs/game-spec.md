@@ -508,10 +508,18 @@ mid-shrink, or `marioStun` is active. The player cannot hurt Mario by contact
 at any size; 2x and 3x are a damage buffer, not a weapon. A water body hit
 never creates a new shell. A moving shell still kills on overlap. Fireballs,
 star, and a lone 8x stay direction-free as on land. Two 8x bodies do not hit
-by water overlap. Mario's water speed is
-`marioSwimSpeed` in tuning, with no `marioRunning` boost, and is below the
-player's swim speed so a swimming player can pull away. NPCs use
-`npcSwimSpeed` so they are not faster than Mario. Shells in water sink until
+by water overlap. Goombas, Koopas out of a shell, and Mario swim with the
+player's water motion: they sink under `swimGravity`, the fall is capped at
+`swimFallSpeed` as it is for the player, and an upward stroke sets
+`swimImpulse`. They stroke when their swim path needs them to rise, and
+otherwise sink. Sideways motion is separate from the stroke and the sink.
+Their strokes make no sound. Goombas and Koopas swim sideways at the player's
+water pace (`walkSpeed`). Mario's water pace keeps his land shape with
+smaller numbers, where p is crowd pressure from 0 to 1: 2.8 + 0.2p when not
+chasing and 3.2 + 0.4p when chasing. He eases into it with his land
+acceleration. He is faster than a swimming player only while chasing. An
+unwarned Goomba or Koopa still walks the floor. Fish keep the flat
+`npcSwimSpeed` path swim with gravity off. Shells in water sink until
 they meet the floor, then travel along it. A stopped shell rests on the floor.
 A kick above the floor does not teleport down. `shellWake` and `shellShake`
 are unchanged.
