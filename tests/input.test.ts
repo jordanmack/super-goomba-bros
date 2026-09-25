@@ -327,14 +327,18 @@ test("tray pad actions default to X and Y, fill older saved maps, and remap", ()
   assert.equal(bindingPressed(snap([3]), custom.cheatDrop), false);
 });
 
-test("the tray highlight cycles Star to 1-up and tray input needs live play", () => {
+test("the tray highlight starts empty, cycles 2x to 1-up, and needs live play", () => {
+  assert.deepEqual(
+    CHEAT_ITEMS.map((kind) => CHEAT_ITEM_LABELS[kind]),
+    ["2x", "3x", "8x", "Flower", "Star", "1-up"],
+  );
   const labels = [];
-  let pick = 0;
+  let pick: number | null = null;
   for (let i = 0; i <= CHEAT_ITEMS.length; i++) {
-    labels.push(CHEAT_ITEM_LABELS[CHEAT_ITEMS[pick]!]);
     pick = nextCheatPick(pick, CHEAT_ITEMS.length);
+    labels.push(CHEAT_ITEM_LABELS[CHEAT_ITEMS[pick]!]);
   }
-  assert.deepEqual(labels, ["Star", "2x", "3x", "8x", "Flower", "1-up", "Star"]);
+  assert.deepEqual(labels, ["2x", "3x", "8x", "Flower", "Star", "1-up", "2x"]);
 
   const on = toggleUnlimited(unlockTitleCheat(initialTitleCheat()));
   const live = { mode: "playing", paused: false, helpOpen: false, inPipe: false };

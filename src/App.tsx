@@ -88,7 +88,7 @@ type Runtime = {
   ignoreEscapeUntilUp: boolean;
   padMap: Record<PadMapAction, PadBinding>;
   remapTarget: PadMapAction | null;
-  cheatPick: number;
+  cheatPick: number | null;
   cheatTrayWasOpen: boolean;
   clearInput: () => void;
   leaveEnding: () => void;
@@ -178,7 +178,7 @@ export default function App() {
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({});
   const [padMap, setPadMap] = useState(defaultPadMap);
   const [remapTarget, setRemapTarget] = useState<PadMapAction | null>(null);
-  const [cheatPick, setCheatPick] = useState(0);
+  const [cheatPick, setCheatPick] = useState<number | null>(null);
   const hidPad = useRef(false);
   const helpButton = useRef<HTMLButtonElement>(null);
   const helpCloseButton = useRef<HTMLButtonElement>(null);
@@ -235,7 +235,7 @@ export default function App() {
         ignoreEscapeUntilUp: false,
         padMap: defaultPadMap(),
         remapTarget: null,
-        cheatPick: 0,
+        cheatPick: null,
         cheatTrayWasOpen: false,
         clearInput: () => {},
         leaveEnding: () => {},
@@ -320,7 +320,9 @@ export default function App() {
                 });
                 if (!live) return;
                 if (action === "cheatDrop") {
-                  game.sim.dropCheatItem(CHEAT_ITEMS[game.cheatPick]!);
+                  // Drop does nothing until a Change press picks an item.
+                  if (game.cheatPick !== null)
+                    game.sim.dropCheatItem(CHEAT_ITEMS[game.cheatPick]!);
                   return;
                 }
                 game.cheatPick = nextCheatPick(
@@ -367,8 +369,8 @@ export default function App() {
         const delta = Math.min(0.1, frameDelta / 1000);
         const trayOpen = cheatTrayOpen(titleCheatRef.current, sim.mode);
         if (trayOpen && !game.cheatTrayWasOpen) {
-          game.cheatPick = 0;
-          setCheatPick(0);
+          game.cheatPick = null;
+          setCheatPick(null);
         }
         game.cheatTrayWasOpen = trayOpen;
         controls?.poll();

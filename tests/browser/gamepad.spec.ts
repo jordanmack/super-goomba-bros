@@ -344,7 +344,17 @@ test("pad X changes the tray item, Y drops it, and both remap and reset", async 
   });
   const tray = page.getByRole("toolbar", { name: "Power-up tray" });
   const current = tray.locator('[aria-current="true"]');
-  await expect(current).toHaveAttribute("aria-label", "Star");
+  await expect(tray).toBeVisible();
+  await expect(current).toHaveCount(0);
+  const kinds = () =>
+    page.evaluate(() =>
+      (window as any).__game.sim.items.map((item: any) => item.kind),
+    );
+  // Y does nothing until X picks an item.
+  const opened = (await kinds()).length;
+  await setPad(page, [3]);
+  await setPad(page, []);
+  expect(await kinds()).toHaveLength(opened);
   await setPad(page, [2]);
   await expect(current).toHaveAttribute("aria-label", "2x");
   // Holding X across frames does not repeat.
@@ -356,10 +366,6 @@ test("pad X changes the tray item, Y drops it, and both remap and reset", async 
   await setPad(page, []);
   await expect(current).toHaveAttribute("aria-label", "3x");
 
-  const kinds = () =>
-    page.evaluate(() =>
-      (window as any).__game.sim.items.map((item: any) => item.kind),
-    );
   const before = (await kinds()).length;
   await setPad(page, [3]);
   await setPad(page, [3]);

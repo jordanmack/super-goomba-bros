@@ -4,11 +4,11 @@ import type { Body } from "./physics.ts";
 export const AREA_TOP_ROW = 2;
 export const AREA_BOTTOM_ROW = 14;
 export const CHEAT_ITEMS = [
-  "star",
   "mushroom",
   "mushroom3x",
   "mushroom8x",
   "flower",
+  "star",
   "oneUp",
 ] as const;
 

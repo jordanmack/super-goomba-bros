@@ -232,7 +232,7 @@ stages 1-2, 2-2, 4-2, and 7-2 still play their overworld strip on that first
 arrival.
 
 The tray sits at the bottom of the playfield, above the on-screen pad, with
-star, 2x, 3x, 8x, flower, and 1-up. A click while playing spawns that item in
+2x, 3x, 8x, flower, star, and 1-up in that order. A click while playing spawns that item in
 the player column. It hangs in the sky when that column is open, or at the
 first empty cell under a ceiling. It blinks in place for the cheat-drop hold,
 stays at that world position, and is not collectable until it lands. Then it
@@ -240,15 +240,20 @@ falls straight down with no horizontal spawn drift. Any character can collect
 it after it lands. It plays the appear cue. Ignore clicks on the title, intro,
 GAME OVER, dead, or finishing screens, and while the player is in a pipe.
 
-One tray button is highlighted as the current item. The highlight starts on
-Star each time the tray opens. Change (U, or gamepad X) moves it Star, 2x, 3x,
-8x, Flower, 1-up, then back to Star. Drop (I, or gamepad Y) drops the
-highlighted item through the same path as a click. Each press acts once:
+The tray opens with no highlighted item, including each time it opens again
+after being hidden. The first Change press (U, or gamepad X) highlights the
+leftmost item, 2x, and does not move past it. Each later Change press moves the
+highlight one item, 2x, 3x, 8x, Flower, Star, 1-up, then back to 2x. The
+highlight is a thick ring in the button red (#e6554b) so it reads against the
+white edge. Until an item is highlighted, Drop (I, or gamepad Y) does nothing.
+After that it drops the highlighted item through the same path as a click and
+leaves the highlight where it is. Each press acts once:
 holding the key or button, or key repeat, does nothing more, and a button still
 held after closing Help or a remap waits for its release. Change and Drop act
 only while the tray is open, the game is playing and not paused, Help is
 closed, and the player is not in a pipe; any other press does nothing. A click
-still drops that item and leaves the highlight where it is. Both pad buttons
+still drops that item, does not start a highlight, and leaves any highlight
+where it is. Both pad buttons
 can be remapped in Help, and Reset gamepad restores X and Y.
 
 A side pipe is entered only by walking right into its mouth hole, the lower

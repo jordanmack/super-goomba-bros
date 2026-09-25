@@ -61,9 +61,12 @@ export function cheatBindingsShown(cheat: TitleCheat) {
   return cheat.unlocked && cheat.unlimited;
 }
 
-/** Change steps Star, 2x, 3x, 8x, Flower, 1-up, then back to Star. */
-export function nextCheatPick(pick: number, count: number) {
-  return (pick + 1) % count;
+/**
+ * Change from no highlight picks 2x, then steps 3x, 8x, Flower, Star, 1-up,
+ * and back to 2x.
+ */
+export function nextCheatPick(pick: number | null, count: number) {
+  return pick === null ? 0 : (pick + 1) % count;
 }
 
 /** Tray keys and pad buttons act only in live play with the tray open. */

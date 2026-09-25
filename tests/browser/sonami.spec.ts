@@ -230,20 +230,12 @@ test("U changes the highlighted tray item and I drops it, once per press", async
   });
   const tray = page.getByRole("toolbar", { name: "Power-up tray" });
   const current = tray.locator('[aria-current="true"]');
-  await expect(current).toHaveCount(1);
-  await expect(current).toHaveAttribute("aria-label", "Star");
-  await page.keyboard.press("KeyU");
-  await expect(current).toHaveAttribute("aria-label", "2x");
-  // A held key repeats keydown; only the first press counts.
-  await page.keyboard.down("KeyU");
-  await page.keyboard.down("KeyU");
-  await page.keyboard.down("KeyU");
-  await page.keyboard.up("KeyU");
-  await expect(current).toHaveAttribute("aria-label", "3x");
-  for (const label of ["8x", "Flower", "1-up", "Star", "2x"]) {
-    await page.keyboard.press("KeyU");
-    await expect(current).toHaveAttribute("aria-label", label);
-  }
+  const order = await tray
+    .getByRole("button")
+    .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")));
+  expect(order).toEqual(["2x", "3x", "8x", "Flower", "Star", "1-up"]);
+  await expect(tray).toBeVisible();
+  await expect(current).toHaveCount(0);
 
   const items = () =>
     page.evaluate(() =>
@@ -253,6 +245,32 @@ test("U changes the highlighted tray item and I drops it, once per press", async
         hold: item.hold > 0,
       })),
     );
+  const count = async () => (await items()).length;
+  // With no highlight, Drop does nothing.
+  const opened = await count();
+  await page.keyboard.press("KeyI");
+  await page.keyboard.press("KeyI");
+  expect(await count()).toBe(opened);
+  await expect(current).toHaveCount(0);
+
+  await page.keyboard.press("KeyU");
+  await expect(current).toHaveAttribute("aria-label", "2x");
+  // A held key repeats keydown; only the first press counts.
+  await page.keyboard.down("KeyU");
+  await page.keyboard.down("KeyU");
+  await page.keyboard.down("KeyU");
+  await page.keyboard.up("KeyU");
+  await expect(current).toHaveAttribute("aria-label", "3x");
+  for (const label of ["8x", "Flower", "Star", "1-up", "2x"]) {
+    await page.keyboard.press("KeyU");
+    await expect(current).toHaveAttribute("aria-label", label);
+  }
+  await expect(current).toHaveCSS("border-top-color", "rgb(230, 85, 75)");
+  await expect(current).toHaveCSS(
+    "box-shadow",
+    "rgb(230, 85, 75) 0px 0px 0px 3px",
+  );
+
   const before = (await items()).length;
   await page.keyboard.down("KeyI");
   await page.keyboard.down("KeyI");
@@ -273,7 +291,6 @@ test("U changes the highlighted tray item and I drops it, once per press", async
   await expect(current).toHaveAttribute("aria-label", "2x");
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
 
-  const count = async () => (await items()).length;
   const settled = await count();
   await page.keyboard.press("Escape");
   await expect
@@ -307,12 +324,25 @@ test("U changes the highlighted tray item and I drops it, once per press", async
     delete (window as any).__game.sim.playerInPipe;
   });
 
-  // Back to the title and in again: the tray opens on Star.
+  // Back to the title and in again: the tray opens with no highlight.
   await page.evaluate(() => (window as any).__game.sim.reset("title"));
   await expect(tray).toHaveCount(0);
   await page.getByRole("button", { name: "START GAME" }).click();
   await skipIntro(page);
-  await expect(current).toHaveAttribute("aria-label", "Star");
+  await expect(tray).toBeVisible();
+  await expect(current).toHaveCount(0);
+  const restarted = await count();
+  await page.keyboard.press("KeyI");
+  expect(await count()).toBe(restarted);
+  // A click drops its item and does not start a highlight.
+  await page.getByRole("button", { name: "Star", exact: true }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  expect(
+    (await items()).slice(restarted).map((item: { kind: string }) => item.kind),
+  ).toEqual(["star"]);
+  await expect(current).toHaveCount(0);
+  await page.keyboard.press("KeyU");
+  await expect(current).toHaveAttribute("aria-label", "2x");
 });
 
 test("tray click while paused does not spawn", async ({ page }) => {
