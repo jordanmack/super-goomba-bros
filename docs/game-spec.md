@@ -584,6 +584,36 @@ and that timer does not choose his form. Other stages still use the timer
 (`fasterAt`, then `fireballsAt`). Restarting a
 stage resets its timer.
 
+## Piranha Plants
+
+SMB1 `VerticalPipe` grows a Piranha Plant from every vertical pipe, warp and
+decoration pipes included, in every stage but World 1-1. Side pipes never grow
+one. The plant is a hazard, not a rescue NPC, and is not in WARNED, SAVED, or
+DIED. The player cannot rescue it.
+
+- Motion (`MovePiranhaPlant`): it moves between the pipe mouth and 24 NES px
+  above it at 1 NES px every other frame, and waits $40 frames at each end.
+- At the bottom it stays in its pipe while the player or any living rescue NPC
+  is within $21 NES px (66 px) horizontally, including standing on the pipe.
+  Mario does not hold it down. A plant that is already out still goes back
+  down on its own.
+- It is drawn from the enemy sheet behind the level tiles, so the pipe hides
+  the part still inside it. It is green in overworld areas and teal
+  underground and in castles, flaps every 8 frames, and is not drawn while it
+  waits at the bottom.
+- Contact uses bounding box $09: 10x6 NES px, 14-20 px below the plant's top
+  and centered on the pipe. It hurts like a firebar: it kills or shrinks the
+  player and NPCs, adds NPC deaths to DIED, and can damage Mario. A star or an
+  8x body makes the player immune.
+- A calm NPC waits short of a pipe whose plant is up or moving, including
+  before it ducks into that pipe. Once it is within 66 px the plant stays down,
+  so the crossing is safe. With Mario within 340 px the NPC panics and may run
+  into the plant and die.
+- SMB1 loads an area with its plants down, so the player always rises clear
+  of an arrival pipe; the plant resets as the player comes up. An NPC or Mario
+  rising out of a pipe whose plant is out waits inside until it drops.
+- A plant whose pipe mouth was smashed is gone.
+
 ## Castle interiors
 
 Castle areas spawn the original rotating firebars from the enemy tables. Each
@@ -591,8 +621,10 @@ bar is a chain of fireballs about a fixed block, at the original length and
 spin speed, including both rotation directions. Contact uses the same hurt and
 kill rules as other lethal hits. It kills or shrinks the player and NPCs, adds
 NPC deaths to DIED, and can damage Mario. A star makes the player immune.
-Touching the balls, even at 8x, does not destroy a bar. Warned NPCs path around
-a bar when they can. They may still die on one.
+Touching the balls, even at 8x, does not destroy a bar. A calm NPC times its
+way past a bar when it can. With Mario within 340px of it, an NPC panics: it
+stops timing bars and may run into one and die. The same rule times Piranha
+Plants.
 
 The bar spins on the one cell at its pivot, whatever that cell's metatile.
 When that cell is removed, by an 8x body, a scale-8 fireball, or the bridge

@@ -100,6 +100,21 @@ function waterEnemySprites(enemies: HTMLImageElement) {
   return art;
 }
 
+// Piranha Plant frames: closed and open, in sprite palette 1. That is green
+// on overworld areas and teal underground and in castles.
+export const PIRANHA_SHEET = { x: [390, 420], greenY: 30, tealY: 60 } as const;
+
+function piranhaSprites(enemies: HTMLImageElement) {
+  const [closed, open] = PIRANHA_SHEET.x;
+  const { greenY, tealY } = PIRANHA_SHEET;
+  return {
+    piranha: crop(enemies, closed, greenY, 16, 24),
+    piranhaOpen: crop(enemies, open, greenY, 16, 24),
+    piranhaTeal: crop(enemies, closed, tealY, 16, 24),
+    piranhaTealOpen: crop(enemies, open, tealY, 16, 24),
+  };
+}
+
 // Cheep Cheep animation bases, each with a Walk frame and a fire variant.
 export const CHEEP_BASES = ["redCheep", "greenCheep", "greyCheep"] as const;
 
@@ -186,6 +201,7 @@ export function characterSprites({ mario, enemies }: SpriteSources) {
     goomba,
     goombaWalk,
     ...waterEnemySprites(enemies),
+    ...piranhaSprites(enemies),
     lakitu,
     lakituDrop,
     hammerBro,

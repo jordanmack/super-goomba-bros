@@ -8,6 +8,7 @@ import { CAMPAIGN, areaData } from "../../src/game/levels.ts";
 import { TUNING as T } from "../../src/game/config.ts";
 import { physics } from "./arcade.ts";
 import type { PlatformMotion } from "../../src/game/platform-motion.ts";
+import type { PlantMotion } from "../../src/game/piranha.ts";
 
 type State = {
   x: number;
@@ -26,6 +27,13 @@ type State = {
   // Every room's moving platforms, so a rewind replays their own motion.
   lifts: Record<string, SavedLifts>;
   liftKey: string;
+  // Every room's Piranha Plants, so a rewind replays their cycle.
+  plants: Record<string, PlantMotion[]>;
+  // Rooms loaded so far. A rewind unloads later ones so they load fresh.
+  roomIds: string[];
+  // Spring squashes in progress, riders included.
+  springRides: unknown[];
+  terrainId: number;
   bills: BulletBill[];
   billId: number;
   cannonTimers: Record<string, number[]>;
@@ -155,6 +163,17 @@ function capture(sim: Simulation): State {
         ];
       }),
     ),
+    roomIds: [...sim.rooms.keys()],
+    springRides: structuredClone(
+      (sim as unknown as { springRides: unknown[] }).springRides,
+    ),
+    terrainId: (sim as unknown as { terrainId: number }).terrainId,
+    plants: Object.fromEntries(
+      [...sim.rooms].map(([id, room]) => [
+        id,
+        room.plants.map((plant) => ({ ...plant.motion })),
+      ]),
+    ),
     liftKey: sim.activeRoom.platforms
       .map(
         (p) =>
@@ -192,7 +211,32 @@ function capture(sim: Simulation): State {
     hammers: sim.hammers.map((hammer) => ({ ...hammer })),
   };
 }
+// Load exactly the rooms the state had. A room another branch loaded does not
+// exist yet here: plants in it would keep that branch's cycle, so unload it.
+// A room this state had but a rewind unloaded is rebuilt fresh, in load
+// order, so its terrain ids match a real replay.
+function syncRooms(sim: Simulation, state: State) {
+  for (const [id, room] of [...sim.rooms]) {
+    if (state.roomIds.includes(id)) continue;
+    const bodies = new Set(room.solids);
+    const blocks = new Set(room.obstacles);
+    for (const body of room.solids) sim.physics.remove(body);
+    sim.solids = sim.solids.filter((body) => !bodies.has(body));
+    sim.obstacles = sim.obstacles.filter((block) => !blocks.has(block));
+    sim.rooms.delete(id);
+  }
+  const terrain = sim as unknown as { terrainId: number };
+  terrain.terrainId = [...sim.rooms.values()].reduce(
+    (sum, room) => sum + room.obstacles.length,
+    0,
+  );
+  for (const id of state.roomIds) if (!sim.rooms.has(id)) sim.loadRoom(id);
+  if (terrain.terrainId !== state.terrainId)
+    throw new Error(`terrain ids drifted: ${terrain.terrainId} vs ${state.terrainId}`);
+}
+
 function restore(sim: Simulation, state: State) {
+  syncRooms(sim, state);
   sim.physics.remove(sim.player.body);
   sim.bulletBills = state.bills.map((b) => ({ ...b }));
   (sim as unknown as { nextId: number }).nextId = state.billId;
@@ -208,7 +252,16 @@ function restore(sim: Simulation, state: State) {
   }
   const lfsr = (sim as unknown as { cannonLfsr: Uint8Array }).cannonLfsr;
   for (let i = 0; i < lfsr.length; i++) lfsr[i] = state.cannonLfsr[i] ?? 0;
+  (sim as unknown as { springRides: unknown[] }).springRides = structuredClone(
+    state.springRides,
+  );
   for (const [id, room] of sim.rooms) {
+    const plants = state.plants[id];
+    if (plants)
+      room.plants.forEach((plant, i) => {
+        const motion = plants[i];
+        if (motion) plant.motion = { ...motion };
+      });
     const saved = state.lifts[id];
     if (!saved) continue;
     const clock = room as unknown as LiftClock;
@@ -277,6 +330,10 @@ function restore(sim: Simulation, state: State) {
   sim.player.jumpHeld = state.jumpHeld;
   sim.player.jumpHoldG = state.jumpHoldG;
   sim.player.jumpFallG = state.jumpFallG;
+  if (!sim.activeRoom)
+    throw new Error(
+      `restore lost area ${state.area}: captured ${state.roomIds.join(",")}; loaded ${[...sim.rooms.keys()].join(",")}; level ${sim.levelIndex}`,
+    );
   sim.cameraX = sim.activeRoom.offset;
   for (const block of sim.obstacles) {
     block.bounce = 0;
@@ -374,6 +431,8 @@ function execute(sim: Simulation, start: State, macro: Macro) {
     actions.push(bits);
     step(sim, bits);
     if (sim.mode === "dead" || sim.player.body.position.y > 630) return null;
+    // A warp pipe leaves the stage, and its reset cannot be rewound.
+    if (sim.player.pipeTravel?.destLevel !== undefined) return null;
     if (sim.mode === "finishing")
       return { actions, won: true, state: capture(sim) };
     if (sim.player.areaId !== start.area) break;
@@ -501,6 +560,22 @@ function search(index: number) {
         return { route: pack(parts.reverse().flat()), nodes: count };
       }
       const phase = room.platforms.length ? state.liftKey : 0;
+      const springPhase = (
+        state.springRides as { areaId: string; step: number; tick: number }[]
+      )
+        .filter((ride) => ride.areaId === state.area)
+        .map((ride) => `${ride.step},${ride.tick}`)
+        .join("|");
+      // A plant near the player is part of the state: its rise, its heading,
+      // and its wait in 8-frame steps.
+      const plantPhase = room.plants
+        .map((plant, i) => ({ plant, motion: state.plants[state.area]?.[i] }))
+        .filter(({ plant, motion }) => motion && Math.abs(plant.x - state.x) < 200)
+        .map(
+          ({ motion }) =>
+            `${motion!.rise},${motion!.speed},${Math.ceil(motion!.timer / 8)}`,
+        )
+        .join("|");
       const firePhase = room.firebars.some(
         (bar) => Math.abs(state.x - bar.x) < 220,
       )
@@ -536,7 +611,7 @@ function search(index: number) {
               `h${Math.round((hammer.x - state.x) / 24)},${Math.round((hammer.y - state.y) / 24)}v${Math.sign(hammer.vx)}`,
           ),
       ].join("|");
-      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${billPhase}:${hammerPhase}:${state.hidden.join(",")}`;
+      const key = `${state.area}:${Math.round((state.x - room.offset) / 6)}:${Math.round(state.y / 6)}:${Math.round(state.vy)}:${Number(state.grounded)}:${Math.round(state.pace)}:${phase}:${firePhase}:${billPhase}:${hammerPhase}:${plantPhase}:${springPhase}:${state.hidden.join(",")}`;
       if ((visited.get(key) ?? Infinity) <= cost) continue;
       visited.set(key, cost);
       const dx =
@@ -584,10 +659,15 @@ for (const level of levels) {
   const sim = prepare(index);
   for (const [bits, frames] of found.route)
     for (let i = 0; i < frames; i++) step(sim, bits);
-  if (sim.mode !== "finishing" && sim.mode !== "won")
-    throw new Error(
-      `${level.id}: candidate failed real input replay (${sim.mode})`,
+  if (sim.mode !== "finishing" && sim.mode !== "won") {
+    writeFileSync(
+      "/tmp/super-goomba-failed-route.json",
+      JSON.stringify({ id: level.id, route: found.route }),
     );
+    throw new Error(
+      `${level.id}: candidate failed real input replay (${sim.mode} in ${sim.player.areaId} at ${Math.round(sim.player.body.position.x - sim.activeRoom.offset)},${Math.round(sim.player.body.position.y)})`,
+    );
+  }
   sim.physics.clear();
   results[level.id] = found.route;
   writeFileSync(output, JSON.stringify(results) + "\n");

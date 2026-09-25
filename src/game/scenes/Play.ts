@@ -6,7 +6,8 @@ import {
   titleCamera,
 } from "../config";
 import { isSolidTile, themeFor } from "../levels";
-import { ROPE_TILE, type Room } from "../room";
+import { ROPE_TILE, plantTop, type Room } from "../room";
+import { plantShown } from "../piranha";
 import atlas from "../../assets/smb/metatiles.json";
 import {
   actorSpriteBox,
@@ -274,6 +275,13 @@ export class Play extends Phaser.Scene {
         3,
       ).setRotation(0);
     }
+    // Piranha Plants draw behind the level tiles, so the pipe hides whatever
+    // is still inside it. They flap every 8 frames.
+    const plantArt = room.data.type === "overworld" ? "piranha" : "piranhaTeal";
+    const plantOpen = Math.floor(sim.frame / 8) % 2 ? "Open" : "";
+    for (const plant of room.plants)
+      if (!room.plantGone(plant) && plantShown(plant.motion))
+        image(plant.x, plantTop(plant) + 24, 32, 48, plantArt + plantOpen, -1);
     for (const platform of room.platforms) {
       const tiles = platform.body.width / 16;
       // CloudTypeOverride swaps the large deck to puffs. Small decks keep $5B.

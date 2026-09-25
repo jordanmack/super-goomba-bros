@@ -18,6 +18,7 @@ import {
   type PlatformMotion,
 } from "./platform-motion.ts";
 import type { Point } from "./physics.ts";
+import { PLANT_BOX, initPlant, type PlantMotion } from "./piranha.ts";
 import {
   AXE_OPCODE,
   FIREBAR_TYPE,
@@ -90,6 +91,32 @@ export function enemyRole(type: number): EnemyRole {
   return "other";
 }
 
+// A Piranha Plant in a vertical pipe. x is the pipe's center and pipeTop the
+// top of its mouth.
+export type Plant = {
+  x: number;
+  pipeTop: number;
+  column: number;
+  row: number;
+  motion: PlantMotion;
+};
+
+// The plant's top edge on screen.
+export function plantTop(plant: Plant) {
+  return plant.pipeTop - plant.motion.rise * 2;
+}
+
+// Where the plant hurts, as a center and half sizes on screen.
+export function plantHurtBox(plant: Plant) {
+  const top = plantTop(plant);
+  return {
+    x: plant.x,
+    y: top + (PLANT_BOX.top + PLANT_BOX.bottom),
+    halfW: PLANT_BOX.halfW * 2,
+    halfH: PLANT_BOX.bottom - PLANT_BOX.top,
+  };
+}
+
 // One hanging rope of a balance lift, from under its pulley to the deck.
 export type BalanceRope = { x: number; top: number; bottom: number };
 
@@ -160,6 +187,7 @@ export class Room {
   coins: { x: number; y: number; collected: boolean }[] = [];
   // Frenzy objects by left edge, in column order.
   frenzies: { x: number; opcode: number }[] = [];
+  plants: Plant[] = [];
 
   constructor(
     physics: PhysicsWorld,
@@ -719,6 +747,28 @@ export class Room {
   onSpring(actor: Actor) {
     return !!this.springAt(actor);
   }
+  // VerticalPipe grows a Piranha Plant from every vertical pipe, warp or
+  // decoration. Side pipes do not. The simulation skips World 1-1.
+  growPlants() {
+    this.plants = this.data.pipes
+      .filter((pipe) => pipe.direction !== "right")
+      .map((pipe) => ({
+        x: this.offset + (pipe.column + pipe.width / 2) * 32,
+        pipeTop: MAP_TOP + pipe.row * 32,
+        column: pipe.column,
+        row: pipe.row,
+        motion: initPlant(),
+      }));
+  }
+
+  // A plant whose pipe mouth was smashed has nowhere to grow.
+  plantGone(plant: Plant) {
+    return (
+      this.smashedTiles.has(`${plant.column},${plant.row}`) ||
+      this.smashedTiles.has(`${plant.column + 1},${plant.row}`)
+    );
+  }
+
   // The frenzy the level has reached at `right`, the view's right edge. The
   // renderer meets an area object as it scrolls in; a stop object ends it.
   frenzyAt(right: number) {

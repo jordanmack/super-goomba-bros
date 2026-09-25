@@ -49,7 +49,16 @@ import {
   FRENZY_FLYING_CHEEPS,
   Room,
   enemyRole,
+  plantHurtBox,
 } from "./room.ts";
+import {
+  PLANT_BOX,
+  PLANT_CLEAR,
+  PLANT_RISE,
+  initPlant,
+  plantResting,
+  stepPlant,
+} from "./piranha.ts";
 import {
   FLY_START_Y,
   FLY_TIMER,
@@ -523,6 +532,12 @@ const SWIM_AIM_AHEAD = 12;
 const SWIM_STROKE_MARGIN = 8;
 // Bloopers and Cheep Cheeps move while within this much of the view.
 const SWIMMER_VIEW_MARGIN = 128;
+// Mario this close sends NPCs into a panic: they stop timing firebars and
+// Piranha Plants and may run into them.
+const MARIO_THREAT_RANGE = 340;
+// An NPC already this close to a plant's center keeps going, not stopping in
+// the plant: the 10px box plus a small margin.
+const PLANT_PASS_X = 14;
 export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
 const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
 /** SCORE change for one tally line: count times that line's points. */
@@ -759,6 +774,13 @@ export class Simulation {
     if (!entry) return false;
     const { pipe, destination, destLevel } = entry;
     const room = this.roomFor(actor);
+    // A calm NPC does not duck into a pipe while its plant is out.
+    if (actor !== this.player && actor !== this.mario && !this.marioThreat(actor)) {
+      const plant = room.plants.find(
+        (p) => p.column === pipe.column && p.row === pipe.row,
+      );
+      if (plant && !plantResting(plant.motion)) return false;
+    }
     const wasHuge = this.isHuge(actor);
     const hugeFeet = actor.body.bounds.max.y;
     if (wasHuge) this.expireHuge(actor);
@@ -835,6 +857,16 @@ export class Simulation {
     for (const actor of [this.player, ...this.npcs, this.mario]) {
       const travel = actor.pipeTravel;
       if (!travel) continue;
+      if (travel.phase === "exit" && travel.dir === "up") {
+        const plant = this.plantAt(actor);
+        if (plant && !plantResting(plant.motion)) {
+          // SMB1 loads an area with its plants down and the player within
+          // $21, so the player always rises clear. Anyone else waits in the
+          // pipe; being that close keeps the plant down once it drops.
+          if (actor === this.player) plant.motion = initPlant();
+          else continue;
+        }
+      }
       const step = (travel.speed ?? T.pipeSpeed) * dt * 60;
       const move = Math.min(step, travel.remaining);
       const p = actor.body.position;
@@ -1162,6 +1194,8 @@ export class Simulation {
     );
     this.terrainId += room.obstacles.length;
     this.rooms.set(id, room);
+    // VerticalPipe never adds a plant in World 1-1.
+    if (this.level.id !== "1-1") room.growPlants();
     this.solids.push(...room.solids);
     this.obstacles.push(...room.obstacles);
     if (this.npcs.length) this.spawnLevelActors(room);
@@ -2563,7 +2597,8 @@ export class Simulation {
   // this actor does not have to dodge bars.
   private npcFirebarClear(a: Actor) {
     const room = this.roomFor(a);
-    if (a === this.mario || !room.firebars.length) return;
+    if (a === this.mario || !room.firebars.length || this.marioThreat(a))
+      return;
     const half = a.body.width / 2;
     const tall = a.body.height / 2;
     return (point: { x: number; y: number; frames: number }) =>
@@ -2952,11 +2987,17 @@ export class Simulation {
     // Arcs are checked against each bar's phase at the frame the body is there.
     // step() advances frame before updateNpcs, so flight 1 is the current frame.
     const room = this.roomFor(a);
+    if (this.plantAhead(a, direction)) {
+      a.navFirebarWaitFrame = this.frame;
+      this.move(a, 0);
+      return;
+    }
     const firebarFree = this.npcFirebarClear(a);
     // A bar mounted at walking height can only be jumped, so a halt falls
     // through to the jump planner instead of standing until a ball arrives.
+    // A panicked NPC, with Mario near, does not time the bars at all.
     let firebarHalt = false;
-    if (a !== this.mario && room.firebars.length) {
+    if (a !== this.mario && room.firebars.length && !this.marioThreat(a)) {
       const pace = this.runSpeedFor(a);
       const zone = this.firebarZone(a, direction);
       // A walking plan holds height fixed, so it needs the whole crossing on
@@ -5456,6 +5497,8 @@ export class Simulation {
       marioFalling,
     );
     this.updateCastleHazards(dt);
+    this.updatePlants();
+    this.collidePlants();
     this.resolveHammerHits(marioBottom, marioFalling, prevBroTops);
     this.updateFlagpoles(dt);
     if (this.mode === "finishing") {
@@ -5616,6 +5659,7 @@ export class Simulation {
             )
               return "blocked";
             if (
+              !this.marioThreat(n) &&
               this.firebarBlocks(
                 this.roomFor(n),
                 ahead,
@@ -5625,6 +5669,7 @@ export class Simulation {
               )
             )
               return "blocked";
+            if (this.plantAhead(n, direction)) return "blocked";
             if (below.some((s) => Math.abs(s.bounds.min.y - feet) < 6))
               return "walk";
             if (
@@ -5754,8 +5799,7 @@ export class Simulation {
           n.blockedFor = 0;
         }
       }
-      const threat =
-        this.marioActive && Math.abs(this.mario.body.position.x - p.x) < 340;
+      const threat = this.marioThreat(n);
       if (n.state === "idle" || (n.state === "run" && threat && n.wait < -2)) {
         n.state = "run";
         n.wait = -0.01;
@@ -7139,6 +7183,91 @@ export class Simulation {
     }
     const bottom = MAP_TOP + 15 * 32 + T.firebarBallRadius;
     this.firebarDebris = this.firebarDebris.filter((ball) => ball.y < bottom);
+  }
+
+  // Piranha Plants in every loaded room. One at the bottom stays in its pipe
+  // while the player or a living rescue NPC is within PLANT_CLEAR NES px of
+  // it. Mario does not hold it down.
+  private updatePlants() {
+    for (const room of this.rooms.values()) {
+      if (!room.plants.length) continue;
+      const holders = [this.player, ...this.npcs].filter(
+        (a) => a.alive && !a.saved && this.roomFor(a) === room,
+      );
+      for (const plant of room.plants) {
+        if (room.plantGone(plant)) continue;
+        const near = holders.some(
+          (a) => Math.abs(a.body.position.x - plant.x) < PLANT_CLEAR * 2,
+        );
+        stepPlant(plant.motion, this.frame, near);
+      }
+    }
+  }
+
+  // A plant hurts like a firebar: the player and NPCs are hurt (a star or 8x
+  // body is immune), and Mario is damaged.
+  private collidePlants() {
+    const actors = [
+      this.player,
+      ...this.npcs,
+      ...(this.marioActive ? [this.mario] : []),
+    ];
+    for (const a of actors) {
+      if (!a.alive || a.saved || this.inPipe(a)) continue;
+      const room = this.roomFor(a);
+      if (!room.plants.length) continue;
+      const box = this.hurtBox(a);
+      const hit = room.plants.some((plant) => {
+        if (room.plantGone(plant) || plant.motion.rise === 0) return false;
+        const b = plantHurtBox(plant);
+        return (
+          Math.abs(box.x - b.x) < box.halfW + b.halfW &&
+          Math.abs(box.y - b.y) < box.halfH + b.halfH
+        );
+      });
+      if (!hit) continue;
+      if (a === this.mario) {
+        if (this.marioStun > 0) continue;
+        this.hitMarioByFireball(false);
+      } else this.hurt(a);
+    }
+  }
+
+  // The plant in the vertical pipe the actor is in or on.
+  private plantAt(a: Actor) {
+    const room = this.roomFor(a);
+    return room.plants.find(
+      (plant) =>
+        !room.plantGone(plant) && Math.abs(plant.x - a.body.position.x) < 32,
+    );
+  }
+
+  private marioThreat(a: Actor) {
+    return (
+      this.marioActive &&
+      Math.abs(this.mario.body.position.x - a.body.position.x) <
+        MARIO_THREAT_RANGE
+    );
+  }
+
+  // A calm NPC waits short of a pipe whose plant is up or moving, the way it
+  // times a firebar. Within PLANT_CLEAR it then holds the plant down once it
+  // drops, so the crossing is safe.
+  private plantAhead(a: Actor, direction: number) {
+    if (a === this.mario || a === this.player || this.marioThreat(a))
+      return false;
+    const room = this.roomFor(a);
+    const p = a.body.position,
+      half = a.body.width / 2;
+    // At full rise the box's top is this far above the pipe top.
+    const reach = (PLANT_RISE - PLANT_BOX.top) * 2;
+    return room.plants.some((plant) => {
+      if (room.plantGone(plant) || plantResting(plant.motion)) return false;
+      if (Math.abs(plant.x - p.x) < half + PLANT_PASS_X) return false;
+      const ahead = (plant.x - p.x) * direction;
+      if (ahead < 0 || ahead > PLANT_CLEAR * 2 + half) return false;
+      return a.body.bounds.max.y > plant.pipeTop - reach;
+    });
   }
 
   private collideFirebars() {

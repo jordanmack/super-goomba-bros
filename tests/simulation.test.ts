@@ -48,6 +48,7 @@ import {
   walkPace,
 } from "../src/game/simulation.ts";
 import { flagTextureKey } from "../src/game/smb-sprites.ts";
+import { initPlant } from "../src/game/piranha.ts";
 
 class Simulation extends RulesSimulation {
   constructor(random = Math.random) {
@@ -12025,6 +12026,224 @@ test("8-4 runs flying Cheep Cheeps between columns 221 and 234", () => {
   assert.equal(room.frenzyAt(room.offset + 220 * 32), undefined);
   assert.equal(room.frenzyAt(room.offset + 221 * 32), 42);
   assert.equal(room.frenzyAt(room.offset + 240 * 32), undefined);
+});
+
+// 2-2's land end (area 25) has flat-ground pipes. 2-2 is not World 1-1, so
+// they grow plants. The player stays in the water area unless moved.
+function plantStage() {
+  const s = stageAt("2-2");
+  const room = s.loadRoom("25");
+  const plant = room.plants.find((p) => p.column === 28)!;
+  assert.ok(plant, "area 25 has a plant at column 28");
+  parkNpcs(s, []);
+  return { s, room, plant };
+}
+
+const plantUp = () => ({ rise: 24, speed: -1 as const, moving: false, timer: 60 });
+
+function pin(a: Actor, x: number, feet: number) {
+  Body.setPosition(a.body, { x, y: feet - a.body.height / 2 });
+  Body.setVelocity(a.body, { x: 0, y: 0 });
+}
+
+test("vertical pipes grow Piranha Plants, except in World 1-1 and side pipes", () => {
+  const first = game();
+  for (const room of first.rooms.values()) assert.equal(room.plants.length, 0);
+  assert.equal(first.loadRoom("25").plants.length, 0, "1-1 never grows one");
+  const { room } = plantStage();
+  const vertical = room.data.pipes.filter((p) => p.direction !== "right");
+  assert.equal(room.plants.length, vertical.length);
+  for (const [i, pipe] of vertical.entries()) {
+    const plant = room.plants[i]!;
+    assert.equal(plant.x, room.offset + (pipe.column + 1) * 32);
+    assert.equal(plant.pipeTop, MAP_TOP + pipe.row * 32);
+    assert.equal(plant.motion.rise, 0);
+  }
+  // The 1-2 warp mouths (columns 178, 182, 186) grow them too. Its side
+  // pipe at column 166 does not.
+  const warp = stageAt("1-2").loadRoom("40");
+  const columns = warp.plants.map((p) => p.column);
+  for (const column of [178, 182, 186]) assert.ok(columns.includes(column));
+  assert.ok(!columns.includes(166));
+});
+
+test("a plant stays down near the player or a rescue NPC, not near Mario", () => {
+  const { s, room, plant } = plantStage();
+  const ground = MAP_TOP + 13 * 32;
+  // Nobody near: it comes out.
+  let rose = false;
+  for (let f = 0; f < 120 && !rose; f++) {
+    s.step(dt, emptyInput());
+    rose = plant.motion.rise > 0;
+  }
+  assert.ok(rose, "rises with nobody near");
+  // The player within 66px, standing next to the pipe.
+  plant.motion = initPlant();
+  s.player.areaId = room.data.id;
+  for (let f = 0; f < 240; f++) {
+    pin(s.player, plant.x + 60, ground);
+    s.step(dt, emptyInput());
+    assert.equal(plant.motion.rise, 0, `player near, frame ${f}`);
+  }
+  // A rescue NPC within 66px, the player back in the water.
+  s.player.areaId = s.level.main;
+  at(s, s.loadRoom(s.level.main).offset + 400, 200);
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  n.areaId = room.data.id;
+  for (let f = 0; f < 240; f++) {
+    pin(n, plant.x - 60, ground);
+    at(s, s.loadRoom(s.level.main).offset + 400, 200);
+    s.step(dt, emptyInput());
+    assert.equal(plant.motion.rise, 0, `NPC near, frame ${f}`);
+  }
+  // Mario that close does not hold it.
+  n.areaId = s.level.main;
+  s.marioActive = true;
+  s.mario.alive = true;
+  s.mario.areaId = room.data.id;
+  Body.setFrozen(s.mario.body, true);
+  pin(s.mario, plant.x + 40, ground);
+  s.cameraX = plant.x - 300;
+  rose = false;
+  for (let f = 0; f < 120 && !rose; f++) {
+    at(s, s.loadRoom(s.level.main).offset + 400, 200);
+    s.step(dt, emptyInput());
+    rose = plant.motion.rise > 0;
+  }
+  assert.ok(rose, "Mario does not hold it down");
+});
+
+test("plant contact hurts the player and NPCs like a firebar and damages Mario", () => {
+  const { s, room, plant } = plantStage();
+  const lid = plant.pipeTop;
+  // An NPC on the lid while the plant is out dies and counts in DIED.
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  n.areaId = room.data.id;
+  plant.motion = plantUp();
+  pin(n, plant.x, lid);
+  const died = s.died();
+  s.step(dt, emptyInput());
+  assert.equal(n.alive, false);
+  assert.equal(s.died(), died + 1);
+  // A starred player is immune; without a star the player dies.
+  s.player.areaId = room.data.id;
+  s.player.starLeft = 5;
+  plant.motion = plantUp();
+  pin(s.player, plant.x, lid);
+  s.step(dt, emptyInput());
+  assert.equal(s.player.alive, true);
+  s.player.starLeft = 0;
+  plant.motion = plantUp();
+  pin(s.player, plant.x, lid);
+  s.step(dt, emptyInput());
+  assert.equal(s.player.alive, false);
+  // Mario loses a power stage.
+  const m = stageAt("2-2");
+  const mroom = m.loadRoom("25");
+  const mplant = mroom.plants.find((p) => p.column === 28)!;
+  // Mario stays active only in the player's area.
+  m.player.areaId = mroom.data.id;
+  pin(m.player, mplant.x + 600, MAP_TOP + 13 * 32);
+  m.marioActive = true;
+  m.mario.alive = true;
+  m.mario.areaId = mroom.data.id;
+  m.setMarioStage(2);
+  // Mario leaves when he is out of the renderer's view.
+  m.cameraX = mplant.x - 300;
+  mplant.motion = plantUp();
+  Body.setFrozen(m.mario.body, true);
+  pin(m.mario, mplant.x, mplant.pipeTop);
+  m.step(dt, emptyInput());
+  assert.equal(m.marioActive, true);
+  assert.equal(m.marioStage, 1);
+});
+
+test("a calm NPC waits out a plant and crosses; with Mario near it panics", () => {
+  const { s, room, plant } = plantStage();
+  const ground = MAP_TOP + 13 * 32;
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  n.areaId = room.data.id;
+  n.warned = true;
+  n.wait = 0;
+  n.state = "run";
+  pin(n, plant.x - 160, ground);
+  plant.motion = plantUp();
+  let unsafe = 0;
+  for (let f = 0; f < 60 * 12 && n.body.position.x < plant.x + 100; f++) {
+    s.step(dt, emptyInput());
+    const over = Math.abs(n.body.position.x - plant.x) < n.body.width / 2 + 10;
+    if (over && plant.motion.rise > 0) unsafe++;
+  }
+  assert.equal(n.alive, true);
+  assert.equal(unsafe, 0, "never over the mouth while the plant is out");
+  assert.ok(n.body.position.x > plant.x + 100, "crossed the pipe");
+  // Mario within 340px: the NPC no longer waits for the plant or firebars.
+  const sim = s as unknown as {
+    plantAhead(a: Actor, direction: number): boolean;
+  };
+  pin(n, plant.x - 70, ground);
+  plant.motion = plantUp();
+  assert.equal(sim.plantAhead(n, 1), true);
+  s.marioActive = true;
+  s.mario.areaId = room.data.id;
+  pin(s.mario, plant.x - 300, ground);
+  assert.equal(sim.plantAhead(n, 1), false);
+});
+
+test("with Mario near, NPCs stop timing firebars too", () => {
+  const s = stageAt("1-4");
+  const room = s.activeRoom;
+  const bar = room.firebars[0]!;
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  n.areaId = room.data.id;
+  pin(n, bar.x - 120, bar.y + 40);
+  const sim = s as unknown as { npcFirebarClear(a: Actor): unknown };
+  assert.equal(typeof sim.npcFirebarClear(n), "function");
+  s.marioActive = true;
+  s.mario.areaId = room.data.id;
+  pin(s.mario, bar.x - 300, bar.y + 40);
+  assert.equal(sim.npcFirebarClear(n), undefined);
+});
+
+test("an NPC rising out of a pipe waits for its plant; the player's arrival resets it", () => {
+  const { s, room, plant } = plantStage();
+  const n = s.npcs.find((npc) => npc.kind === "goomba")!;
+  n.areaId = room.data.id;
+  const inside = plant.pipeTop + 30;
+  Body.setFrozen(n.body, true);
+  Body.setPosition(n.body, { x: plant.x, y: inside });
+  n.pipeTravel = {
+    phase: "exit",
+    dir: "up",
+    remaining: 40,
+    destArea: room.data.id,
+    destPage: 1,
+    arrival: "rise",
+  };
+  plant.motion = plantUp();
+  for (let f = 0; f < 30; f++) s.step(dt, emptyInput());
+  assert.equal(n.body.position.y, inside, "waits in the pipe");
+  let frames = 0;
+  while (n.pipeTravel && frames++ < 60 * 6) s.step(dt, emptyInput());
+  assert.equal(n.pipeTravel, undefined, "comes out once the plant is down");
+  assert.equal(n.alive, true);
+  assert.equal(plant.motion.rise, 0);
+  // The player never waits: SMB1 loads an area with its plants down.
+  s.player.areaId = room.data.id;
+  Body.setFrozen(s.player.body, true);
+  Body.setPosition(s.player.body, { x: plant.x, y: inside });
+  s.player.pipeTravel = {
+    phase: "exit",
+    dir: "up",
+    remaining: 40,
+    destArea: room.data.id,
+    destPage: 1,
+    arrival: "rise",
+  };
+  plant.motion = plantUp();
+  s.step(dt, emptyInput());
+  assert.equal(plant.motion.rise, 0);
+  assert.ok(s.player.body.position.y < inside, "rises at once");
 });
 
 test("lift decks are six girder tiles, four in a castle, and three when small", () => {
