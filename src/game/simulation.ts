@@ -598,13 +598,17 @@ export class Simulation {
           Math.abs(p.x - left - pipe.width * 16) < 24 &&
           Math.abs(actor.body.bounds.max.y - top) < 10
         );
+      // A side pipe opens only at its mouth hole, the lower tile of the pipe
+      // end, by walking right into its left face. SMB1 DoPlayerSideCheck enters
+      // on $6c or $1f and never on the $1c or $6b rim above it.
+      const body = actor.body.bounds;
       return (
         pipe.direction === "right" &&
-        (right || down) &&
-        actor.body.bounds.max.x >= left - 5 &&
+        right &&
+        body.max.x >= left - 5 &&
         p.x < left + pipe.width * 32 &&
-        p.y >= top - actor.body.height / 2 &&
-        p.y < top + 64
+        body.max.y > top + 32 &&
+        body.min.y < top + 64
       );
     });
     if (!pipe) return;
@@ -5437,13 +5441,19 @@ export class Simulation {
         n.grounded
       ) {
         const opening = MAP_TOP + room.data.goal.row * 32;
-        if (p.y > opening + 40) {
+        // The mouth hole is the lower pipe tile. A body wholly below it jumps
+        // up toward it. Level with it, walk in: the pipe end is not a wall.
+        if (n.body.bounds.min.y >= opening + 64) {
           this.launchJump(
             n,
             Math.sign(room.goalX - p.x) * this.runSpeedFor(n),
             T.runJumpSpeed,
             14,
           );
+          continue;
+        }
+        if (n.body.bounds.max.y > opening + 32 && p.x < room.goalX) {
+          this.move(n, this.runSpeedFor(n));
           continue;
         }
       }
@@ -6154,10 +6164,16 @@ export class Simulation {
       direction = this.random() < 0.15 ? -1 : 1;
       this.marioDecision = 2 + this.random() * 3;
       if (this.random() < 0.15) this.marioPause = 0.2;
-      const pipe = this.obstacles.find(
-        (c) => c.kind === "pipe" && Math.abs(c.x - m.x) < 65,
-      );
-      if (pipe && this.random() < 0.5 && this.tryPipe(this.mario, true, true))
+      // A side pipe opens at its mouth, which can sit far left of its center.
+      const nearPipe =
+        this.obstacles.some(
+          (c) => c.kind === "pipe" && Math.abs(c.x - m.x) < 65,
+        ) || !!this.enterablePipe(this.mario, false, true);
+      if (
+        nearPipe &&
+        this.random() < 0.5 &&
+        this.tryPipe(this.mario, true, true)
+      )
         return;
       const nearbyBrick = this.obstacles.find(
         (c) => c.kind === "brick" && !c.broken && Math.abs(c.x - m.x) < 100,

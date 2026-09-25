@@ -255,10 +255,10 @@ test("8x side-pipe shrink-blink keeps sprite pixels above the playfield top", as
     item.kind = "mushroom8x";
     s.collect(n, item);
     const mouthX = sub.offset + goalData.column * 32;
-    // Sit on the lip so the 8x Mario body fills the band above MAP_TOP, left
-    // of the mouth. Pipe-center standing hides that body inside the clip.
-    n.body.position.x = mouthX;
-    n.body.position.y = goalPipe.body.bounds.min.y - n.body.height / 2;
+    // Stand at the mouth hole, the only side-pipe entrance, so the 8x Mario
+    // body fills the band above MAP_TOP left of the mouth.
+    n.body.position.x = mouthX - n.body.width / 2;
+    n.body.position.y = goalPipe.body.bounds.max.y - n.body.height / 2;
     n.body.velocity.x = 0;
     n.body.velocity.y = 0;
     n.grounded = true;

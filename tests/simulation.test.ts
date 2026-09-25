@@ -481,7 +481,7 @@ test("goal identity and destination/warp are not duplicated in a way that can di
   at(goal.s, goal.goalPipe.x, T.groundY - 14 * goal.s.player.scale);
   tick(goal.s, dt);
   assert.equal(goal.goalPipe.broken, false);
-  standOnPipe(n, goal.goalPipe);
+  standAtMouth(n, goal.goalPipe);
   n.grounded = true;
   tick(goal.s, dt);
   assert.ok(n.pipeTravel, "NPC enters the goal pipe");
@@ -5578,8 +5578,8 @@ test("pipe clip rectangles follow live camera y and zoom", () => {
   const sidePipe = goalPipeSim();
   sidePipe.s.cameraY = 24;
   sidePipe.s.cameraZoom = 2;
-  standOnPipe(sidePipe.s.player, sidePipe.goalPipe);
-  tick(sidePipe.s, 0.1, { down: true });
+  standAtMouth(sidePipe.s.player, sidePipe.goalPipe);
+  tick(sidePipe.s, 0.1, { right: true });
   assert.ok(sidePipe.s.player.pipeTravel);
   const goalData = sidePipe.sub.data.pipes.find(
     (p) => p.column === sidePipe.sub.data.goal!.column,
@@ -5661,7 +5661,7 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
   n.state = "run";
   parkNpcs(npcPipe.s, [n]);
   give(npcPipe.s, n, "mushroom3x");
-  standOnPipe(n, npcPipe.goalPipe);
+  standAtMouth(n, npcPipe.goalPipe);
   tick(npcPipe.s, 0.15);
   assert.ok(n.pipeTravel);
   assert.equal(n.pipeTravel?.dir, "right");
@@ -5694,7 +5694,7 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
     if (c.kind === "pipe" && c !== marioPipe.goalPipe) c.x = -1e6;
   }
   give(marioPipe.s, marioPipe.s.mario, "mushroom8x");
-  standOnPipe(marioPipe.s.mario, marioPipe.goalPipe);
+  standAtMouth(marioPipe.s.mario, marioPipe.goalPipe);
   marioPipe.s.cameraX = marioPipe.goalPipe.x - 400;
   tick(marioPipe.s, dt);
   assert.ok(marioPipe.s.mario.pipeTravel);
@@ -5714,8 +5714,8 @@ test("3x and 8x pipe clips hide only the part past the lip", () => {
 
   const huge = goalPipeSim();
   give(huge.s, huge.s.player, "mushroom8x");
-  standOnPipe(huge.s.player, huge.goalPipe);
-  tick(huge.s, 0.1, { down: true });
+  standAtMouth(huge.s.player, huge.goalPipe);
+  tick(huge.s, 0.1, { right: true });
   assert.ok(huge.s.player.pipeTravel);
   assertLipClip(
     huge.s.player.pipeTravel!.clip!,
@@ -5744,10 +5744,10 @@ test("an 8x shrink-blink at a side pipe keeps the pixels above the playfield top
   n.saved = false;
   Body.setFrozen(n.body, false);
   give(s, n, "mushroom8x");
-  standOnPipe(n, goalPipe);
+  standAtMouth(n, goalPipe);
   n.grounded = true;
   const lipFeet = n.body.bounds.max.y;
-  assert.equal(lipFeet, mouthY, "the 8x Koopa starts standing on the lip");
+  assert.equal(lipFeet, mouthY + 64, "the 8x Koopa stands at the mouth hole");
   let frames = 0;
   while (!n.pipeTravel && frames++ < 60) s.step(dt, emptyInput());
   const travel = n.pipeTravel;
@@ -5784,7 +5784,7 @@ test("an 8x shrink-blink at a side pipe keeps the pixels above the playfield top
     assert.equal(
       n.body.bounds.max.y,
       lipFeet,
-      "the traveller stays on the lip instead of being lifted off screen",
+      "the traveller stays at the mouth instead of being lifted off screen",
     );
     // Play draws the sprite bottom-anchored on the feet.
     const spriteTop = n.body.bounds.max.y - box.h;
@@ -9518,19 +9518,69 @@ function goalPipeSim() {
   return { s, sub, goalPipe };
 }
 
-function standOnPipe(actor: Actor, pipe: { x: number; body?: { bounds: { min: { y: number } } } }) {
+// Side pipes open only at the mouth hole: feet level with its bottom, body
+// against the pipe's left face.
+function standAtMouth(
+  actor: Actor,
+  pipe: { body?: { bounds: { min: { x: number }; max: { y: number } } } },
+) {
   Body.setPosition(actor.body, {
-    x: pipe.x,
-    y: pipe.body!.bounds.min.y - actor.body.height / 2,
+    x: pipe.body!.bounds.min.x - actor.body.width / 2,
+    y: pipe.body!.bounds.max.y - actor.body.height / 2,
   });
   Body.setVelocity(actor.body, { x: 0, y: 0 });
 }
 
+test("a side pipe opens only at its mouth hole, walking right", () => {
+  const tryAt = (
+    x: number,
+    feet: number,
+    input: Partial<Input>,
+    item?: ItemKind,
+  ) => {
+    const { s, goalPipe } = goalPipeSim();
+    if (item) give(s, s.player, item);
+    Body.setPosition(s.player.body, {
+      x: goalPipe.body!.bounds.min.x + x,
+      y: feet - s.player.body.height / 2,
+    });
+    Body.setVelocity(s.player.body, { x: 0, y: 0 });
+    Body.setFrozen(s.player.body, true);
+    s.step(dt, { ...emptyInput(), ...input });
+    const entered = !!s.player.pipeTravel;
+    s.physics.clear();
+    return entered;
+  };
+  const { s, goalPipe } = goalPipeSim();
+  const top = goalPipe.body!.bounds.min.y;
+  const half = s.player.body.width / 2;
+  s.physics.clear();
+  // The hole is the lower tile: top + 32 to top + 64. Its floor is top + 64.
+  assert.equal(tryAt(-half, top + 64, { right: true }), true, "mouth");
+  assert.equal(tryAt(-half, top + 64, { down: true }), false, "down at mouth");
+  assert.equal(tryAt(64, top, { right: true }), false, "on the lid");
+  assert.equal(tryAt(64, top, { down: true }), false, "down on the lid");
+  assert.equal(tryAt(-half, top + 32, { right: true }), false, "rim only");
+  assert.equal(tryAt(-half, top - 8, { right: true }), false, "air above");
+  assert.equal(tryAt(-half, top + 34, { right: true }), true, "foot in hole");
+  // A 3x body sticks out above the rim and still enters.
+  const tall = goalPipeSim();
+  give(tall.s, tall.s.player, "mushroom3x");
+  const tallHalf = tall.s.player.body.width / 2;
+  assert.ok(tall.s.player.body.height > 64);
+  tall.s.physics.clear();
+  assert.equal(
+    tryAt(-tallHalf, top + 64, { right: true }, "mushroom3x"),
+    true,
+    "3x at mouth",
+  );
+});
+
 test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   const playerPipe = goalPipeSim();
   give(playerPipe.s, playerPipe.s.player, "mushroom8x");
-  standOnPipe(playerPipe.s.player, playerPipe.goalPipe);
-  tick(playerPipe.s, 0.1, { down: true });
+  standAtMouth(playerPipe.s.player, playerPipe.goalPipe);
+  tick(playerPipe.s, 0.1, { right: true });
   assert.ok(playerPipe.s.player.pipeTravel);
   assert.equal(playerPipe.s.player.scale, T.giantScale);
   assert.equal(playerPipe.s.player.hugeLeft, 0);
@@ -9547,7 +9597,7 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
   n.state = "run";
   parkNpcs(npcPipe.s, [n]);
   give(npcPipe.s, n, "mushroom8x");
-  standOnPipe(n, npcPipe.goalPipe);
+  standAtMouth(n, npcPipe.goalPipe);
   tick(npcPipe.s, 0.15);
   assert.ok(n.pipeTravel);
   assert.equal(n.scale, T.giantScale);
@@ -9570,7 +9620,7 @@ test("8x shrinks to fallback then enters a goal pipe or castle door", () => {
     if (c.kind === "pipe" && c !== marioPipe.goalPipe) c.x = -1e6;
   }
   give(marioPipe.s, marioPipe.s.mario, "mushroom8x");
-  standOnPipe(marioPipe.s.mario, marioPipe.goalPipe);
+  standAtMouth(marioPipe.s.mario, marioPipe.goalPipe);
   marioPipe.s.cameraX = marioPipe.goalPipe.x - 400;
   tick(marioPipe.s, dt);
   assert.ok(marioPipe.s.mario.pipeTravel);

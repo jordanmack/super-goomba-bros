@@ -48,8 +48,14 @@ settings unless a rule below explicitly fixes their relationship.
   gravity, not jump-hold gravity. An emerged walking power-up is collected
   on overlap in the air. A power-up still rising out of a block is not
   collected yet.
-- Enterable pipes use world-specific destinations and entrance pages. Side
-  entrances work when approached at their opening. Arrival follows the source
+- Enterable pipes use world-specific destinations and entrance pages. A side
+  pipe, goal pipes included, opens only at its mouth hole: the lower tile of the
+  pipe end, from 32 to 64 px below the pipe top, at its left face. It starts
+  travel when the body overlaps that hole while walking right into it, as in
+  SMB1 `DoPlayerSideCheck`. A taller body may stick out above the rim. The
+  rim, the lid, the air above, and Down beside it do not enter. The player,
+  Mario, and NPCs use the same mouth. Down pipes still need Down on the lid.
+  Arrival follows the source
   pipe: a side pipe rises from a `null`-direction pipe on the destination page
   (nearest to page*512+100; never a `down` or `right` mouth). A down pipe uses
   the destination `header.entrance` (0/1 fall in from above with gravity, 2
@@ -127,7 +133,7 @@ space to the playfield. The pad must sit below the game, not over it.
 
 Phaser gamepad input is on. The first active pad merges into the same Input
 flags as keyboard and touch. Stick and D-pad walk, with stick deadzone 0.35.
-Down enters a pipe. D-pad Up and stick Up do not jump. South (A) jumps and
+Down enters a down pipe. D-pad Up and stick Up do not jump. South (A) jumps and
 swims. East (B) holds run and presses fire if the player has a flower. Start
 pauses in play and starts the game on the title screen. Select is unused.
 Disconnect clears that pad's holds.
@@ -185,8 +191,8 @@ falls straight down with no horizontal spawn drift. Any character can collect
 it after it lands. It plays the appear cue. Ignore clicks on the title, intro,
 GAME OVER, dead, or finishing screens, and while the player is in a pipe.
 
-A side pipe can also be entered by walking into its opening. There is no Hide
-or manual Warn button.
+A side pipe is entered only by walking right into its mouth hole, the lower
+tile of the pipe end. There is no Hide or manual Warn button.
 
 Track fingers and keys separately. One release must not clear another hold.
 A finger can slide between controls, slide out to release, and slide back in.

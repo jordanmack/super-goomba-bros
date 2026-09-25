@@ -62,7 +62,7 @@ export const KEY_BINDINGS = [
   { action: "Walk", keys: "Left / Right or A / D" },
   { action: "Run", keys: "Shift, Z, or J" },
   { action: "Jump; swim up", keys: "Space, Up, W, or K" },
-  { action: "Enter a pipe", keys: "Down or S" },
+  { action: "Enter a pipe", keys: "Down or S; walk into side entrances" },
   { action: "Shoot with a flower", keys: "Shift, Z, or J (press)" },
   { action: "Pause", keys: "Escape" },
 ] as const;
