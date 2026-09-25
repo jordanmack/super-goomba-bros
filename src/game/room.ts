@@ -10,6 +10,13 @@ import type { Area } from "./levels.ts";
 import { MAP_TOP, TUNING as T } from "./config.ts";
 import type { Actor, Obstacle } from "./simulation.ts";
 import { swimField } from "./navigation.ts";
+import {
+  initPlatformMotion,
+  isNesPlatform,
+  isOneWayLift,
+  stepPlatformMotion,
+  type PlatformMotion,
+} from "./platform-motion.ts";
 import type { Point } from "./physics.ts";
 import {
   AXE_OPCODE,
@@ -85,12 +92,25 @@ export type Platform = {
   body: Body;
   origin: { x: number; y: number };
   kind: number;
-  phase: number;
   partner?: number;
   // Type 42 only. Speed stays 0 until the player stands on it, then $10.
   rightSpeed?: number;
   rightTravel?: number;
+  // Types 37-41, 43, 44: SMB1 motion state, and a cached look-ahead path.
+  motion?: PlatformMotion;
+  path?: { frame: number; centers: Point[] };
 };
+
+// Frames a moving-platform look-ahead covers. The jump planner flies 140.
+const PLATFORM_LOOKAHEAD = 140;
+
+// Screen pixels are 2x NES pixels.
+function platformCenter(origin: Point, motion: PlatformMotion): Point {
+  return {
+    x: origin.x + (motion.x256 / 256) * 2,
+    y: MAP_TOP + motion.y * 2 + 8,
+  };
+}
 
 export class Room {
   data: Area;
@@ -115,6 +135,7 @@ export class Room {
   axe?: { x: number; y: number };
   bridgeDropped = false;
   private platformElapsed?: number;
+  private platformFrame?: number;
   private swimFields = new Map<string, (point: Point) => Point[]>();
   coins: { x: number; y: number; collected: boolean }[] = [];
 
@@ -238,7 +259,6 @@ export class Room {
           body,
           origin,
           kind: enemy.type,
-          phase: enemy.column % 7,
           ...(enemy.type === ENEMY_RIGHT_LIFT
             ? { rightSpeed: 0, rightTravel: 0 }
             : {}),
@@ -291,8 +311,12 @@ export class Room {
   private spawnKind(solid: Body) {
     if (solid.headOnly) return;
     const platform = this.platforms.find((p) => p.body === solid);
+    // Balance pairs tip, and one-way lifts wrap off the screen, so neither
+    // takes a spawn.
     if (platform)
-      return platform.kind === ENEMY_BALANCE_LIFT ? "lift" : "platform";
+      return platform.kind === ENEMY_BALANCE_LIFT || isOneWayLift(platform.kind)
+        ? "lift"
+        : "platform";
     const obstacle = this.obstacles.find((o) => o.body === solid);
     if (!obstacle || obstacle.hidden) return;
     if (obstacle.kind === "brick" || obstacle.kind === "pipe")
@@ -575,6 +599,9 @@ export class Room {
         ? 0
         : Math.max(0, elapsed - this.platformElapsed);
     this.platformElapsed = elapsed;
+    const frame = Math.round(elapsed * 60);
+    const fromFrame = this.platformFrame ?? frame;
+    this.platformFrame = frame;
     const moved = new Set<Platform>();
     for (const platform of this.platforms) {
       if (moved.has(platform)) continue;
@@ -593,34 +620,54 @@ export class Room {
         this.updateRightLift(platform, dt, actors, player);
         continue;
       }
-      const { body, origin, kind, phase } = platform;
-      const before = { ...body.position };
-      const riding = this.ridersOn(platform, actors);
-      const angle = (elapsed * T.platformSpeed) / T.platformTravel + phase;
-      const vertical =
-        kind === 37 ||
-        kind === 38 ||
-        kind === 39 ||
-        kind === 41 ||
-        kind >= 43;
-      body.motion = {
-        x: origin.x,
-        y: origin.y,
-        vertical,
-        phase,
-        time: elapsed,
-      };
-      body.position.x =
-        origin.x + (vertical ? 0 : Math.sin(angle) * T.platformTravel);
-      body.position.y =
-        origin.y + (vertical ? Math.sin(angle) * T.platformTravel : 0);
-      this.carryRiders(
-        riding,
-        body.position.x - before.x,
-        body.position.y - before.y,
-      );
+      if (!isNesPlatform(platform.kind)) continue;
+      this.updateNesPlatform(platform, fromFrame, frame, actors, player);
     }
     this.refreshBalanceRopes();
+  }
+
+  // Types 37-41, 43, and 44 step their own SMB1 motion one frame at a time.
+  private updateNesPlatform(
+    platform: Platform,
+    fromFrame: number,
+    frame: number,
+    actors: Actor[],
+    player?: Actor,
+  ) {
+    const { body, origin } = platform;
+    // The origin is the center of a 16px body on the enemy row.
+    const motion = (platform.motion ??= initPlatformMotion(
+      platform.kind,
+      (origin.y - 8 - MAP_TOP) / 2,
+    ));
+    const before = { ...body.position };
+    const riding = this.ridersOn(platform, actors);
+    const playerOn = !!player && riding.includes(player);
+    for (let f = fromFrame + 1; f <= frame; f++)
+      stepPlatformMotion(motion, f, playerOn);
+    const at = platformCenter(origin, motion);
+    body.position.x = at.x;
+    body.position.y = at.y;
+    const dy = at.y - before.y;
+    // A lift that wraps past the bottom of the screen leaves its riders.
+    if (Math.abs(dy) < 256) this.carryRiders(riding, at.x - before.x, dy);
+    body.motion = { at: (ahead) => this.platformAhead(platform, ahead) };
+  }
+
+  // Where the platform will be `ahead` frames from now, with no player on it.
+  private platformAhead(platform: Platform, ahead: number) {
+    const frame = this.platformFrame ?? 0;
+    if (!platform.path || platform.path.frame !== frame) {
+      const m = { ...platform.motion! };
+      const centers = [platformCenter(platform.origin, m)];
+      for (let f = 1; f <= PLATFORM_LOOKAHEAD; f++) {
+        stepPlatformMotion(m, frame + f, false);
+        centers.push(platformCenter(platform.origin, m));
+      }
+      platform.path = { frame, centers };
+    }
+    const centers = platform.path.centers;
+    return centers[Math.max(0, Math.min(centers.length - 1, Math.round(ahead)))]!;
   }
   springAt(actor: Actor) {
     const half = actor.body.width / 2;

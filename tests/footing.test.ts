@@ -205,13 +205,13 @@ test("a 3x body stays on a rising lift", () => {
   give(s, s.player, "mushroom3x");
   assert.equal(s.player.body.width, SOLID_3X.w);
   const room = s.activeRoom;
-  const origin = { x: room.offset + 180, y: 120 };
+  // A type-38 lift rises at 15/16 NES px/frame. Start low so it cannot wrap.
+  const origin = { x: room.offset + 180, y: 400 };
   const pad = s.physics.rectangle(origin.x, origin.y, 96, 16, true);
   room.platforms.push({
     body: pad,
     origin: { ...origin },
-    kind: 37,
-    phase: Math.PI,
+    kind: 38,
   });
   room.solids.push(pad);
   s.solids.push(pad);

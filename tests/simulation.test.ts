@@ -11669,13 +11669,105 @@ test("a coupled balance lift pair moves in opposite directions under load", () =
   room.updatePlatforms(1.0, []);
   assert.ok(lift.body.position.y < loadedA, "unloaded lift reverses");
   assert.ok(partner.body.position.y > loadedB, "partner reverses");
-  const sine = room.platforms.find((p) => p.kind === 40);
-  assert.ok(sine, "3-3 still has ordinary moving platforms");
-  const sx = sine.body.position.x;
-  const sy = sine.origin.y;
-  room.updatePlatforms(1.0 + Math.PI / 2, []);
-  assert.equal(sine.body.position.y, sy);
-  assert.notEqual(sine.body.position.x, sx);
+});
+
+test("each SMB1 moving platform type keeps its own motion and carries riders", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "3-3");
+  s.reset();
+  s.marioReturn = 1e6;
+  const room = s.activeRoom;
+  const at = (t: number) => room.updatePlatforms(t, []);
+  // Type 40 is XMovingPlatform: left first on the 0-14 counter, then back.
+  const shuttle = room.platforms.find((p) => p.kind === 40)!;
+  assert.ok(shuttle, "3-3 has a type-40 shuttle");
+  at(0);
+  const home = { ...shuttle.body.position };
+  at(1);
+  assert.ok(shuttle.body.position.x < home.x, "moves left first");
+  assert.equal(shuttle.body.position.y, home.y);
+  at(8);
+  assert.ok(Math.abs(shuttle.body.position.x - home.x) < 2, "back after 480 frames");
+  // A rider moves with the shuttle.
+  const rider = s.npcs[0]!;
+  const place = () => {
+    Body.setPosition(rider.body, {
+      x: shuttle.body.position.x,
+      y: shuttle.body.bounds.min.y - rider.body.height / 2,
+    });
+    Body.setVelocity(rider.body, { x: 0, y: 0 });
+  };
+  place();
+  const riderX = rider.body.position.x;
+  const liftX = shuttle.body.position.x;
+  room.updatePlatforms(9, [rider]);
+  assert.ok(shuttle.body.position.x !== liftX);
+  assert.ok(
+    Math.abs(rider.body.position.x - riderX - (shuttle.body.position.x - liftX)) < 1e-6,
+  );
+  // Type 41 is DropPlatform: only the player's weight drops it, and it stays.
+  const drop = room.platforms.find((p) => p.kind === 41)!;
+  assert.ok(drop, "3-3 has a type-41 drop platform");
+  const dropY = drop.body.position.y;
+  place();
+  Body.setPosition(rider.body, {
+    x: drop.body.position.x,
+    y: drop.body.bounds.min.y - rider.body.height / 2,
+  });
+  room.updatePlatforms(10, [rider], s.player);
+  assert.equal(drop.body.position.y, dropY, "an NPC alone does not drop it");
+  Body.setPosition(s.player.body, {
+    x: drop.body.position.x,
+    y: drop.body.bounds.min.y - s.player.body.height / 2,
+  });
+  room.updatePlatforms(10.5, [s.player], s.player);
+  const fallen = drop.body.position.y;
+  assert.ok(fallen > dropY + 20, `the player drops it: ${fallen - dropY}`);
+  Body.setPosition(s.player.body, { x: room.offset + 100, y: 300 });
+  room.updatePlatforms(12, [s.player], s.player);
+  assert.equal(drop.body.position.y, fallen, "it does not rise again");
+  s.physics.clear();
+
+  // 1-2: type-38 lifts rise and wrap; a rider stays behind at the wrap.
+  const lifts = game();
+  lifts.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-2");
+  lifts.reset();
+  const main = lifts.rooms.get("40")!;
+  // The row-9 lifts, well away from a wrap in the first half second.
+  const lowest = (kind: number) =>
+    main.platforms
+      .filter((p) => p.kind === kind)
+      .sort((a, b) => b.origin.y - a.origin.y)[0]!;
+  const up = lowest(38);
+  const down = main.platforms
+    .filter((p) => p.kind === 39)
+    .sort((a, b) => a.origin.y - b.origin.y)[0]!;
+  main.updatePlatforms(0, []);
+  const upY = up.body.position.y;
+  const downY = down.body.position.y;
+  main.updatePlatforms(0.5, []);
+  assert.ok(up.body.position.y < upY, "type 38 rises");
+  assert.ok(down.body.position.y > downY, "type 39 sinks");
+  let wrapped = false;
+  let t = 0.5;
+  const passenger = lifts.npcs[0]!;
+  passenger.areaId = "40";
+  for (let i = 0; i < 400 && !wrapped; i++) {
+    Body.setPosition(passenger.body, {
+      x: up.body.position.x,
+      y: up.body.bounds.min.y - passenger.body.height / 2,
+    });
+    const before = up.body.position.y;
+    const riderBefore = passenger.body.position.y;
+    t += 1 / 60;
+    main.updatePlatforms(t, [passenger]);
+    if (up.body.position.y > before + 100) {
+      wrapped = true;
+      assert.equal(passenger.body.position.y, riderBefore, "left at the wrap");
+    }
+  }
+  assert.equal(wrapped, true, "type 38 wraps to the bottom");
+  lifts.physics.clear();
 });
 
 test("a type-42 lift waits, then rides right and carries the player", () => {

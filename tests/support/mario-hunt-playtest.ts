@@ -615,6 +615,15 @@ export function runFreeHuntTrace(stage: StageSetup, seed: number): FreeHuntTrace
   };
   const park = () => {
     const room = s.activeRoom;
+    // The free prefix can hand the player a power-up. The arenas are staged
+    // for a small, unstarred player.
+    const player = s as unknown as {
+      setGoombaScale(a: Actor, scale: number): void;
+    };
+    if (s.player.scale !== 1) player.setGoombaScale(s.player, 1);
+    s.player.starLeft = 0;
+    s.player.hugeLeft = 0;
+    s.player.flower = false;
     for (const n of s.npcs) {
       n.warned = false;
       n.state = "idle";
@@ -635,24 +644,37 @@ export function runFreeHuntTrace(stage: StageSetup, seed: number): FreeHuntTrace
       (c) =>
         c.question &&
         !c.hidden &&
-        !c.used &&
+        !c.broken &&
         scene.questionX !== undefined &&
         c.x === scene.questionX,
     );
     if (scene.questionX !== undefined && !kept)
-      throw new Error(`${stage.id}: question block at ${scene.questionX} is spent`);
+      throw new Error(`${stage.id}: no question block at ${scene.questionX}`);
+    // The free prefix may have spent the arena block. Staging re-arms it.
+    if (kept) {
+      kept.used = false;
+      kept.bounce = 0;
+    }
     for (const c of s.obstacles)
       if (c.question && !c.hidden && c !== kept) c.used = true;
     questionX = scene.questionX ?? -1;
   };
-  const spawnLoose = (scene: Scene, kind: ItemKind) => {
-    const box = s.obstacles.find(
+  // Mario may hit blocks during the free prefix. Staging then re-arms a spare
+  // one, the same way holdQuestion marks the others used.
+  const spareQuestion = (scene: Scene) => {
+    const spares = s.obstacles.filter(
       (c) =>
-        c.question &&
-        !c.used &&
-        !c.hidden &&
-        c.x !== scene.questionX,
+        c.question && !c.hidden && !c.broken && c.x !== scene.questionX,
     );
+    const box = spares.find((c) => !c.used) ?? spares[0];
+    if (box) {
+      box.used = false;
+      box.bounce = 0;
+    }
+    return box;
+  };
+  const spawnLoose = (scene: Scene, kind: ItemKind) => {
+    const box = spareQuestion(scene);
     if (!box) throw new Error(`${stage.id}: no spare question block`);
     const roll = s.random;
     s.random = () => 0.5;
@@ -786,9 +808,7 @@ export function runFreeHuntTrace(stage: StageSetup, seed: number): FreeHuntTrace
 
   enter(blocks);
   // random 0 rolls a coin. That pop must not become a loose hunt item.
-  const coinBox = s.obstacles.find(
-    (c) => c.question && !c.used && !c.hidden && c.x !== blocks.questionX,
-  );
+  const coinBox = spareQuestion(blocks);
   if (!coinBox) throw new Error(`${stage.id}: no spare block for a coin`);
   const coinRoll = s.random;
   s.random = () => 0;

@@ -34,7 +34,20 @@ settings unless a rule below explicitly fixes their relationship.
   music. Moving platforms carry characters. Balance-lift pairs (original enemy
   type 36 / $24) are coupled: weight on one lowers it and raises its partner,
   and removing the weight reverses that motion. A rope and pulley are drawn and
-  move with the pair. Ordinary moving platforms keep their independent motion.
+  move with the pair. Every other moving platform uses its own SMB1 motion,
+  stepped per frame in NES pixels and drawn at 2x. Type 37 (`YMovingPlatform`)
+  swings vertically about a center 64 NES px from its start (below it in the
+  top half of the screen, above it in the bottom half) under the platform
+  up/down gravity ($05 down, $0a up, max 3). Types 38 and 43 rise, and 39 and
+  44 sink, at a steady 15/16 NES px/frame. They never turn around; their Y
+  wraps like the NES byte, so they leave one edge of the screen and come back
+  at the other, and a rider is left behind at the wrap. Type 40
+  (`XMovingPlatform`) shuttles on the 0-14 counter stepped every 4th frame:
+  left first, then back to its start. Type 41 (`DropPlatform`) moves only on
+  frames the player stands on it, falling with force $7f up to 2 NES px/frame.
+  An NPC alone does not move it, and it never rises. Large platforms are 96
+  wide and small ones (43, 44) 48 wide. Riders move with the platform. NPCs
+  never spawn on a balance lift or a one-way lift.
   A right lift (original enemy type 42 / $2A) stays still until the player
   stands on it, then moves right at NES speed $10 scaled like the other NES
   speeds (2 px/frame) and carries the rider. It does not reverse. In a cloud

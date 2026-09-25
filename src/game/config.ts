@@ -71,8 +71,8 @@ export const TUNING = {
   // Legs-out shake while EnemyIntervalTimer is 1-4 (4 * 21 frames).
   shellShake: 1.4,
   gravity: 1500,
+  // Balance-pair lift speed, px/s.
   platformSpeed: 64,
-  platformTravel: 96,
   areaSpacing: 20000,
   pipeCooldown: 0.8,
   pipeSpeed: 2,

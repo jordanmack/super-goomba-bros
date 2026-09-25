@@ -102,15 +102,7 @@ export function planJump(
         for (const solid of nearby) {
           let b = solid.bounds;
           if (solid.motion) {
-            const motion = solid.motion;
-            const travel =
-              Math.sin(
-                ((motion.time + frame / 60) * T.platformSpeed) /
-                  T.platformTravel +
-                  motion.phase,
-              ) * T.platformTravel;
-            const mx = motion.x + (motion.vertical ? 0 : travel),
-              my = motion.y + (motion.vertical ? travel : 0);
+            const { x: mx, y: my } = solid.motion.at(frame);
             b = {
               min: { x: mx - solid.width / 2, y: my - solid.height / 2 },
               max: { x: mx + solid.width / 2, y: my + solid.height / 2 },

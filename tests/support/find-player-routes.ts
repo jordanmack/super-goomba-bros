@@ -7,6 +7,7 @@ import { Body } from "../../src/game/physics.ts";
 import { CAMPAIGN, areaData } from "../../src/game/levels.ts";
 import { TUNING as T } from "../../src/game/config.ts";
 import { physics } from "./arcade.ts";
+import type { PlatformMotion } from "../../src/game/platform-motion.ts";
 
 type State = {
   x: number;
@@ -22,7 +23,9 @@ type State = {
   pipeWait: number;
   hidden: number[];
   pace: number;
-  liftY: number[];
+  // Every room's moving platforms, so a rewind replays their own motion.
+  lifts: Record<string, SavedLifts>;
+  liftKey: string;
   bills: BulletBill[];
   billId: number;
   cannonTimers: Record<string, number[]>;
@@ -44,6 +47,18 @@ type State = {
   }[];
   hammers: Hammer[];
 };
+type SavedLifts = {
+  elapsed?: number;
+  frame?: number;
+  list: {
+    x: number;
+    y: number;
+    motion?: PlatformMotion;
+    rightSpeed?: number;
+    rightTravel?: number;
+  }[];
+};
+type LiftClock = { platformElapsed?: number; platformFrame?: number };
 type Node = {
   state: State;
   cost: number;
@@ -121,7 +136,31 @@ function capture(sim: Simulation): State {
     pipeWait: sim.player.pipeWait ?? 0,
     hidden: sim.obstacles.filter((c) => c.hidden && c.used).map((c) => c.id),
     pace: flags.playerPace,
-    liftY: sim.activeRoom.platforms.map((p) => p.body.position.y),
+    lifts: Object.fromEntries(
+      [...sim.rooms].map(([id, room]) => {
+        const clock = room as unknown as LiftClock;
+        return [
+          id,
+          {
+            elapsed: clock.platformElapsed,
+            frame: clock.platformFrame,
+            list: room.platforms.map((p) => ({
+              x: p.body.position.x,
+              y: p.body.position.y,
+              motion: p.motion && { ...p.motion },
+              rightSpeed: p.rightSpeed,
+              rightTravel: p.rightTravel,
+            })),
+          },
+        ];
+      }),
+    ),
+    liftKey: sim.activeRoom.platforms
+      .map(
+        (p) =>
+          `${Math.round(p.body.position.x / 8)},${Math.round(p.body.position.y / 8)},${p.motion?.speed ?? 0},${(p.motion?.primary ?? 0) & 3},${p.rightSpeed ?? 0}`,
+      )
+      .join(";"),
     bills: sim.bulletBills.map((b) => ({ ...b })),
     billId: flags.nextId,
     cannonTimers: Object.fromEntries(
@@ -169,13 +208,22 @@ function restore(sim: Simulation, state: State) {
   }
   const lfsr = (sim as unknown as { cannonLfsr: Uint8Array }).cannonLfsr;
   for (let i = 0; i < lfsr.length; i++) lfsr[i] = state.cannonLfsr[i] ?? 0;
-  for (const room of sim.rooms.values()) {
-    room.updatePlatforms(state.time, []);
-    for (let i = 0; i < room.platforms.length; i++) {
-      const y = state.liftY[i];
-      if (y === undefined) continue;
-      room.platforms[i]!.body.position.y = y;
-    }
+  for (const [id, room] of sim.rooms) {
+    const saved = state.lifts[id];
+    if (!saved) continue;
+    const clock = room as unknown as LiftClock;
+    clock.platformElapsed = saved.elapsed;
+    clock.platformFrame = saved.frame;
+    room.platforms.forEach((p, i) => {
+      const lift = saved.list[i];
+      if (!lift) return;
+      p.body.position.x = lift.x;
+      p.body.position.y = lift.y;
+      p.motion = lift.motion && { ...lift.motion };
+      p.path = undefined;
+      p.rightSpeed = lift.rightSpeed;
+      p.rightTravel = lift.rightTravel;
+    });
     room.refreshBalanceRopes();
   }
   sim.player.body = sim.physics.rectangle(state.x, state.y, 24, 28);
@@ -452,13 +500,7 @@ function search(index: number) {
         sim.physics.clear();
         return { route: pack(parts.reverse().flat()), nodes: count };
       }
-      const phase = room.platforms.length
-        ? `${state.liftY.map((y) => Math.round(y / 8)).join(",")}:${Math.floor(
-            (state.time %
-              ((Math.PI * 2 * T.platformTravel) / T.platformSpeed)) *
-              2,
-          )}`
-        : 0;
+      const phase = room.platforms.length ? state.liftKey : 0;
       const firePhase = room.firebars.some(
         (bar) => Math.abs(state.x - bar.x) < 220,
       )

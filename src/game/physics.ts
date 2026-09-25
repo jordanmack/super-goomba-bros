@@ -46,13 +46,8 @@ export class Body {
   volumeHoldVolume?: Body;
   volumeHoldFloorSpan?: HoldSpan;
   volumeHoldVolumeSpan?: HoldSpan;
-  motion?: {
-    x: number;
-    y: number;
-    vertical: boolean;
-    phase: number;
-    time: number;
-  };
+  // A moving platform's center `frames` from now.
+  motion?: { at(frames: number): Point };
   native?: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody;
 
   constructor(
