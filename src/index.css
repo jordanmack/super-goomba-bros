@@ -446,8 +446,7 @@ p {
   color: #fff;
 }
 .cheat-item.current {
-  border-color: #e6554b;
-  box-shadow: 0 0 0 3px #e6554b;
+  box-shadow: 0 0 0 4px #fff;
 }
 .cheat-item img {
   width: 32px;

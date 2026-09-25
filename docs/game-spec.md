@@ -244,9 +244,9 @@ The tray opens with no highlighted item, including each time it opens again
 after being hidden. The first Change press (U, or gamepad X) highlights the
 leftmost item, 2x, and does not move past it. Each later Change press moves the
 highlight one item, 2x, 3x, 8x, Flower, Star, 1-up, then back to 2x. The
-highlight is a thick ring in the button red (#e6554b) so it reads against the
-white edge. Until an item is highlighted, Drop (I, or gamepad Y) does nothing.
-After that it drops the highlighted item through the same path as a click and
+highlight widens the item's white edge from 2 px to 6 px, a 4 px white ring
+around the border, so it stands out without moving the tray. Until an item is
+highlighted, Drop (I, or gamepad Y) does nothing. After that it drops the highlighted item through the same path as a click and
 leaves the highlight where it is. Each press acts once:
 holding the key or button, or key repeat, does nothing more, and a button still
 held after closing Help or a remap waits for its release. Change and Drop act

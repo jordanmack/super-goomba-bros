@@ -265,10 +265,10 @@ test("U changes the highlighted tray item and I drops it, once per press", async
     await page.keyboard.press("KeyU");
     await expect(current).toHaveAttribute("aria-label", label);
   }
-  await expect(current).toHaveCSS("border-top-color", "rgb(230, 85, 75)");
+  await expect(current).toHaveCSS("border-top-color", "rgb(255, 255, 255)");
   await expect(current).toHaveCSS(
     "box-shadow",
-    "rgb(230, 85, 75) 0px 0px 0px 3px",
+    "rgb(255, 255, 255) 0px 0px 0px 4px",
   );
 
   const before = (await items()).length;
