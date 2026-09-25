@@ -630,6 +630,10 @@ const FLY_LIFT_MAX = 288;
 const PATROL_LOOKAHEAD = 240;
 // Unwarned patrols turn this far short of the goal.
 const PATROL_GOAL_GAP = 96;
+// #219: an easy power-up for a weaker Mario is this near, and no more than a
+// hop above his feet: a flower on a ? block four tiles up.
+const MARIO_EASY_ITEM = 128;
+const MARIO_EASY_HOP = 144;
 export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
 const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
 /** SCORE change for one tally line: count times that line's points. */
@@ -6679,6 +6683,62 @@ export class Simulation {
     );
   }
 
+  // Power stages line up as normal player = small Mario, mushroom player =
+  // big Mario, then 3x, then 8x. Mario has no 3x stage. He is weaker when the
+  // player's stage is above his, or the player has fire and he does not.
+  private marioWeaker() {
+    const player = this.player;
+    const playerStage =
+      player.scale >= T.hugeScale
+        ? 3
+        : player.scale >= T.giantScale
+          ? 2
+          : player.scale >= T.mushroomScale
+            ? 1
+            : 0;
+    const marioStage = this.isHuge(this.mario)
+      ? 3
+      : this.marioStage > 0
+        ? 1
+        : 0;
+    return (
+      playerStage > marioStage || (player.flower && this.marioStage !== 2)
+    );
+  }
+
+  // A power-up he can take with a few steps or one hop: within a few tiles
+  // either side, no higher than a hop, not below his floor, in a clear line,
+  // with floor under the whole way so he never crosses a pit for it.
+  private easyPowerUp(m: { x: number; y: number }) {
+    const feet = this.mario.body.bounds.max.y;
+    const floorUnder = (x: number) =>
+      this.solids.some(
+        (s) =>
+          !s.headOnly &&
+          x >= s.bounds.min.x &&
+          x <= s.bounds.max.x &&
+          s.bounds.min.y >= feet - MARIO_EASY_HOP &&
+          s.bounds.min.y <= feet + 8,
+      );
+    return this.items
+      .filter((item) => {
+        if (!this.marioCanHunt(item)) return false;
+        const p = item.body.position;
+        if (Math.abs(p.x - m.x) > MARIO_EASY_ITEM) return false;
+        const bottom = item.body.bounds.max.y;
+        if (bottom < feet - MARIO_EASY_HOP || bottom > feet + 8) return false;
+        if (rayBlocked(this.solids, m, p)) return false;
+        const step = Math.sign(p.x - m.x) * 8;
+        for (let x = m.x; step && (p.x - x) * step > 0; x += step)
+          if (!floorUnder(x)) return false;
+        return floorUnder(p.x);
+      })
+      .sort(
+        (a, b) =>
+          Math.abs(a.body.position.x - m.x) - Math.abs(b.body.position.x - m.x),
+      )[0];
+  }
+
   private looseHuntItem(m: { x: number; y: number }) {
     return this.items
       .filter(
@@ -6764,6 +6824,15 @@ export class Simulation {
     hearsCrowd: (a: Actor) => boolean,
     runners: Set<number>,
   ) {
+    // #219: weaker than the player, he takes an easy power-up first.
+    if (this.marioWeaker()) {
+      const easy = this.easyPowerUp(m);
+      if (easy) {
+        this.lockMarioItem(easy);
+        this.marioGoal = "item";
+        return;
+      }
+    }
     const currentActor = this.marioHuntItem
       ? undefined
       : candidates.find((a) => a.id === this.marioTarget);

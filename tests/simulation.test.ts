@@ -4030,6 +4030,89 @@ test("small Mario does not dive a 2x or larger player", () => {
   assert.ok(superDive.mario.body.velocity.y < 0);
 });
 
+// #219: weaker than the player, Mario takes an easy power-up first.
+function weakerHunt(marioStage: 0 | 1 | 2, flowerAt: number) {
+  const s = crowdGame(6);
+  const n = s.npcs[6]!;
+  parkNpcs(s, [...s.npcs.slice(0, 6), n]);
+  stillNpc(n, 280);
+  give(s, s.player, "flower");
+  at(s, 2500);
+  huntReady(s, 200);
+  s.setMarioStage(marioStage);
+  Body.setPosition(s.mario.body, {
+    x: 200,
+    y: T.groundY - s.mario.body.height / 2,
+  });
+  const flower = looseItem(s, "flower", flowerAt);
+  return { s, n, flower };
+}
+
+test("a weaker Mario takes a close flower before a stomp or a crowd, and picks it up", () => {
+  // The reported case: big Mario, no fire, the player has fire, and the
+  // flower is just behind him. An easy stomp and a crowd are live too.
+  const { s, flower } = weakerHunt(1, 150);
+  tick(s, dt);
+  assert.equal(s.marioGoal, "item");
+  assert.equal(s.marioTarget, flower.id);
+  assert.equal(s.marioHuntItem, true);
+  for (let i = 0; i < 180 && s.marioStage !== 2; i++) tick(s, dt);
+  assert.equal(s.marioStage, 2, "Fire Mario");
+  assert.equal(s.items.includes(flower), false);
+});
+
+test("a Mario who is not weaker keeps the stomp, crowd, item order", () => {
+  // Fire Mario against a fire player, and small Mario against a normal
+  // player, are not weaker.
+  const fire = weakerHunt(2, 150);
+  tick(fire.s, dt);
+  assert.equal(fire.s.marioGoal, "stomp");
+  assert.equal(fire.s.marioTarget, fire.n.id);
+  const small = game();
+  const n = small.npcs[0]!;
+  parkNpcs(small, [n]);
+  stillNpc(n, 280);
+  at(small, 2500);
+  huntReady(small, 200);
+  small.setMarioStage(0);
+  Body.setPosition(small.mario.body, {
+    x: 200,
+    y: T.groundY - small.mario.body.height / 2,
+  });
+  looseItem(small, "mushroom", 160);
+  tick(small, dt);
+  assert.equal(small.marioGoal, "stomp");
+});
+
+test("a weaker Mario does not cross a pit or go far for a power-up, or take a 1-up", () => {
+  const [gapLeft, gapRight] = GAPS[0]!;
+  const across = weakerHunt(1, 150);
+  const { s } = across;
+  // Mario at the pit's left lip, the flower just past its right lip.
+  const n = across.n;
+  stillNpc(n, gapLeft - 90);
+  Body.setPosition(s.mario.body, {
+    x: gapLeft - 20,
+    y: T.groundY - s.mario.body.height / 2,
+  });
+  Body.setPosition(across.flower.body, {
+    x: gapRight + 20,
+    y: T.groundY - 16,
+  });
+  tick(s, dt);
+  assert.notEqual(s.marioTarget, across.flower.id);
+  assert.equal(s.marioGoal === "item" && s.marioHuntItem, false);
+  // Five tiles away is not easy.
+  const far = weakerHunt(1, 200 + 160);
+  tick(far.s, dt);
+  assert.equal(far.s.marioGoal, "stomp");
+  // A 1-up stays on the old rungs.
+  const oneUp = weakerHunt(1, 150);
+  oneUp.flower.kind = "oneUp";
+  tick(oneUp.s, dt);
+  assert.equal(oneUp.s.marioGoal, "stomp");
+});
+
 test("a fleeing crowd beats a loose power-up", () => {
   const s = crowdGame(6);
   parkNpcs(s, s.npcs.slice(0, 6));

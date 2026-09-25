@@ -590,7 +590,18 @@ return sooner, react faster, run faster, and attack more often. Idle, dead,
 saved, offscreen, star, and 8x NPCs do not contribute. Pressure fades when the
 crowd stops.
 
-After he flees a visible star holder, he picks the next goal from high to low:
+After he flees a visible star holder, he picks the next goal from high to low.
+When he is weaker than the player, an easy power-up comes first. Power stages
+line up as a normal player with small Mario, a mushroom player with big Mario,
+then 3x, then 8x; Mario has no 3x stage. He is weaker when the player's stage
+is above his, or the player has a flower and he is not Fire Mario. A small
+Mario next to a normal player is not weaker. The easy power-up is a collectable
+mushroom, 3x mushroom, 8x mushroom, flower, or star within 128 px either way,
+a step back included, no more than 144 px (one hop, as onto a ? block) above
+his feet and not below them, in a clear line, with floor under the whole way,
+so he never crosses a pit or chases one across the stage. He locks it as an
+`item` goal. Coins, 1-up mushrooms, and question blocks stay on the rungs below.
+When he is not weaker, or no power-up is that easy:
 
 1. An easy nearby stomp (clear sight, about 8-125px). Size does not change this,
    except a small Mario does not dive a 2x or larger player.
