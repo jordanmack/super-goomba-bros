@@ -86,11 +86,25 @@ export function blooperExtended(m: BlooperMotion) {
 // MoveSwimmingCheepCheep. Always left: grey loses $40 of force a frame and
 // red $80, so grey moves 1px every 4 frames and red every 2. A wobbling one
 // drifts 1px every 8 frames and turns 15px from where it started.
-export function stepSwimCheep(m: SwimCheepMotion, top: number): Step {
+// A `heading` (each axis -1, 0, or 1) replaces the left move: each of those
+// 1px steps goes along it, and its y moves the wobble's center too.
+export function stepSwimCheep(
+  m: SwimCheepMotion,
+  top: number,
+  heading?: { x: number; y: number },
+): Step {
   const x = m.xForce - (m.red ? 0x80 : 0x40);
   m.xForce = x & 0xff;
-  const dx = x < 0 ? -1 : 0;
-  if (!m.wobble) return { dx, dy: 0 };
+  const carry = x < 0;
+  const dx = !carry ? 0 : heading ? heading.x : -1;
+  const drift = carry && heading ? heading.y : 0;
+  const wobble = swimWobble(m, top);
+  m.originY += drift;
+  return { dx, dy: wobble + drift };
+}
+
+function swimWobble(m: SwimCheepMotion, top: number) {
+  if (!m.wobble) return 0;
   let dy: number;
   if (m.down) {
     const d = m.yDummy + 0x20;
@@ -103,7 +117,7 @@ export function stepSwimCheep(m: SwimCheepMotion, top: number): Step {
   }
   const diff = top + dy - m.originY;
   if (Math.abs(diff) >= 15) m.down = diff < 0;
-  return { dx, dy };
+  return dy;
 }
 
 // PRandomSubtracter. The force index reaches past its five bytes into

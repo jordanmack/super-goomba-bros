@@ -4466,30 +4466,36 @@ test("an unwarned NPC walks past a power-up, and a warned one skips far, pit, an
   }
 });
 
-test("a warned swimmer swims to a close power-up in water", () => {
-  const s = stageAt("2-2");
-  const fish = s.npcs.find((n) => n.kind === "fish" && n.areaId === s.level.main)!;
-  assert.ok(fish, "2-2 has a swimmer");
-  parkNpcs(s, [fish]);
-  s.marioActive = false;
-  fish.warned = true;
-  fish.state = "run";
-  fish.wait = 0;
-  const p = fish.body.position;
-  // No question block in this water room: make a released flower in place.
-  const flower = (
-    s as unknown as {
-      spawnItem(c: Obstacle, kind: ItemKind, facing: number, instant: boolean): Item;
-    }
-  ).spawnItem({ x: p.x - 80, y: p.y } as Obstacle, "flower", 1, true);
-  flower.emerge = 0;
-  flower.block = undefined;
-  flower.smash = false;
-  Body.setFrozen(flower.body, true);
-  Body.setVelocity(flower.body, { x: 0, y: 0 });
-  for (let i = 0; i < 180 && !fish.flower; i++) tick(s, dt);
-  assert.equal(fish.flower, true);
-  assert.equal(s.items.includes(flower), false);
+test("a warned swimmer swims to a close power-up in water; a Blooper does not", () => {
+  for (const kind of ["goomba", "fish"] as const) {
+    const s = stageAt("2-2");
+    const swimmer = s.npcs.find(
+      (n) => n.kind === kind && n.areaId === s.level.main,
+    )!;
+    assert.ok(swimmer, `2-2 has a ${kind}`);
+    parkNpcs(s, [swimmer]);
+    s.marioActive = false;
+    swimmer.warned = true;
+    swimmer.state = "run";
+    swimmer.wait = 0;
+    const p = swimmer.body.position;
+    // No question block in this water room: make a released flower in place.
+    const flower = (
+      s as unknown as {
+        spawnItem(c: Obstacle, kind: ItemKind, facing: number, instant: boolean): Item;
+      }
+    ).spawnItem({ x: p.x - 80, y: p.y } as Obstacle, "flower", 1, true);
+    flower.emerge = 0;
+    flower.block = undefined;
+    flower.smash = false;
+    Body.setFrozen(flower.body, true);
+    Body.setVelocity(flower.body, { x: 0, y: 0 });
+    for (let i = 0; i < 180 && !swimmer.flower; i++) tick(s, dt);
+    // #230: a Blooper's target is the goal pipe, to the right.
+    assert.equal(swimmer.flower, kind === "goomba", kind);
+    assert.equal(s.items.includes(flower), kind === "fish", kind);
+    if (kind === "fish") assert.equal(swimmer.itemDetour, undefined);
+  }
 });
 
 test("a fleeing crowd beats a loose power-up", () => {
@@ -12561,6 +12567,124 @@ test("a warned flying Cheep Cheep leaves its leap and flies to the rescue door",
   assert.equal(flyer.alive, true);
   assert.equal(flyer.saved, true, JSON.stringify(flyer.body.position));
   assert.ok(s.saved >= saved + 1);
+});
+
+// #230: a water goal pipe's left face, and the NES top that puts a fish's
+// body in its mouth hole, the lower tile of the pipe end.
+function waterMouth(s: Simulation) {
+  const goal = s.activeRoom.data.goal!;
+  return {
+    face: s.activeRoom.offset + goal.column * 32,
+    top: (goal.row + 1) * 16,
+  };
+}
+const nesTop = (n: Actor) => (n.body.position.y - 16 - MAP_TOP) / 2;
+function warnNow(n: Actor) {
+  n.warned = true;
+  n.wait = 0;
+  n.state = "run";
+}
+
+test("a warned Blooper keeps its pulse, aimed at the goal pipe, and swims in", { timeout: 30000 }, () => {
+  const s = stageAt("2-2");
+  s.marioActive = false;
+  const { face } = waterMouth(s);
+  // Column 173, out of view at the start of 2-2.
+  const blooper = s.npcs
+    .filter(
+      (n) =>
+        n.species === "blooper" &&
+        n.areaId === s.level.main &&
+        n.body.position.x < face - 400,
+    )
+    .sort((a, b) => b.body.position.x - a.body.position.x)[0]!;
+  assert.ok(blooper.body.position.x > face - 600);
+  parkNpcs(s, [blooper]);
+  warnNow(blooper);
+  let rises = 0,
+    sinks = 0,
+    left = 0;
+  for (let f = 0; f < 60 * 25 && !blooper.pipeTravel; f++) {
+    const before = { ...blooper.body.position };
+    s.step(dt, emptyInput());
+    if (blooper.pipeTravel) break;
+    const dx = blooper.body.position.x - before.x,
+      dy = blooper.body.position.y - before.y;
+    assert.equal(blooper.body.frozen, true, "passes through terrain");
+    assert.ok(dy >= -4 && dy <= 2, `frame ${f} dy ${dy}`);
+    if (dy < 0) {
+      rises++;
+      assert.equal(Math.abs(dx), -dy, `frame ${f}`);
+    }
+    if (dy > 0) {
+      sinks++;
+      assert.equal(dx, 0);
+    }
+    // Every pulse points at the pipe, never at the player on the left.
+    if (dx) assert.equal(Math.sign(dx), before.x < face ? 1 : -1, `frame ${f}`);
+    if (dx < 0) left++;
+  }
+  assert.ok(rises > 20 && sinks > 20, `rises ${rises} sinks ${sinks}`);
+  assert.ok(blooper.pipeTravel, JSON.stringify(blooper.body.position));
+  assert.equal(blooper.pipeTravel.destArea, "25");
+  assert.ok(left < rises / 2, "it heads right, not back and forth");
+});
+
+test("a warned swimming Cheep Cheep keeps its rate and wobble, heads for the goal pipe, and stays out of view", { timeout: 30000 }, () => {
+  const s = stageAt("2-2");
+  s.player.starLeft = 1e6;
+  s.marioActive = false;
+  const before = new Set(s.npcs);
+  const cheeps: Actor[] = [];
+  holdAt(s, 100, 3, () => {
+    for (const n of s.npcs)
+      if (!before.has(n)) {
+        before.add(n);
+        cheeps.push(n);
+      }
+  });
+  const alive = cheeps.filter((n) => s.npcs.includes(n));
+  const plain = alive.find((n) => n.frenzySlot !== 2)!;
+  const wobbler = alive.find((n) => n.frenzySlot === 2)!;
+  assert.ok(plain && wobbler, `frenzy slots ${alive.map((n) => n.frenzySlot)}`);
+  const { face, top } = waterMouth(s);
+  const rate = (n: Actor) => (n.species === "red-cheep" ? 40 : 20);
+  warnNow(plain);
+  warnNow(wobbler);
+  // The player swims back, so both are out of view, heading right.
+  const xs = new Map<Actor, number[]>([[plain, []], [wobbler, []]]);
+  const top0 = nesTop(plain);
+  let flips = 0,
+    down = wobbler.waterMotion?.kind === "swim" && wobbler.waterMotion.down;
+  holdAt(s, 40, 10, () => {
+    for (const [n, list] of xs) list.push(n.body.position.x);
+    const m = wobbler.waterMotion;
+    assert.ok(m?.kind === "swim");
+    assert.ok(Math.abs(nesTop(wobbler) - m.originY) <= 16, "bobs about 15px");
+    if (m.down !== down) flips++;
+    down = m.down;
+  });
+  for (const [n, list] of xs) {
+    assert.ok(s.npcs.includes(n), "a warned one is not dropped out of view");
+    assert.equal(n.body.frozen, true);
+    // Its own rate: grey 1 NES px every 4 frames, red every 2, now rightward.
+    assert.equal(list[40]! - list[0]!, rate(n), n.species);
+  }
+  assert.ok(flips >= 2, `wobble turned ${flips} times`);
+  // Each 1px step also closes on the mouth's height.
+  const steps = rate(plain) / 2;
+  const rise = nesTop(plain) - top0;
+  if (top0 !== top) assert.equal(Math.sign(rise), Math.sign(top - top0));
+  assert.ok(Math.abs(rise) <= Math.abs(top - top0));
+  assert.ok(Math.abs(rise) >= Math.min(steps, Math.abs(top - top0)));
+  // Near the pipe, it swims into the mouth hole.
+  Body.setPosition(plain.body, { x: face - 120, y: plain.body.position.y });
+  for (let f = 0; f < 60 * 15 && !plain.pipeTravel; f++) {
+    at(s, s.activeRoom.offset + 40 * 32, 200);
+    s.step(dt, emptyInput());
+  }
+  assert.ok(plain.pipeTravel, JSON.stringify(plain.body.position));
+  assert.equal(plain.pipeTravel.destArea, "25");
 });
 
 test("8-4 runs flying Cheep Cheeps between columns 221 and 234", () => {

@@ -334,7 +334,7 @@ passes through terrain as in SMB1.
   every other frame until its interval timer runs out and it is no more than
   16 px above the top of the player's 32 px box. It picks a heading 1 frame in
   64 from the LSFR: toward the player, or the player's facing on odd slots.
-  It moves only near the view and waits off screen. It draws the tall
+  Unwarned, it moves only near the view and waits off screen. It draws the tall
   16x24 frame 3 NES px lower, and the short 16x16 frame only while its
   interval timer is 1.
 - A swimming Cheep Cheep uses `MoveSwimmingCheepCheep`. It always swims left:
@@ -359,8 +359,17 @@ passes through terrain as in SMB1.
   bridges of 2-3 and 7-3) is kept.
 - A Cheep Cheep that leaves the view unwarned is gone and does not count. A
   warned frenzy Cheep Cheep frees its slot.
-- After a warning, a Blooper or Cheep Cheep leaves its pattern for the rescue
-  door: by the swim path in water, and flying to the door on land.
+- After a warning, a Blooper or swimming Cheep Cheep in water keeps its
+  pattern and its terrain pass, aimed at the goal pipe's mouth hole (the lower
+  tile of the pipe end) instead of the player or the left. Once its reaction
+  wait is over, a Blooper's heading always points at the pipe's left face, and
+  it floats down until its top reaches the top of the mouth hole. A Cheep
+  Cheep's 1 px steps keep their rate but point at the pipe, and each also
+  moves 1 px toward the mouth hole's height. A wobbling one moves its wobble
+  center with it and still turns 15 px either side. A warned one keeps moving
+  out of view and is never dropped for leaving it. It does not detour for a
+  power-up. Overlapping the mouth enters the pipe as before. On land, a warned
+  Blooper or Cheep Cheep flies to the rescue door.
 - Art is from the enemy sheet: the Blooper's two frames, and the Cheep Cheep's
   two frames in red, grey in water, and green on land (sprite palette 1).
 
@@ -706,8 +715,8 @@ water pace (`walkSpeed`). Mario's water pace keeps his land shape with
 smaller numbers, where p is crowd pressure from 0 to 1: 2.8 + 0.2p when not
 chasing and 3.2 + 0.4p when chasing. He eases into it with his land
 acceleration. He is faster than a swimming player only while chasing. An
-unwarned Goomba or Koopa still walks the floor. Warned Bloopers and Cheep
-Cheeps use the flat `npcSwimSpeed` path swim with gravity off. Shells in water sink until
+unwarned Goomba or Koopa still walks the floor. Warned Bloopers and swimming
+Cheep Cheeps keep their SMB1 pattern, aimed at the goal pipe. Shells in water sink until
 they meet the floor, then travel along it. A stopped shell rests on the floor.
 A kick above the floor does not teleport down. `shellWake` and `shellShake`
 are unchanged.

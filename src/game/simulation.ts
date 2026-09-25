@@ -1833,10 +1833,12 @@ export class Simulation {
     this.frenzyTimer = 0x20;
   }
 
-  // One frame of a Blooper's or Cheep Cheep's own motion while unwarned. The
-  // body is frozen and moved directly: like SMB1, they pass through terrain.
-  // Returns false when the swimmer has left for good.
-  private stepSwimmer(n: Actor) {
+  // One frame of a Blooper's or Cheep Cheep's own motion. The body is frozen
+  // and moved directly: like SMB1, they pass through terrain. `mouth` is the
+  // goal pipe a warned one heads for (see mouthAim); without it, a Blooper
+  // follows the player and a Cheep Cheep swims left. Returns false when an
+  // unwarned swimmer has left for good. A warned one moves out of view too.
+  private stepSwimmer(n: Actor, mouth?: { x: number; top: number }) {
     const m = n.waterMotion;
     if (!m) {
       Body.setVelocity(n.body, { x: 0, y: 0 });
@@ -1845,22 +1847,28 @@ export class Simulation {
     Body.setFrozen(n.body, true);
     const room = this.roomFor(n);
     const p = n.body.position;
-    const view = this.viewWindow(room);
-    const inView =
-      room === this.activeRoom &&
-      p.x > view.left - SWIMMER_VIEW_MARGIN &&
-      p.x < view.right + SWIMMER_VIEW_MARGIN;
-    if (!inView) {
-      Body.setVelocity(n.body, { x: 0, y: 0 });
-      // Bloopers wait off screen. A Cheep Cheep that has left is gone.
-      return m.kind === "blooper" || (!n.seen && n.frenzySlot === undefined);
+    if (!n.warned) {
+      const view = this.viewWindow(room);
+      const inView =
+        room === this.activeRoom &&
+        p.x > view.left - SWIMMER_VIEW_MARGIN &&
+        p.x < view.right + SWIMMER_VIEW_MARGIN;
+      if (!inView) {
+        Body.setVelocity(n.body, { x: 0, y: 0 });
+        // Bloopers wait off screen. A Cheep Cheep that has left is gone.
+        return m.kind === "blooper" || (!n.seen && n.frenzySlot === undefined);
+      }
+      n.seen = true;
     }
-    n.seen = true;
     const frame = Math.round(this.elapsed * 60);
     const top = (p.y - 16 - MAP_TOP) / 2;
     const slot = n.frenzySlot ?? n.id % 5;
     let step: Step;
-    if (m.kind === "blooper") {
+    if (m.kind === "blooper" && mouth) {
+      // Pulse toward the pipe, and float down to the mouth hole.
+      m.dir = p.x < mouth.x ? 1 : -1;
+      step = stepBlooper(m, frame, top, top < mouth.top);
+    } else if (m.kind === "blooper") {
       const player = this.player;
       const near = this.roomFor(player) === room;
       // PseudoRandomBitReg+1,x & $3f picks a new heading 1 frame in 64.
@@ -1876,7 +1884,15 @@ export class Simulation {
       // Player_Y_Position is the top of a 32px box over the player's feet.
       const playerTop = (player.body.bounds.max.y - MAP_TOP) / 2 - 32;
       step = stepBlooper(m, frame, top, near && top + 16 < playerTop);
-    } else if (m.kind === "swim") step = stepSwimCheep(m, top);
+    } else if (m.kind === "swim")
+      step = stepSwimCheep(
+        m,
+        top,
+        mouth && {
+          x: Math.abs(mouth.x - p.x) < 2 ? 0 : Math.sign(mouth.x - p.x),
+          y: Math.sign(mouth.top - (m.wobble ? m.originY : top)),
+        },
+      );
     else {
       step = stepFlyCheep(m);
       // Back below the screen on the way down: the leap is over.
@@ -1888,6 +1904,15 @@ export class Simulation {
     Body.setVelocity(n.body, { x: dx, y: dy });
     if (dx) n.facing = Math.sign(dx);
     return true;
+  }
+
+  // A warned water swimmer's target: the goal pipe's mouth hole, the lower
+  // tile of its end. x is the pipe's left face, and top is the NES top that
+  // puts the swimmer's body in the hole. Every water goal is a side pipe.
+  private mouthAim(room: Room) {
+    const pipe = this.goalPipeData(room);
+    if (room.data.type !== "water" || pipe?.direction !== "right") return;
+    return { x: room.offset + pipe.column * 32, top: (pipe.row + 1) * 16 };
   }
 
   private dropSwimmers(gone: Set<Actor>) {
@@ -6453,7 +6478,15 @@ export class Simulation {
         continue;
       }
       if (n.patrol) this.endPatrol(n);
-      // A warned swimmer leaves its SMB1 pattern for the rescue door.
+      // #230: in water, a warned Blooper or swimming Cheep Cheep keeps its
+      // SMB1 pattern. Once it reacts, the pattern heads for the goal pipe.
+      const mouth = n.kind === "fish" ? this.mouthAim(room) : undefined;
+      if (mouth && n.waterMotion && n.waterMotion.kind !== "fly") {
+        n.wait -= dt;
+        this.stepSwimmer(n, n.wait > 0 ? undefined : mouth);
+        continue;
+      }
+      // Elsewhere, a warned swimmer leaves its SMB1 pattern for the door.
       if (n.kind === "fish" && n.body.frozen && !this.pipeIntro) {
         Body.setFrozen(n.body, false);
         Body.setVelocity(n.body, { x: 0, y: 0 });
