@@ -637,6 +637,10 @@ const FLY_LIFT_MAX = 288;
 const DITHER_CLEAR = 200;
 const FLEE_HOP_IMPULSE = 4;
 const PANIC_LEAP = 0.35;
+// #222: Fire Mario throws at most once per 200 ms, and replays a shot this
+// many frames ahead to see whether a solid would eat it first.
+const MARIO_THROW_GAP = 0.2;
+const MARIO_SHOT_LOOKAHEAD = 120;
 // Frames and px either side a patrol's landing is looked for.
 const PATROL_LOOKAHEAD = 240;
 // Unwarned patrols turn this far short of the goal.
@@ -1423,6 +1427,8 @@ export class Simulation {
   marioLook = 0;
   marioSeenAgo = 0;
   marioJumpWait = 0;
+  // #222: when Fire Mario last threw, in seconds of play.
+  marioThrowAt = -Infinity;
   marioPause = 0;
   marioRunning = false;
   marioCrowd = 0;
@@ -1583,6 +1589,7 @@ export class Simulation {
     this.marioEntered = false;
     this.marioReturn = T.firstMarioAt;
     this.marioDecision = this.marioChase = this.marioIgnore = 0;
+    this.marioThrowAt = -Infinity;
     this.brickTarget = null;
     this.marioCrowd = this.marioPressure = 0;
     this.marioRunning = false;
@@ -7343,20 +7350,29 @@ export class Simulation {
           this.jump(this.mario);
         }
       }
-      if (this.marioStage === 2 && this.canThrowFireball("mario")) {
-        // Lead the run he is already on, including the crowd bonus.
-        // A new shot does not change his horizontal speed.
+      // Lead the run he is already on, including the crowd bonus.
+      // A new shot does not change his horizontal speed.
+      const vx = direction * (this.marioPace() + T.marioFireLead);
+      // #222: at most one throw per MARIO_THROW_GAP, and below 8x none that
+      // a solid would eat before it reaches anyone. An 8x shot smashes.
+      if (
+        this.marioStage === 2 &&
+        this.canThrowFireball("mario") &&
+        this.elapsed - this.marioThrowAt >= MARIO_THROW_GAP - 1e-9 &&
+        (this.isHuge(this.mario) || this.marioShotReaches(m, vx))
+      ) {
         this.fireballs.push({
           id: this.nextId++,
           x: m.x,
           y: m.y,
-          vx: direction * (this.marioPace() + T.marioFireLead),
+          vx,
           age: 0,
           owner: "mario",
           vy: 0,
           // Matches his body like the player's shot: 8x throws scale 8.
           scale: fireballScaleFor(this.mario.scale),
         });
+        this.marioThrowAt = this.elapsed;
         this.events.push("fire");
       }
     }
@@ -7493,6 +7509,47 @@ export class Simulation {
     this.marioChase = 0;
     this.marioLook = 0;
     this.marioReaction = 0.15;
+  }
+
+  // Whether a shot thrown from m at vx would overlap the player or a living
+  // NPC before a solid's side removes it. A floor only bounces it, and a
+  // shot that leaves the view unhit is not held back.
+  private marioShotReaches(m: { x: number; y: number }, vx: number) {
+    const radius = 6 * fireballScaleFor(this.mario.scale);
+    const targets = [this.player, ...this.npcs].filter(
+      (a) => a.alive && !a.saved && !this.inPipe(a),
+    );
+    const end = m.x + vx * MARIO_SHOT_LOOKAHEAD;
+    const lo = Math.min(m.x, end) - radius - 8,
+      hi = Math.max(m.x, end) + radius + 8;
+    const solids = this.solids.filter(
+      (s) => s.bounds.max.x > lo && s.bounds.min.x < hi,
+    );
+    const shot = { x: m.x, y: m.y } as Fireball;
+    let vy = 0;
+    for (let frame = 0; frame < MARIO_SHOT_LOOKAHEAD; frame++) {
+      const oldY = shot.y;
+      shot.x += vx;
+      vy += 0.28;
+      shot.y += vy;
+      if (this.fireballPastCamera(shot)) return true;
+      for (const s of solids) {
+        if (
+          shot.x + radius <= s.bounds.min.x ||
+          shot.x - radius >= s.bounds.max.x ||
+          shot.y + radius <= s.bounds.min.y ||
+          shot.y - radius >= s.bounds.max.y
+        )
+          continue;
+        if (vy > 0 && oldY + radius <= s.bounds.min.y + 2) {
+          shot.y = s.bounds.min.y - radius;
+          vy = -3.8;
+        } else return false;
+      }
+      if (targets.some((a) => this.overlapFireball(a, shot.x, shot.y, radius)))
+        return true;
+    }
+    return true;
   }
 
   private canThrowFireball(owner: "player" | "mario") {

@@ -1986,9 +1986,13 @@ test("a 2x fireball collides at 2x and does not smash bricks", () => {
   assert.ok(bricks.solids.includes(brick.body!));
 });
 
-test("Mario and the player each throw again when a fireball slot is free", () => {
+test("the player throws again when a slot is free; Mario also waits 200 ms", () => {
   const s = game();
   give(s, s.player, "flower");
+  // No solid to eat Mario's shots; the player is far down the runway.
+  openRunway(s);
+  parkNpcs(s, [], 3500);
+  standAt(s.player, 1000);
   s.elapsed = T.fireballsAt;
   s.marioActive = true;
   s.marioStage = 2;
@@ -2003,14 +2007,18 @@ test("Mario and the player each throw again when a fireball slot is free", () =>
   tick(s, dt, { fire: true });
   tick(s, dt, { fire: true });
   assert.equal(owned(s, "player").length, T.fireballSlots);
+  // #222: Mario's next throw waits 200 ms, whatever the slots.
+  assert.equal(owned(s, "mario").length, 1);
+  tick(s, 0.2, { fire: true });
   assert.equal(owned(s, "mario").length, T.fireballSlots);
   owned(s, "player")[0].age = 5;
   owned(s, "mario")[0].age = 5;
   tick(s, 2 * dt, { fire: true });
   assert.equal(owned(s, "player").length, T.fireballSlots);
-  assert.equal(owned(s, "mario").length, T.fireballSlots);
   assert.ok(owned(s, "player").some((f) => f.age < 2 * dt));
-  assert.ok(owned(s, "mario").some((f) => f.age < 2 * dt));
+  assert.equal(owned(s, "mario").length, 1, "the free slot waits for the gap");
+  tick(s, 0.2, { fire: true });
+  assert.equal(owned(s, "mario").length, T.fireballSlots);
 });
 
 test("flowers enable player fireballs; hits stun Mario and never hurt NPCs", () => {
@@ -4368,7 +4376,8 @@ test("Mario jumps for an elevated hunted flower", () => {
 test("Fire Mario still shoots while chasing a loose item", () => {
   const s = game();
   parkNpcs(s, []);
-  at(s, 2500);
+  // #222: somebody must be in the shot's way before the first pipe.
+  at(s, 600);
   s.elapsed = T.fireballsAt;
   const star = looseItem(s, "star", 280);
   huntReady(s, 200);
@@ -4527,7 +4536,10 @@ test("Fire Mario fires ahead on a chase and on a crowd goal when a slot is free"
   assert.ok(Math.abs(air.mario.body.velocity.x) > 1);
   assert.ok(Math.abs(airShot.vx) > Math.abs(air.mario.body.velocity.x));
   assert.ok(Math.abs(air.marioAim - 400) > 125);
+  // #222: the second shot comes 200 ms later.
   air.step(dt, emptyInput());
+  assert.equal(owned(air, "mario").length, 1);
+  for (let i = 0; i < 12; i++) air.step(dt, emptyInput());
   assert.equal(owned(air, "mario").length, T.fireballSlots);
   const ids = owned(air, "mario").map((ball) => ball.id);
   air.step(dt, emptyInput());
@@ -4592,6 +4604,66 @@ test("Fire Mario fires ahead on a chase and on a crowd goal when a slot is free"
     Math.abs(chosen.body.position.x - s.mario.body.position.x) > 100,
     "he closed to stomp range before firing",
   );
+});
+
+// #222: Fire Mario's own throws wait 200 ms, and below 8x he does not throw
+// into a wall or pipe that would eat the shot before it reaches anyone.
+function wallChase(huge: boolean) {
+  const s = game();
+  if (huge) {
+    s.marioActive = true;
+    s.setMarioStage(2);
+    give(s, s.mario, "mushroom8x");
+  }
+  openRunway(s);
+  parkNpcs(s, [], 2500);
+  standAt(s.player, 2300);
+  s.setMarioStage(2);
+  armChase(s, 400, 900);
+  s.fireballs = [];
+  // A wall ahead of him, between him and everyone, too tall to jump.
+  const wall = s.physics.rectangle(560, T.groundY - 160, 64, 320, true);
+  s.solids.push(wall);
+  return s;
+}
+
+function throwFrames(s: Simulation, frames: number) {
+  const at: number[] = [];
+  for (let i = 0; i < frames; i++) {
+    const before = s.events.filter((e) => e === "fire").length;
+    s.marioReaction = 0;
+    s.marioChase = 8;
+    s.step(dt, emptyInput());
+    if (s.events.filter((e) => e === "fire").length > before) at.push(i);
+  }
+  return at;
+}
+
+test("Fire Mario does not burst shots into a wall ahead of him", () => {
+  const s = wallChase(false);
+  const at = throwFrames(s, 60);
+  assert.deepEqual(at, [], "no shot the wall would eat");
+  assert.equal(owned(s, "mario").length, 0);
+});
+
+test("an actor closer than the wall still draws Mario's shot", () => {
+  const s = wallChase(false);
+  const n = s.npcs[0]!;
+  standAt(n, 470);
+  n.warned = false;
+  n.wait = 99;
+  const at = throwFrames(s, 30);
+  assert.ok(at.length >= 1, "he throws at the NPC in front of the wall");
+  for (let i = 1; i < at.length; i++) assert.ok(at[i]! - at[i - 1]! >= 12);
+});
+
+test("8x Fire Mario throws at an empty wall, 200 ms apart", () => {
+  const s = wallChase(true);
+  assert.equal(s.mario.scale, T.hugeScale);
+  const at = throwFrames(s, 90);
+  assert.ok(at.length >= 3, `throws at ${at}`);
+  for (let i = 1; i < at.length; i++)
+    assert.ok(at[i]! - at[i - 1]! >= 12, `throws at ${at}`);
 });
 
 test("Fire Mario still prefers an easy stomp over a crowd", () => {
