@@ -173,7 +173,7 @@ test("the 8-4 ending loops world clear and game over stays a one-shot", () => {
     "utf8",
   );
   assert.match(appSrc, /audio\.syncVictory\(sim\.victoryLoop\)/);
-  assert.match(appSrc, /ENDING_LINE/);
+  assert.match(appSrc, /ENDING_LINES/);
   assert.match(appSrc, />\s*TITLE\s*</);
 });
 

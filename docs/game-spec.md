@@ -447,11 +447,21 @@ The castle door is always open. Reaching it completes the stage:
    Pause and Escape stay ignored for the whole finishing sequence. Mute still
    works.
 6. Auto-advance to the next WORLD n-n intro. There is no NEXT LEVEL button.
-   After 8-4, stay on an ending screen. Show the final SCORE and a short line
-   that the Goombas won. Do not thank Mario or the Princess. Loop the
+   After 8-4, stay on an ending card. It shows this epilogue, in order:
+   ONE SMALL GOOMBA STOOD BRAVE. / HE HELD BACK THE EVIL MARIO BROTHERS. /
+   THE KINGDOM IS SAFE. / A NEW QUEST STILL WAITS. Mario is named only as the
+   villain. Do not thank Mario or mention a princess, and there is no
+   world-select button. Below it are the campaign totals for WARNED, SAVED,
+   DIED, FLAG, and MARIO, then the final SCORE and TITLE. Loop the
    world-clear cue until the player chooses the title with the TITLE button
    or Start. That control does not fire by itself. Earlier stages still
    auto-advance.
+   Campaign totals: each stage's five end counters are added once, when that
+   stage's tally finishes, 8-4 included before the card. DIED is the stage's
+   lost-NPC count, and FLAG is 1 for a stage where the player beat Mario to
+   the flag. The lines during a stage tally stay that stage only. The totals
+   carry with SCORE into the next stage and clear when SCORE clears (title
+   and game over). A death or a retry adds nothing.
 
 Castle breakdown points:
 

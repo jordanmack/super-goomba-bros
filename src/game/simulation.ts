@@ -271,7 +271,23 @@ export type TallyPhase =
   | "mario"
   | "ending";
 /** Shown on the 8-4 card. The player won. Not a Mario or Princess thank-you. */
-export const ENDING_LINE = "THE CASTLE IS OURS";
+// The 8-4 card, in order. Mario is named only as the villain.
+export const ENDING_LINES = [
+  "ONE SMALL GOOMBA STOOD BRAVE.",
+  "HE HELD BACK THE EVIL MARIO BROTHERS.",
+  "THE KINGDOM IS SAFE.",
+  "A NEW QUEST STILL WAITS.",
+] as const;
+// Campaign sums of each stage-end counter. FLAG counts stages where the
+// player beat Mario to the flag.
+export type CampaignTotals = Record<TallyLine, number>;
+const noTotals = (): CampaignTotals => ({
+  warned: 0,
+  saved: 0,
+  died: 0,
+  flag: 0,
+  mario: 0,
+});
 export type GameEvent =
   | "jump"
   | "bump"
@@ -1226,6 +1242,7 @@ export class Simulation {
   timeLeft = 0;
   hurry = false;
   marioKills = 0;
+  campaignTotals = noTotals();
   tallyPhase: TallyPhase = "";
   tallyHold = 0;
   /** Looped recording while the 8-4 card is up. Empty once the player leaves. */
@@ -1308,6 +1325,7 @@ export class Simulation {
       mode === "intro" && this.mode !== "title" && this.mode !== "gameover";
     const score = keepCampaign ? this.score : 0;
     const coins = keepCampaign ? this.coins : 0;
+    if (!keepCampaign) this.campaignTotals = noTotals();
     this.physics.clear();
     this.nextId = 1;
     this.leftLimit = undefined;
@@ -5079,6 +5097,16 @@ export class Simulation {
     }
   }
 
+  // A stage's counters join the campaign once, when its tally finishes.
+  private addCampaignTotals() {
+    const totals = this.campaignTotals;
+    totals.warned += this.warned;
+    totals.saved += this.saved;
+    totals.died += this.died();
+    totals.flag += this.playerClaimedFlag() ? 1 : 0;
+    totals.mario += this.marioKills;
+  }
+
   private stepTally(dt: number) {
     // The 8-4 card waits for leaveEnding. A hold timer must not send it to title.
     if (this.tallyPhase === "ending") return;
@@ -5100,6 +5128,7 @@ export class Simulation {
     this.tallyHold -= dt;
     if (this.tallyHold > 0) return;
     if (this.tallyPhase === "mario") {
+      this.addCampaignTotals();
       if (this.levelIndex >= CAMPAIGN.length - 1) {
         this.tallyPhase = "ending";
         this.victoryLoop = "worldClear";
@@ -5126,6 +5155,7 @@ export class Simulation {
         if (this.lives <= 0) {
           this.mode = "gameover";
           this.score = 0;
+          this.campaignTotals = noTotals();
           this.gameoverLeft = T.gameoverSeconds;
           this.events.push("gameover");
         } else this.reset("intro");

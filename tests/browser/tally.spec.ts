@@ -140,7 +140,7 @@ for (const viewport of viewports) {
           return [...sheet.cssRules].some(
             (rule) =>
               rule.cssText.includes(".ending-overlay h2") &&
-              rule.cssText.includes("--play-h) * 16 / 540"),
+              rule.cssText.includes("--play-h) * 14 / 540"),
           );
         } catch {
           return false;

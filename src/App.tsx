@@ -16,12 +16,13 @@ import {
   VolumeX,
 } from "lucide-react";
 import {
-  ENDING_LINE,
+  ENDING_LINES,
   Simulation,
   emptyInput,
   tallyLineScore,
 } from "./game/simulation";
 import type {
+  CampaignTotals,
   Input,
   ItemKind,
   Mode,
@@ -104,6 +105,7 @@ type Snapshot = {
   tallyPhase: TallyPhase;
   marioKills: number;
   flagClaim: boolean;
+  totals: CampaignTotals;
   progress: number;
   level: string;
 };
@@ -125,6 +127,7 @@ const initial: Snapshot = {
   tallyPhase: "",
   marioKills: 0,
   flagClaim: false,
+  totals: { warned: 0, saved: 0, died: 0, flag: 0, mario: 0 },
   progress: 0,
   level: "1-1",
 };
@@ -397,6 +400,7 @@ export default function App() {
             tallyPhase: sim.tallyPhase,
             marioKills: sim.marioKills,
             flagClaim: sim.playerClaimedFlag(),
+            totals: { ...sim.campaignTotals },
             progress: Math.min(
               1,
               (p.x - sim.activeRoom.offset) /
@@ -947,7 +951,18 @@ export default function App() {
       )}
       {state.mode === "finishing" && state.tallyPhase === "ending" && !paused && (
         <section className="overlay ending-overlay" aria-label="Ending">
-          <h2>{ENDING_LINE}</h2>
+          <div className="ending-epilogue">
+            {ENDING_LINES.map((line) => (
+              <h2 key={line}>{line}</h2>
+            ))}
+          </div>
+          <div className="ending-totals" data-testid="ending-totals">
+            {TALLY_LINES.map((line) => (
+              <p key={line} data-testid={`ending-${line}`}>
+                {line.toUpperCase()} {String(state.totals[line]).padStart(2, "0")}
+              </p>
+            ))}
+          </div>
           <p className="ending-score" data-testid="ending-score">
             SCORE {formatScore(state.score)}
           </p>

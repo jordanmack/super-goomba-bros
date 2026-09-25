@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { Body, holdSpanOf, hugeHoldAt, overlaps } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
 import {
-  ENDING_LINE,
+  ENDING_LINES,
   Simulation as RulesSimulation,
   emptyInput,
   fireworkFrame,
@@ -11108,8 +11108,15 @@ test("leftover TIME and castle lines add to SCORE then auto-continue", () => {
 });
 
 test("World 8-4 ending holds SCORE and looped world clear until title", () => {
-  assert.equal(ENDING_LINE, "THE CASTLE IS OURS");
-  assert.doesNotMatch(ENDING_LINE, /mario|princess/i);
+  assert.deepEqual(ENDING_LINES, [
+    "ONE SMALL GOOMBA STOOD BRAVE.",
+    "HE HELD BACK THE EVIL MARIO BROTHERS.",
+    "THE KINGDOM IS SAFE.",
+    "A NEW QUEST STILL WAITS.",
+  ]);
+  for (const line of ENDING_LINES)
+    assert.doesNotMatch(line, /thank|princess|world select/i);
+  assert.equal(ENDING_LINES.filter((line) => /MARIO/.test(line)).length, 1);
   const s = game();
   s.levelIndex = CAMPAIGN.length - 1;
   s.reset();
@@ -11157,6 +11164,80 @@ test("World 8-4 ending holds SCORE and looped world clear until title", () => {
   assert.equal(s.lives, T.startingLives);
   s.leaveEnding();
   assert.equal(s.mode, "title");
+});
+
+// Finish the current stage's tally without waiting on the line holds.
+function runTally(s: Simulation) {
+  s.finish();
+  while (s.mode === "finishing" && s.tallyPhase === "time") tick(s, dt);
+  while (s.mode === "finishing" && s.tallyPhase !== "ending") {
+    s.tallyHold = 0;
+    tick(s, dt);
+  }
+}
+
+function stillStage(s: Simulation) {
+  s.marioReturn = 1e6;
+  parkNpcs(s, []);
+  for (const actor of [...s.npcs, s.mario]) {
+    Body.setFrozen(actor.body, true);
+    actor.wait = 99;
+    actor.idleWalking = false;
+  }
+}
+
+test("campaign totals add each finished stage once and clear with SCORE", () => {
+  const s = game();
+  s.levelIndex = CAMPAIGN.length - 2;
+  s.reset();
+  stillStage(s);
+  s.warned = 3;
+  s.saved = 2;
+  s.marioKills = 1;
+  const died = s.died();
+  const flag = s.playerClaimedFlag() ? 1 : 0;
+  // The per-stage lines are still this stage only during the tally.
+  s.timeLeft = 0;
+  runTally(s);
+  assert.equal(s.mode, "intro", "8-3 moves on to 8-4");
+  assert.deepEqual(s.campaignTotals, {
+    warned: 3,
+    saved: 2,
+    died,
+    flag,
+    mario: 1,
+  });
+  assert.equal(s.warned, 0, "the stage counters reset");
+  // A death and a retry do not add a partial stage.
+  const play = () => {
+    for (let f = 0; f < 60 * 20 && s.mode !== "playing"; f++) tick(s, dt);
+    finishPipeIntro(s);
+    stillStage(s);
+  };
+  play();
+  s.warned = 5;
+  s.kill(s.player);
+  for (let f = 0; f < 60 * 20 && s.mode !== "intro"; f++) tick(s, dt);
+  assert.equal(s.mode, "intro", "a retry");
+  assert.equal(s.campaignTotals.warned, 3);
+  // 8-4 adds its totals before the card.
+  play();
+  assert.equal(s.level.id, "8-4");
+  s.warned = 4;
+  s.timeLeft = 0;
+  runTally(s);
+  assert.equal(s.tallyPhase, "ending");
+  assert.equal(s.campaignTotals.warned, 7);
+  // Title clears them with SCORE.
+  s.leaveEnding();
+  assert.equal(s.mode, "title");
+  assert.deepEqual(s.campaignTotals, {
+    warned: 0,
+    saved: 0,
+    died: 0,
+    flag: 0,
+    mario: 0,
+  });
 });
 
 test("leftover TIME tally starts from a fresh accumulator", () => {

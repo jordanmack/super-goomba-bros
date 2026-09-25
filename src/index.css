@@ -740,20 +740,31 @@ p {
   gap: round(nearest, calc(var(--play-h) * 28 / 540), 1px);
 }
 .overlay.ending-overlay h2,
-.overlay.ending-overlay .ending-score {
+.overlay.ending-overlay .ending-score,
+.overlay.ending-overlay .ending-totals p {
   color: #fff;
   text-shadow: none;
   letter-spacing: 0.08em;
   max-width: 100%;
+  margin: 0;
   line-height: 1.6;
   -webkit-font-smoothing: none;
   text-rendering: optimizeSpeed;
 }
-.overlay.ending-overlay h2 {
-  font-size: round(nearest, min(calc(var(--play-h) * 16 / 540), 4.2vw), 1px);
+.ending-epilogue,
+.ending-totals {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: round(nearest, calc(var(--play-h) * 6 / 540), 1px);
 }
-.overlay.ending-overlay .ending-score {
-  font-size: round(nearest, min(calc(var(--play-h) * 14 / 540), 3.6vw), 1px);
+/* The longest epilogue line is 37 glyphs with 0.08em tracking. */
+.overlay.ending-overlay h2 {
+  font-size: round(nearest, min(calc(var(--play-h) * 14 / 540), 2.3vw), 1px);
+}
+.overlay.ending-overlay .ending-score,
+.overlay.ending-overlay .ending-totals p {
+  font-size: round(nearest, min(calc(var(--play-h) * 12 / 540), 3.6vw), 1px);
 }
 .help-overlay {
   z-index: 13;
