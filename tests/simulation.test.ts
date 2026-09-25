@@ -1,15 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
-  Body,
-  holdSpanOf,
-  hugeFloorAt,
-  hugeFloorSolid,
-  hugeFlushVolume,
-  hugeHoldAt,
-  overlaps,
-} from "../src/game/physics.ts";
+import { Body, holdSpanOf, hugeHoldAt, overlaps } from "../src/game/physics.ts";
 import { physics } from "./support/arcade.ts";
 import {
   ENDING_LINE,
@@ -27,6 +19,7 @@ import {
   areaData,
   areaGaps,
   isCannonTile,
+  isSolidTile,
 } from "../src/game/levels.ts";
 import {
   ENEMY_BALANCE_LIFT,
@@ -6796,7 +6789,7 @@ test("8x smash claims remaining multi-coins for the player; NPC smash pops witho
   assert.ok(s3.coinPops.length >= T.multiCoinCount);
 });
 
-test("8x does not smash floors, flagpole, goal pipe, castle bridges, the axe, or an elevated flush walk volume", () => {
+test("8x does not smash floors, flagpole, goal pipe, castle bridges, or the axe, but breaks a wall beside a raised floor", () => {
   const s = game();
   parkNpcs(s, []);
   give(s, s.player, "mushroom8x");
@@ -6871,79 +6864,55 @@ test("8x does not smash floors, flagpole, goal pipe, castle bridges, the axe, or
     castle.activeRoom.smashedTiles.has(`${axeCol},${axeRow}`),
     false,
   );
+  // #216: a wall beside the stood-on floor is not protected. Every tile the
+  // body overlaps above its feet breaks, and the floor under the feet stays.
   const pair = campaignMergedPair(castle);
   assert.ok(pair, "1-4 has a merged wall+floor above groundY");
   const towardLeft = Math.abs(pair.wall.bounds.max.x - pair.floor.bounds.min.x) < 1;
+  const wallBox = {
+    minX: pair.wall.bounds.min.x,
+    maxX: pair.wall.bounds.max.x,
+    minY: pair.wall.bounds.min.y,
+    maxY: pair.wall.bounds.max.y,
+  };
   const startX = towardLeft
     ? Math.min(pair.floor.position.x, pair.floor.bounds.min.x + 48)
     : Math.max(pair.floor.position.x, pair.floor.bounds.max.x - 48);
   at(castle, startX, pair.floorY - 14 * castle.player.scale);
   tick(castle, 0.15);
-  const liveFloor = hugeFloorSolid(
-    castle.player.body.bounds.max.y,
-    castle.player.body.bounds.min.x,
-    castle.player.body.width,
-    castle.roomFor(castle.player).solids,
-  );
-  const liveWall = liveFloor
-    ? hugeFlushVolume(
-        castle.player.body.bounds.max.y,
-        castle.player.body.bounds.min.x,
-        castle.player.body.width,
-        castle.roomFor(castle.player).solids,
-        liveFloor,
-      )
-    : undefined;
-  assert.ok(liveFloor);
-  assert.ok(liveWall);
+  assert.equal(castle.player.alive, true);
+  assert.ok(Math.abs(castle.player.body.bounds.max.y - pair.floorY) < 2);
   const room = castle.activeRoom;
-  const col0 = Math.floor((liveWall.bounds.min.x - room.offset) / 32);
-  const col1 = Math.floor((liveWall.bounds.max.x - room.offset - 0.01) / 32);
-  const row0 = Math.floor((liveWall.bounds.min.y - MAP_TOP) / 32);
-  const row1 = Math.floor((liveWall.bounds.max.y - MAP_TOP - 0.01) / 32);
+  const body = castle.player.body.bounds;
   let volumeTile = false;
-  for (let column = col0; column <= col1; column++) {
-    for (let row = Math.max(2, row0); row <= Math.min(12, row1); row++) {
-      const tile = room.data.tiles[row]?.[column] ?? 0;
-      if (!tile) continue;
+  for (
+    let column = Math.floor((wallBox.minX - room.offset) / 32);
+    column <= Math.floor((wallBox.maxX - room.offset - 0.01) / 32);
+    column++
+  )
+    for (
+      let row = Math.max(2, Math.floor((wallBox.minY - MAP_TOP) / 32));
+      row <= Math.min(12, Math.floor((wallBox.maxY - MAP_TOP - 0.01) / 32));
+      row++
+    ) {
+      if (!room.data.tiles[row]?.[column]) continue;
       const x = room.offset + column * 32 + 16;
       const y = MAP_TOP + row * 32 + 16;
       if (
-        castle.player.body.bounds.max.x <= x - 16 + 0.1 ||
-        castle.player.body.bounds.min.x >= x + 16 - 0.1 ||
-        castle.player.body.bounds.max.y <= y - 16 + 0.1 ||
-        castle.player.body.bounds.min.y >= y + 16 - 0.1
+        body.max.x <= x - 16 + 0.1 ||
+        body.min.x >= x + 16 - 0.1 ||
+        body.max.y <= y - 16 + 0.1 ||
+        body.min.y >= y + 16 - 0.1
       )
         continue;
       volumeTile = true;
       assert.equal(
         room.smashedTiles.has(`${column},${row}`),
-        false,
-        `walk volume ${column},${row}`,
+        true,
+        `wall ${column},${row}`,
       );
     }
-  }
   assert.equal(volumeTile, true);
-  let overheadSmashed = false;
-  const floorCol0 = Math.floor((liveFloor.bounds.min.x - room.offset) / 32);
-  const floorCol1 = Math.floor((liveFloor.bounds.max.x - room.offset - 0.01) / 32);
-  const above = Math.floor((liveFloor.bounds.min.y - MAP_TOP) / 32) - 1;
-  for (let column = floorCol0; column <= floorCol1; column++) {
-    for (let row = 2; row <= above; row++) {
-      if (!room.smashedTiles.has(`${column},${row}`)) continue;
-      const x = room.offset + column * 32 + 16;
-      const y = MAP_TOP + row * 32 + 16;
-      if (
-        castle.player.body.bounds.max.x <= x - 16 + 0.1 ||
-        castle.player.body.bounds.min.x >= x + 16 - 0.1 ||
-        castle.player.body.bounds.max.y <= y - 16 + 0.1 ||
-        castle.player.body.bounds.min.y >= y + 16 - 0.1
-      )
-        continue;
-      overheadSmashed = true;
-    }
-  }
-  assert.equal(overheadSmashed, true);
   castle.physics.clear();
 
   const underground = new Simulation(() => 0.5);
@@ -8432,93 +8401,73 @@ test("8x campaign floor stays after smash rebuilds terrainRects", () => {
   s.physics.clear();
 });
 
-test("8x stays on campaign merged wall+floor after floor-AABB overlap ends", () => {
-  const s = new Simulation(() => 0.5);
-  s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
-  s.reset();
-  s.marioReturn = 1e6;
-  parkNpcs(s, []);
-  give(s, s.player, "mushroom8x");
-  const pair = campaignMergedPairs(s).find(
-    (entry) => entry.wall.width >= 24 * T.hugeScale,
-  );
-  assert.ok(pair, "1-4 has a merged wall wide enough to hold 8x after walk-off");
-  const { floor, wall, floorY } = pair;
-  const towardLeft = Math.abs(wall.bounds.max.x - floor.bounds.min.x) < 1;
-  const startX = towardLeft
-    ? Math.min(floor.position.x, floor.bounds.min.x + 48)
-    : Math.max(floor.position.x, floor.bounds.max.x - 48);
-  at(s, startX, floorY - 14 * s.player.scale);
-  tick(s, 0.15);
-  assert.ok(Math.abs(s.player.body.bounds.max.y - floorY) < 2);
-  assert.equal(s.player.body.velocity.y, 0);
-  assert.ok(s.player.body.volumeHoldFloor);
-  assert.ok(s.player.body.volumeHoldVolume);
-  let leftFloor = false;
-  let heldY = floorY;
-  for (let i = 0; i < 180; i++) {
-    const body = s.player.body;
-    const liveFloor = body.volumeHoldFloor;
-    const liveWall = body.volumeHoldVolume;
-    const smashBefore = s.activeRoom.smashedTiles.size;
-    const span = liveFloor
-      ? { minX: liveFloor.bounds.min.x, maxX: liveFloor.bounds.max.x }
-      : undefined;
-    s.step(dt, {
-      ...emptyInput(),
-      left: towardLeft,
-      right: !towardLeft,
-    });
-    if (!liveFloor || !liveWall || !span) continue;
-    const overlapsFloor =
-      body.bounds.max.x > span.minX && body.bounds.min.x < span.maxX;
-    if (overlapsFloor) continue;
-    leftFloor = true;
-    heldY = liveFloor.bounds.min.y;
-    assert.equal(
-      s.activeRoom.smashedTiles.size,
-      smashBefore,
-      "leaving step must not smash",
-    );
-    assert.equal(s.physics.bodies.has(liveFloor), true);
-    assert.equal(s.physics.bodies.has(liveWall), true);
-    assert.equal(body.volumeHoldFloor, liveFloor);
-    assert.equal(body.volumeHoldVolume, liveWall);
-    assert.equal(s.player.alive, true);
-    assert.equal(s.player.grounded, true);
-    assert.ok(
-      Math.abs(body.bounds.max.y - heldY) < 2,
-      JSON.stringify({
-        floorY: heldY,
-        feet: body.bounds.max.y,
-        vy: body.velocity.y,
-        x: body.position.x,
-      }),
-    );
-    assert.equal(body.velocity.y, 0);
-    assert.ok(
-      body.bounds.max.x > liveWall.bounds.min.x &&
-        body.bounds.min.x < liveWall.bounds.max.x,
-    );
-    assert.equal(
-      hugeFloorAt(
-        body.bounds.max.y,
-        body.bounds.min.x,
-        body.width,
-        s.roomFor(s.player).solids,
-      ),
-      false,
-      "smash rebuild must not leave a standable floor under the body",
-    );
-    break;
+// Solid map tiles the body overlaps above the stood-on surface. #216: there
+// should be none, because 8x breaks each one as soon as it overlaps.
+function unbrokenAroundHuge(s: Simulation, actor: Actor) {
+  const room = s.roomFor(actor);
+  const box = actor.body.bounds;
+  const left: string[] = [];
+  for (
+    let column = Math.floor((box.min.x - room.offset) / 32);
+    column <= Math.floor((box.max.x - room.offset - 0.01) / 32);
+    column++
+  )
+    for (
+      let row = Math.max(2, Math.floor((box.min.y - MAP_TOP) / 32));
+      row <= Math.min(12, Math.floor((box.max.y - MAP_TOP - 0.01) / 32));
+      row++
+    ) {
+      const key = `${column},${row}`;
+      if (!isSolidTile(room.data.tiles[row]?.[column] ?? 0)) continue;
+      const top = MAP_TOP + row * 32;
+      if (top >= box.max.y - 0.1) continue;
+      // Prize and brick blocks break as obstacles, not as map terrain.
+      const block = room.obstacles.find(
+        (c) =>
+          c.kind === "brick" &&
+          Math.abs(c.x - (room.offset + column * 32 + 16)) < 1 &&
+          Math.abs(c.y - (top + 16)) < 1,
+      );
+      if (block ? block.broken : room.smashedTiles.has(key)) continue;
+      left.push(key);
+    }
+  return left;
+}
+
+test("8x keeps breaking a long castle wall around the body and stays on its floor", () => {
+  // 1-4: a four-high wall (rows 9-12) runs from column 35 to 71. Row 10 tops
+  // the raised floor on columns 72-76 to its right and the pillar on columns
+  // 29-31 to its left. The body walks in on row 10 from either side.
+  for (const run of [
+    { from: 74, right: false },
+    { from: 30, right: true },
+  ]) {
+    const s = new Simulation(() => 0.5);
+    s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "1-4");
+    s.reset();
+    s.marioReturn = 1e6;
+    parkNpcs(s, []);
+    give(s, s.player, "mushroom8x");
+    const room = s.activeRoom;
+    const floorY = MAP_TOP + 10 * 32;
+    at(s, room.offset + run.from * 32 + 16, floorY - 14 * s.player.scale);
+    tick(s, 0.15);
+    const label = run.right ? "moving right" : "moving left";
+    assert.ok(Math.abs(s.player.body.bounds.max.y - floorY) < 2, label);
+    const startX = s.player.body.position.x;
+    for (let frame = 0; frame < 180; frame++) {
+      s.step(dt, { ...emptyInput(), left: !run.right, right: run.right });
+      assert.equal(s.player.alive, true, `${label} ${frame}`);
+      assert.ok(
+        Math.abs(s.player.body.bounds.max.y - floorY) < 2,
+        `${label} ${frame}: feet ${s.player.body.bounds.max.y}`,
+      );
+      assert.deepEqual(unbrokenAroundHuge(s, s.player), [], `${label} ${frame}`);
+    }
+    const moved = (s.player.body.position.x - startX) * (run.right ? 1 : -1);
+    assert.ok(moved > 12 * 32, `${label} walked ${moved}`);
+    s.physics.clear();
   }
-  assert.equal(leftFloor, true);
-  tick(s, 0.2);
-  assert.equal(s.player.alive, true);
-  assert.equal(s.player.grounded, true);
-  assert.ok(Math.abs(s.player.body.bounds.max.y - heldY) < 2);
-  assert.equal(s.player.body.velocity.y, 0);
-  s.physics.clear();
 });
 
 test("8x NPC stays on a merged wall+floor after floor-AABB overlap ends", () => {

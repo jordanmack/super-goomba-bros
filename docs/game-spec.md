@@ -609,14 +609,19 @@ the level. A 1-up grants an extra life and plays the original 1-up sound.
   brick claims all remaining coins at once, then the brick is gone. An item
   spawns already free (`emerge` 0, not frozen) and flies out; it does not use
   the emerge rise or the appear cue. Unrevealed hidden blocks stay hidden.
-  Floors, stairs you stand on, moving platforms, the flagpole, the goal door,
-  a goal pipe, castle bridges, and the axe stay. Hitting any tile of a cannon
+  Every other smashable tile breaks for as long as the body overlaps it, so a
+  body moving through a long wall keeps clearing the rows around it. The
+  surface under the feet stays: a tile whose top is within 12 px of the feet
+  and has air above it, from the map or from an earlier smash. That covers
+  ground, stairs, and the lower rows of a wall the body runs on. No other wall
+  is protected. A block the body is inside, not standing on, breaks, and if
+  nothing else holds the body up, it falls. Floors, stairs you stand on, moving platforms,
+  the flagpole, the goal door, a goal pipe, castle bridges, and the axe stay.
+  Hitting any tile of a cannon
   destroys that column's barrel, pedestal, and shaft, removes that cannon so it
   does not fire again, and leaves in-flight Bullet Bills. Hitting either tile
   of a spring destroys both tiles of that pad, and it no longer bounces.
-  The elevated
-  flush wall of a stood-on merged wall+floor also stays, so 8x can keep walking
-  after the floor AABB overlap ends. Ground-level walls still smash. 8x never smashes a
+  8x never smashes a
   goal pipe or castle door. The door stays solid. Standing on a non-goal pipe
   does not enter it, and 8x does not travel through an intact non-goal pipe.
   A side or bottom hit still destroys that pipe, and that mouth cannot be

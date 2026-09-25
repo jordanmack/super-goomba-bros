@@ -3,8 +3,6 @@ import {
   PhysicsWorld,
   clearVolumeHold,
   hugeFloorAt,
-  hugeFloorSolid,
-  hugeFlushVolume,
   hugeFlushWithFloor,
   hugeHoldAt,
   hugeHoldFloor,
@@ -3682,7 +3680,6 @@ export class Simulation {
       return;
     const feet = a.body.bounds.max.y;
     const box = a.body.bounds;
-    const walkPair = this.hugeWalkPair(a, room);
     const smashed: string[] = [];
     const col0 = Math.floor((box.min.x - room.offset) / 32);
     const col1 = Math.floor((box.max.x - room.offset - 0.01) / 32);
@@ -3717,21 +3714,6 @@ export class Simulation {
           box.min.x >= x + 16 - 0.1 ||
           box.max.y <= y - 16 + 0.1 ||
           box.min.y >= y + 16 - 0.1
-        )
-          continue;
-        // Elevated merged-pair solids stay two bodies so persist can hold
-        // after the floor AABB overlap ends. Overhead tiles still smash.
-        if (
-          walkPair &&
-          walkPair.some((sol) => {
-            const b = sol.bounds;
-            return (
-              x + 16 > b.min.x &&
-              x - 16 < b.max.x &&
-              y + 16 > b.min.y &&
-              y - 16 < b.max.y
-            );
-          })
         )
           continue;
         smashed.push(key);
@@ -3880,42 +3862,6 @@ export class Simulation {
     return keys;
   }
 
-  // Stood-on elevated floor and flush wall, or the armed pair after floor
-  // overlap ends. Ground-level walls still smash.
-  private hugeWalkPair(a: Actor, room: Room) {
-    const box = a.body.bounds;
-    const holdY = a.body.volumeHoldY ?? box.max.y;
-    if (Math.abs(holdY - T.groundY) < 12) return;
-    const floor =
-      hugeHoldFloor(
-        a.body.volumeHoldFloor,
-        room.solids,
-        box.min.x,
-        a.body.width,
-        a.body.volumeHoldFloorSpan,
-      ) ?? hugeFloorSolid(box.max.y, box.min.x, a.body.width, room.solids);
-    if (!floor) return;
-    const volume =
-      hugeHoldVolume(
-        a.body.volumeHoldVolume,
-        room.solids,
-        box.min.x,
-        a.body.width,
-        a.body.volumeHoldVolumeSpan,
-        a.body.volumeHoldFloorSpan,
-        a.body.volumeHoldY,
-      ) ??
-      hugeFlushVolume(
-        a.body.volumeHoldY ?? box.max.y,
-        box.min.x,
-        a.body.width,
-        room.solids,
-        floor,
-      );
-    if (!volume) return;
-    return [floor, volume];
-  }
-
   private smashableTerrain(
     room: Room,
     column: number,
@@ -3944,9 +3890,14 @@ export class Simulation {
       const axeRow = Math.floor((room.axe.y - MAP_TOP) / 32);
       if (column === axeCol && row === axeRow) return false;
     }
+    // The surface under the feet stays. It has air above it, from the map or
+    // from an earlier smash, so breaking the rows above cannot drop the body.
     const top = MAP_TOP + row * 32;
     const above = room.data.tiles[row - 1]?.[column] ?? 0;
-    const standableTop = row === 0 || !isSolidTile(above);
+    const standableTop =
+      row === 0 ||
+      !isSolidTile(above) ||
+      room.smashedTiles.has(`${column},${row - 1}`);
     if (Math.abs(feet - top) < 12 && standableTop) return false;
     return true;
   }
