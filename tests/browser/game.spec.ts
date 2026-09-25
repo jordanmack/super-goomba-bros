@@ -2248,7 +2248,7 @@ test("NES scenery, solid pipes, brick debris, and blood are visible together", a
   expect(sceneryHasNoBrickOverlays).toBe(true);
 });
 
-test("a vertically swimming fish keeps its walk animation running", async ({
+test("a Cheep Cheep flaps every 8 frames however it swims", async ({
   page,
 }) => {
   await page.goto("/");
@@ -2266,33 +2266,36 @@ test("a vertically swimming fish keeps its walk animation running", async ({
       (n: { kind: string; flower: boolean }) => n.kind === "fish" && !n.flower,
     );
     if (!fish) return null;
-    fish.alive = true;
-    fish.saved = false;
-    fish.grounded = false;
-    s.player.body.position.x = fish.body.position.x;
-    const sample = (vx: number, vy: number) => {
-      fish.body.velocity.x = vx;
-      fish.body.velocity.y = vy;
-      g.renderer.render(s, 0);
-      const sprite = g.renderer.play.actors.get(fish.id);
-      return {
-        anim: sprite.anims?.currentAnim?.key ?? null,
-        playing: !!sprite.anims?.isPlaying,
-        timeScale: sprite.anims?.timeScale ?? 0,
-      };
+    fish.species = "red-cheep";
+    fish.waterMotion = {
+      kind: "swim",
+      red: true,
+      xForce: 0,
+      yDummy: 0,
+      down: false,
+      originY: 0,
+      wobble: false,
     };
+    s.player.body.position.x = fish.body.position.x;
+    const sample = (vx: number, vy: number) =>
+      [0.5, 8.5, 16.5].map((frame) => {
+        fish.body.velocity.x = vx;
+        fish.body.velocity.y = vy;
+        s.elapsed = frame / 60;
+        g.renderer.render(s, 0);
+        return g.renderer.play.actors.get(fish.id).texture.key;
+      });
     return {
       vertical: sample(0, -1.5),
       horizontal: sample(1.5, 0),
-      diagonal: sample(0.9, -1.2),
+      still: sample(0, 0),
     };
   }, waterStage);
   expect(swim).not.toBeNull();
-  expect(swim!.vertical.anim).toBe("fish-walk");
-  expect(swim!.vertical.playing).toBe(true);
-  expect(swim!.vertical.timeScale).toBeCloseTo(swim!.horizontal.timeScale, 5);
-  expect(swim!.vertical.timeScale).toBeGreaterThan(0);
-  expect(swim!.diagonal.timeScale).toBeCloseTo((1.5 * 60) / 90, 5);
+  const flap = ["redCheep", "redCheepWalk", "redCheep"];
+  expect(swim!.vertical).toEqual(flap);
+  expect(swim!.horizontal).toEqual(flap);
+  expect(swim!.still).toEqual(flap);
 });
 
 test("original 1-1 map art and collision anchors agree", async ({ page }) => {
