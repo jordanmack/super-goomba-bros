@@ -793,6 +793,7 @@ export class Simulation {
     if (travel.arrival === "warp") travel = { ...travel, arrival: "stand" };
     const target = this.loadRoom(travel.destArea);
     actor.areaId = target.data.id;
+    this.limitBorrowedArrival(actor, target, travel.destPage);
     const vis = this.pipeVisual(actor);
     const height = actor.body.height;
     if (travel.arrival === "rise") {
@@ -848,6 +849,36 @@ export class Simulation {
     actor.facing = 1;
     this.finishPipeArrival(actor, false);
     if (actor === this.player) this.events.push("pipe");
+  }
+  private limitBorrowedArrival(actor: Actor, room: Room, page: number) {
+    const id = room.data.id;
+    const borrowed =
+      !this.level.route.includes(id) && CAMPAIGN.some((l) => l.main === id);
+    if (borrowed)
+      this.leftLimit = { areaId: id, x: room.offset + page * 16 * 32 };
+    else if (actor === this.player) this.leftLimit = undefined;
+  }
+  /** Left edge for the camera and for actors in this room. */
+  roomLeft(room: Room) {
+    return this.leftLimit?.areaId === room.data.id
+      ? this.leftLimit.x
+      : room.offset;
+  }
+  private holdLeftLimit() {
+    const limit = this.leftLimit;
+    if (!limit) return;
+    for (const a of [this.player, ...this.npcs, this.mario]) {
+      if (a.areaId !== limit.areaId || a.body.isStatic || this.inPipe(a))
+        continue;
+      const over = limit.x - a.body.bounds.min.x;
+      if (over <= 0) continue;
+      Body.setPosition(a.body, {
+        x: a.body.position.x + over,
+        y: a.body.position.y,
+      });
+      if (a.body.velocity.x < 0)
+        Body.setVelocity(a.body, { x: 0, y: a.body.velocity.y });
+    }
   }
   private standAt(actor: Actor, room: Room, x: number) {
     if (!room.standOnFloor(actor, x)) room.dropOnto(actor, x);
@@ -1161,6 +1192,10 @@ export class Simulation {
   cameraY = 0;
   cameraZoom = 1;
   viewWidth = 960;
+  // Set when a pipe rises into another stage's area, like the 1-2, 2-2, 4-2,
+  // and 7-2 goal pipes onto page 11 of 1-1's area 25. Nothing in that area
+  // scrolls or moves back left of the arrival page.
+  leftLimit?: { areaId: string; x: number };
   private flagPrevPlayerX = 0;
   private flagPrevMarioX = 0;
   lives: number = T.startingLives;
@@ -1204,6 +1239,7 @@ export class Simulation {
     const coins = keepCampaign ? this.coins : 0;
     this.physics.clear();
     this.nextId = 1;
+    this.leftLimit = undefined;
     this.solids = [];
     this.obstacles = [];
     this.rooms.clear();
@@ -4667,6 +4703,7 @@ export class Simulation {
   finish() {
     if (this.mode !== "playing") return;
     this.mode = "finishing";
+    this.leftLimit = undefined;
     this.player.saved = true;
     Body.setFrozen(this.player.body, true);
     this.events.push("win");
@@ -5074,6 +5111,7 @@ export class Simulation {
       n.body.wallRiseGap = 1;
     }
     this.physics.step(dt);
+    this.holdLeftLimit();
     this.tryGrabVine(this.player);
     for (const n of [...this.npcs, this.mario]) {
       if (n.navHoldX === undefined) continue;
@@ -5815,7 +5853,8 @@ export class Simulation {
     const page = 16 * 32;
     const pageIndex = Math.max(0, Math.floor((this.cameraX - room.offset) / page));
     const preferred = room.offset + pageIndex * page + 100;
-    const minX = Math.max(room.offset + half, this.cameraX - 650);
+    const left = this.roomLeft(room);
+    const minX = Math.max(left + half, this.cameraX - 650);
     const maxX = Math.min(this.cameraX - half, room.goalX + 100);
     const tryAt = (x: number) => {
       if (x < minX || x > maxX) return false;
@@ -5825,7 +5864,7 @@ export class Simulation {
         this.mario.body.bounds.max.x <= this.cameraX &&
         m.x >= this.cameraX - 650 &&
         m.x <= room.goalX + 100 &&
-        this.mario.body.bounds.min.x >= room.offset
+        this.mario.body.bounds.min.x >= left
       );
     };
     if (tryAt(preferred)) return true;
@@ -6386,7 +6425,7 @@ export class Simulation {
   private viewWindow(room = this.activeRoom) {
     const width = this.viewWidth;
     const cam = Math.max(
-      room.offset,
+      this.roomLeft(room),
       Math.min(
         room.offset + room.data.width * 32 - width,
         this.player.body.position.x - width * 0.36,

@@ -56,6 +56,12 @@ settings unless a rule below explicitly fixes their relationship.
   stand, 3 mid-air drop), except castle-source down pipes rise like a side pipe
   (`AltEntranceControl = 2` in SMB1 `VerticalPipeEntry`). Destination-record
   `entrance` is unread. Solid pipes with no entry direction are arrival mouths.
+  The 1-2, 2-2, 4-2, and 7-2 goal pipes rise onto page 11 of area 25, which is
+  1-1's area. A pipe arrival in another stage's area sets a left limit at the
+  arrival page. The camera, the player, NPCs, and Mario stay right of it, so the
+  earlier 1-1 map never shows, and a wide view shows more of the ending. The
+  next pipe the player takes, or finishing the stage, clears it. A death
+  restarts the stage as before. 1-1 itself and all other areas still scroll back.
 - Pipe travel preserves elapsed time, powers, NPC states, broken blocks, items,
   and counters within the stage. A fleeing NPC that finishes entering a
   non-goal enterable pipe is rescued and does not arrive in the destination.

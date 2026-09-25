@@ -139,7 +139,7 @@ export class Play extends Phaser.Scene {
       sim.cameraY = 0;
       sim.cameraZoom = 1;
       sim.cameraX = Math.max(
-        room.offset,
+        sim.roomLeft(room),
         Math.min(
           room.offset + room.data.width * 32 - width,
           sim.player.body.position.x - width * 0.36,

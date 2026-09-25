@@ -369,7 +369,7 @@ function followCamera(sim: Simulation, width = 960) {
   const room = sim.activeRoom;
   sim.viewWidth = width;
   sim.cameraX = Math.max(
-    room.offset,
+    sim.roomLeft(room),
     Math.min(
       room.offset + room.data.width * 32 - width,
       sim.player.body.position.x - width * 0.36,
@@ -473,4 +473,142 @@ test("Mario spawns and stays inside the player's coin-room screen", () => {
   sim.physics.remove(blocker);
   spawn(2);
   sim.physics.clear();
+});
+
+function riseIntoEnding(id: string) {
+  const [world, stage] = id.split("-").map(Number) as [number, number];
+  const sim = new Simulation(() => 0.5, physics());
+  sim.levelIndex = campaignIndex(world, stage);
+  sim.reset();
+  finishPipeIntro(sim);
+  sim.marioReturn = 1e6;
+  const main = sim.activeRoom;
+  const goal = main.data.goal!;
+  assert.equal(goal.kind, "pipe", id);
+  Body.setPosition(sim.player.body, {
+    x: main.offset + goal.column * 32 - 12,
+    y: MAP_TOP + goal.row * 32 + 32,
+  });
+  Body.setVelocity(sim.player.body, { x: 0, y: 0 });
+  followCamera(sim);
+  for (
+    let frame = 0;
+    frame < 600 && (sim.activeRoom.data.id !== "25" || sim.player.pipeTravel);
+    frame++
+  ) {
+    sim.step(1 / 60, {
+      ...emptyInput(),
+      right: sim.activeRoom.data.id === main.data.id,
+    });
+    followCamera(sim);
+  }
+  assert.equal(sim.activeRoom.data.id, "25", id);
+  assert.equal(sim.player.pipeTravel, undefined, id);
+  return sim;
+}
+
+test("the reused 1-1 ending does not scroll or walk back past the arrival page", () => {
+  for (const id of ["1-2", "2-2", "4-2", "7-2"]) {
+    const sim = riseIntoEnding(id);
+    const room = sim.activeRoom;
+    const line = room.offset + 11 * 16 * 32;
+    assert.deepEqual(sim.leftLimit, { areaId: "25", x: line }, id);
+    assert.equal(sim.roomLeft(room), line);
+    assert.ok(sim.player.body.bounds.min.x >= line, id);
+    for (let frame = 0; frame < 150; frame++) {
+      sim.step(1 / 60, { ...emptyInput(), left: true });
+      followCamera(sim);
+      assert.ok(sim.player.body.bounds.min.x >= line - 1e-6, `${id} ${frame}`);
+      assert.ok(sim.cameraX >= line, `${id} camera ${frame}`);
+    }
+    // A wide view shows more of the ending, not the earlier 1-1 map.
+    followCamera(sim, 1600);
+    assert.equal(sim.cameraX, line);
+    followCamera(sim);
+    if (id !== "1-2") {
+      sim.physics.clear();
+      continue;
+    }
+    const npc = sim.npcs.find((n) => n.alive && !n.saved)!;
+    npc.areaId = "25";
+    npc.warned = true;
+    npc.wait = 0;
+    Body.setPosition(npc.body, {
+      x: line + 40,
+      y: T.groundY - npc.body.height / 2,
+    });
+    for (let frame = 0; frame < 30; frame++) {
+      Body.setVelocity(npc.body, { x: -4, y: npc.body.velocity.y });
+      sim.step(1 / 60, emptyInput());
+      assert.ok(npc.body.bounds.min.x >= line - 1e-6, `npc ${frame}`);
+    }
+    Body.setPosition(sim.player.body, {
+      x: line + 700,
+      y: T.groundY - sim.player.body.height / 2,
+    });
+    followCamera(sim);
+    sim.marioDeath = null;
+    sim.marioReturn = 0;
+    for (let i = 0; i < 30 && !sim.marioActive; i++) {
+      sim.step(1 / 60, emptyInput());
+      followCamera(sim);
+    }
+    assert.equal(sim.marioActive, true);
+    assert.equal(sim.mario.areaId, "25");
+    assert.ok(sim.mario.body.bounds.min.x >= line);
+    for (let frame = 0; frame < 60 && sim.marioActive; frame++) {
+      Body.setVelocity(sim.mario.body, { x: -5, y: sim.mario.body.velocity.y });
+      sim.step(1 / 60, emptyInput());
+      assert.ok(sim.mario.body.bounds.min.x >= line - 1e-6, `mario ${frame}`);
+    }
+    sim.finish();
+    assert.equal(sim.leftLimit, undefined, "finishing clears it");
+    sim.physics.clear();
+  }
+
+  const death = riseIntoEnding("1-2");
+  assert.ok(death.leftLimit);
+  death.reset();
+  assert.equal(death.leftLimit, undefined);
+  assert.equal(death.activeRoom.data.id, "40");
+  death.physics.clear();
+
+  // World 1-1 owns area 25, so it still scrolls back, even after the coin room.
+  const home = new Simulation(() => 0.5, physics());
+  home.reset();
+  home.marioReturn = 1e6;
+  const room = home.activeRoom;
+  assert.equal(room.data.id, "25");
+  assert.equal(home.leftLimit, undefined);
+  assert.equal(home.roomLeft(room), room.offset);
+  const entry = room.data.pipes.find((p) => p.direction === "down")!;
+  Body.setPosition(home.player.body, {
+    x: room.offset + (entry.column + entry.width / 2) * 32,
+    y: MAP_TOP + entry.row * 32 - 14,
+  });
+  for (
+    let frame = 0;
+    frame < 400 && (home.activeRoom.data.id !== "42" || home.player.pipeTravel);
+    frame++
+  )
+    home.step(1 / 60, { ...emptyInput(), down: home.activeRoom.data.id === "25" });
+  const bonus = home.activeRoom;
+  const exit = bonus.data.pipes[0]!;
+  Body.setPosition(home.player.body, {
+    x: bonus.offset + exit.column * 32 - 12,
+    y: MAP_TOP + exit.row * 32 + 32,
+  });
+  for (
+    let frame = 0;
+    frame < 400 && (home.activeRoom.data.id !== "25" || home.player.pipeTravel);
+    frame++
+  )
+    home.step(1 / 60, { ...emptyInput(), right: home.activeRoom.data.id === "42" });
+  assert.equal(home.activeRoom.data.id, "25");
+  assert.equal(home.leftLimit, undefined);
+  const back = home.player.body.position.x;
+  for (let frame = 0; frame < 60; frame++)
+    home.step(1 / 60, { ...emptyInput(), left: true });
+  assert.ok(home.player.body.position.x < back - 100);
+  home.physics.clear();
 });
