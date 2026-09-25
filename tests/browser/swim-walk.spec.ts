@@ -103,7 +103,9 @@ test("swimming goombas and koopas play the walk cycle off the floor", async ({
   expect(drawn!.water.playerUp.anim).toBe("goomba-walk");
   expect(drawn!.water.playerUp.playing).toBe(true);
   expect(drawn!.water.playerStill.playing).toBe(false);
-  expect(drawn!.water.fishUp.anim).toBe("fish-walk");
+  // A Blooper shows its MoveBloober frame, not a walk cycle.
+  expect(drawn!.water.fishUp.texture).toBe("blooperTall");
+  expect(drawn!.water.fishUp.playing).toBe(false);
   expect(drawn!.water.shell.texture).toBe("koopaShell");
   expect(drawn!.water.shell.playing).toBe(false);
   expect(drawn!.water.marioAir.texture).toBe("marioJump");
