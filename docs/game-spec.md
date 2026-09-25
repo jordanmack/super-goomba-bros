@@ -33,8 +33,10 @@ settings unless a rule below explicitly fixes their relationship.
 - Include underground, water, and castle areas with their corresponding art and
   music. Moving platforms carry characters. Balance-lift pairs (original enemy
   type 36 / $24) are coupled: weight on one lowers it and raises its partner,
-  and removing the weight reverses that motion. A rope and pulley are drawn and
-  move with the pair. Every other moving platform uses its own SMB1 motion,
+  and removing the weight reverses that motion. The pulley is the level's own
+  metatiles ($42, $41, $43). Each lift's rope is the vertical rope metatile
+  ($40) repeated down from under the pulley on the tile grid and cut off at
+  the deck, so it lengthens and shortens with the lift. Every other moving platform uses its own SMB1 motion,
   stepped per frame in NES pixels and drawn at 2x. Type 37 (`YMovingPlatform`)
   swings vertically about a center 64 NES px from its start (below it in the
   top half of the screen, above it in the bottom half) under the platform
@@ -45,13 +47,16 @@ settings unless a rule below explicitly fixes their relationship.
   (`XMovingPlatform`) shuttles on the 0-14 counter stepped every 4th frame:
   left first, then back to its start. Type 41 (`DropPlatform`) moves only on
   frames the player stands on it, falling with force $7f up to 2 NES px/frame.
-  An NPC alone does not move it, and it never rises. Large platforms are 96
-  wide and small ones (43, 44) 48 wide. Riders move with the platform. NPCs
+  An NPC alone does not move it, and it never rises. A lift is drawn by
+  repeating the 8x8 girder tile (sprite tile $5B, `items.png` at 64, 128) at
+  2x, one crop for every area. Types 36-42 are six tiles (96 wide), or four
+  (64 wide) in a castle area, and the body matches the picture. Types 43 and
+  44 are three tiles (48 wide) everywhere. Riders move with the platform. NPCs
   never spawn on a balance lift or a one-way lift.
   A right lift (original enemy type 42 / $2A) stays still until the player
   stands on it, then moves right at NES speed $10 scaled like the other NES
   speeds (2 px/frame) and carries the rider. It does not reverse. In a cloud
-  area that lift is drawn with the cloud puff, not the girder.
+  area a large lift is drawn with six cloud puffs (tile $75), not the girder.
   A spring squashes when the player, Mario, or an NPC lands on it. Jump is
   not required. Idle and the bounce use the three original spring frames.
   Each squash step lasts 4 frames at Y offsets 16, 32, and 16, then the pad

@@ -6,7 +6,7 @@ import {
   titleCamera,
 } from "../config";
 import { isSolidTile, themeFor } from "../levels";
-import type { Room } from "../room";
+import { ROPE_TILE, type Room } from "../room";
 import atlas from "../../assets/smb/metatiles.json";
 import {
   actorSpriteBox,
@@ -23,6 +23,7 @@ import {
   BULLET_BILL_DRAW_Y,
   FIREWORK_SHEET,
   flagTextureKey,
+  girderKey,
   SPRING_DRAW,
   SWEAT_DROP_HEIGHT,
   SWEAT_DROP_KEY,
@@ -96,6 +97,8 @@ export class Play extends Phaser.Scene {
           return area.type === "water" ? palette + 135 : -1;
         // The pad on screen is the three item-sheet frames. The tiles stay solid.
         if (id === 103 || id === 104) return -1;
+        // A balance lift's rope is drawn down to its deck each frame.
+        if (room.ropeTiles.has(`${x},${y}`)) return -1;
         return !id || blocks.has(`${x},${y}`) ? -1 : palette + id;
       }),
     );
@@ -206,6 +209,7 @@ export class Play extends Phaser.Scene {
         .setFlipX(false)
         .setRotation(0)
         .setAlpha(1)
+        .setCrop()
         .setVisible(true);
       return sprite;
     };
@@ -235,13 +239,15 @@ export class Play extends Phaser.Scene {
     }
     for (const pop of sim.coinPops)
       image(pop.x, pop.y - 48 * Math.min(1, pop.age / 0.5), 32, 32, "coin", 6).setRotation(0);
-    for (const rope of room.balanceRopes) {
-      const leftH = Math.max(2, rope.leftY - rope.pulleyY);
-      const rightH = Math.max(2, rope.rightY - rope.pulleyY);
-      image(rope.leftX, rope.pulleyY + leftH / 2, 4, leftH, "rope", 3);
-      image(rope.rightX, rope.pulleyY + rightH / 2, 4, rightH, "rope", 3);
-      image(rope.pulleyX, rope.pulleyY, 16, 12, "pulley", 5);
-    }
+    // The rope metatile repeats down from the pulley on the tile grid, and
+    // the last copy is cut at the deck. The pulley stays in the level tiles.
+    const rope = palette + ROPE_TILE;
+    for (const { x, top, bottom } of room.balanceRopes)
+      for (let y = top; y < bottom; y += 32)
+        image(x, y + 16, 32, 32, "metatiles", 3)
+          .setFrame(rope)
+          .setDisplaySize(32, 32)
+          .setCrop(0, 0, 16, Math.min(16, (bottom - y) / 2));
     for (const spring of sim.springDraw(room)) {
       const size = SPRING_DRAW[spring.pose];
       const key =
@@ -259,16 +265,22 @@ export class Play extends Phaser.Scene {
         3,
       ).setRotation(0);
     }
-    const platformKey = room.data.header.cloud ? "cloudPlatform" : "platform";
-    for (const platform of room.platforms)
+    for (const platform of room.platforms) {
+      const tiles = platform.body.width / 16;
+      // CloudTypeOverride swaps the large deck to puffs. Small decks keep $5B.
+      const key =
+        room.data.header.cloud && platform.kind < 43
+          ? "cloudPlatform"
+          : girderKey(tiles);
       image(
         platform.body.position.x,
         platform.body.position.y,
         platform.body.width,
         platform.body.height,
-        platformKey,
+        key,
         4,
       ).setRotation(0);
+    }
     if (room.axe && !room.bridgeDropped)
       image(room.axe.x, room.axe.y, 32, 32, "axe", 6).setRotation(0);
     for (const ball of [

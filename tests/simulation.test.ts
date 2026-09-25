@@ -26,6 +26,7 @@ import {
   ENEMY_BALANCE_LIFT,
   ENEMY_FISH,
   ENEMY_RIGHT_LIFT,
+  ROPE_TILE,
 } from "../src/game/room.ts";
 import routes from "./fixtures/player-routes.json" with { type: "json" };
 const FIRST_AREA = areaData("25");
@@ -11631,6 +11632,55 @@ test("a warned fish reaches the 2-2 rescue door", { timeout: 20000 }, () => {
   assert.ok(s.saved >= 1);
 });
 
+test("lift decks are six girder tiles, four in a castle, and three when small", () => {
+  const s = game();
+  const seen = new Set<string>();
+  for (const id of ["20", "2b", "2c", "2d", "40", "60", "62", "64"]) {
+    const room = s.loadRoom(id);
+    for (const p of room.platforms) {
+      const small = p.kind >= 43;
+      const castle = room.data.type === "castle";
+      const want = small ? 48 : castle ? 64 : 96;
+      assert.equal(p.body.width, want, `${id} type ${p.kind}`);
+      assert.equal(p.body.height, 16);
+      // ShrinkPlatform drops the right two tiles. The left edge stays put.
+      assert.equal((p.origin.x - want / 2 - room.offset) % 32, 0);
+      seen.add(`${small ? "small" : castle ? "castle" : "large"} ${want}`);
+    }
+  }
+  assert.deepEqual([...seen].sort(), ["castle 64", "large 96", "small 48"]);
+});
+
+test("the level rope above a balance lift is hidden so the rope ends at the deck", () => {
+  const s = game();
+  const room = s.loadRoom("2c");
+  const lifts = room.platforms.filter((p) => p.kind === ENEMY_BALANCE_LIFT);
+  const columns = new Set(
+    lifts.map((p) => Math.floor((p.origin.x - room.offset) / 32)),
+  );
+  assert.deepEqual([...columns].sort((a, b) => a - b), [49, 56, 81, 89, 92, 97, 103, 109]);
+  const expected = new Set<string>();
+  room.data.tiles.forEach((row, r) =>
+    row.forEach((id, c) => {
+      if (id === ROPE_TILE && columns.has(c)) expected.add(`${c},${r}`);
+    }),
+  );
+  assert.ok(expected.size > 0);
+  assert.deepEqual([...room.ropeTiles].sort(), [...expected].sort());
+  // Each lift hangs from the pulley row, and the rope stops at its deck.
+  assert.equal(room.balanceRopes.length, lifts.length);
+  for (const rope of room.balanceRopes) {
+    assert.equal(rope.top, MAP_TOP + 3 * 32);
+    const deck = lifts.find((p) => p.body.position.x === rope.x)!;
+    assert.equal(rope.bottom, deck.body.bounds.min.y);
+  }
+  // A rope with no pulley over it is ordinary level art.
+  const castle = s.loadRoom("62");
+  assert.ok(castle.data.tiles.some((row) => row.includes(ROPE_TILE)));
+  assert.equal(castle.ropeTiles.size, 0);
+  assert.equal(castle.balanceRopes.length, 0);
+});
+
 test("a coupled balance lift pair moves in opposite directions under load", () => {
   const s = game();
   s.levelIndex = CAMPAIGN.findIndex((level) => level.id === "3-3");
@@ -11658,11 +11708,13 @@ test("a coupled balance lift pair moves in opposite directions under load", () =
   assert.ok(
     Math.abs(lift.body.position.y - yA + (partner.body.position.y - yB)) < 0.01,
   );
-  for (const rope of room.balanceRopes) {
-    assert.ok(rope.pulleyY < lift.body.bounds.min.y);
-    assert.ok(rope.pulleyY < partner.body.bounds.min.y);
-    assert.ok(rope.leftY - rope.pulleyY > 8);
-    assert.ok(rope.rightY - rope.pulleyY > 8);
+  // Each deck hangs from the pulley row, and its rope ends at the deck.
+  for (const deck of [lift, partner]) {
+    const rope = room.balanceRopes.find((r) => r.x === deck.body.position.x);
+    assert.ok(rope, "each lift has a rope");
+    assert.equal(rope.top, MAP_TOP + 3 * 32, "rope starts under the pulley");
+    assert.equal(rope.bottom, deck.body.bounds.min.y);
+    assert.ok(rope.bottom - rope.top > 8);
   }
   const loadedA = lift.body.position.y;
   const loadedB = partner.body.position.y;

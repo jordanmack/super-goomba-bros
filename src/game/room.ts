@@ -79,14 +79,19 @@ export function enemyRole(type: number): EnemyRole {
   return "other";
 }
 
-export type BalanceRope = {
-  pulleyX: number;
-  pulleyY: number;
-  leftX: number;
-  leftY: number;
-  rightX: number;
-  rightY: number;
-};
+// One hanging rope of a balance lift, from under its pulley to the deck.
+export type BalanceRope = { x: number; top: number; bottom: number };
+
+// Vertical rope metatile $40 and the pulley ends $42 and $43.
+export const ROPE_TILE = 64;
+const PULLEY_TILES = new Set([66, 67]);
+
+// RunLargePlatform draws six girder tiles, four in a castle (ShrinkPlatform),
+// and the castle bounding box is 32 NES px. RunSmallPlatform draws three.
+export function platformWidth(kind: number, area: Area) {
+  if (kind >= 43) return 48;
+  return area.type === "castle" ? 64 : 96;
+}
 
 export type Platform = {
   body: Body;
@@ -99,6 +104,8 @@ export type Platform = {
   // Types 37-41, 43, 44: SMB1 motion state, and a cached look-ahead path.
   motion?: PlatformMotion;
   path?: { frame: number; centers: Point[] };
+  // Type 36 under a pulley: where its rope starts.
+  ropeTop?: number;
 };
 
 // Frames a moving-platform look-ahead covers. The jump planner flies 140.
@@ -126,6 +133,8 @@ export class Room {
   // Next shared barrel to try when several map to one LSFR slot.
   cannonTurn: number[] = [0, 0, 0, 0, 0, 0];
   balanceRopes: BalanceRope[] = [];
+  // Level rope tiles above a balance lift. The rope is drawn to the deck.
+  ropeTiles = new Set<string>();
   spawnedActors = false;
   // Type 17 is a spawn point for the one cloud Lakitu, not a ground NPC.
   lakituPoints: { x: number; y: number }[] = [];
@@ -248,7 +257,7 @@ export class Room {
         continue;
       }
       if (role === "platform" || role === "balance-lift") {
-        const width = enemy.type >= 43 ? 48 : 96;
+        const width = platformWidth(enemy.type, this.data);
         const origin = {
           x: offset + enemy.column * 32 + width / 2,
           y: MAP_TOP + enemy.row * 32 + 8,
@@ -291,6 +300,8 @@ export class Room {
     this.lakituPoints.sort((a, b) => a.x - b.x);
     this.lakituUsed = this.lakituPoints.map(() => false);
     this.pairBalanceLifts();
+    for (const platform of this.platforms)
+      if (platform.kind === ENEMY_BALANCE_LIFT) this.hangRope(platform);
     this.refreshBalanceRopes();
     const axe = this.data.objects.find((o) => o.opcode === AXE_OPCODE);
     if (axe) {
@@ -546,28 +557,30 @@ export class Room {
     );
   }
 
-  refreshBalanceRopes() {
-    const ropes: BalanceRope[] = [];
-    const seen = new Set<number>();
-    for (let i = 0; i < this.platforms.length; i++) {
-      const p = this.platforms[i]!;
-      if (p.kind !== ENEMY_BALANCE_LIFT || p.partner == null || seen.has(i))
-        continue;
-      seen.add(i);
-      seen.add(p.partner);
-      const q = this.platforms[p.partner]!;
-      const left = p.body.position.x <= q.body.position.x ? p : q;
-      const right = left === p ? q : p;
-      ropes.push({
-        pulleyX: (left.origin.x + right.origin.x) / 2,
-        pulleyY: MAP_TOP + 64,
-        leftX: left.body.position.x,
-        leftY: left.body.bounds.min.y,
-        rightX: right.body.position.x,
-        rightY: right.body.bounds.min.y,
-      });
+  // The level draws a pulley end ($42 or $43) in the lift's center column
+  // and rope ($40) under it to where the lift starts. DrawEraseRope redraws
+  // that rope as the lift moves, so it is drawn live instead.
+  private hangRope(platform: Platform) {
+    const column = Math.floor((platform.origin.x - this.offset) / 32);
+    const liftRow = Math.floor((platform.origin.y - MAP_TOP) / 32);
+    const tiles = this.data.tiles;
+    for (let row = liftRow - 1; row >= 0; row--) {
+      if (!PULLEY_TILES.has(tiles[row]?.[column] ?? 0)) continue;
+      platform.ropeTop = MAP_TOP + (row + 1) * 32;
+      for (let r = row + 1; tiles[r]?.[column] === ROPE_TILE; r++)
+        this.ropeTiles.add(`${column},${r}`);
+      return;
     }
-    this.balanceRopes = ropes;
+  }
+
+  refreshBalanceRopes() {
+    this.balanceRopes = this.platforms
+      .filter((p) => p.ropeTop !== undefined)
+      .map((p) => ({
+        x: p.body.position.x,
+        top: p.ropeTop!,
+        bottom: p.body.bounds.min.y,
+      }));
   }
 
   private updateRightLift(

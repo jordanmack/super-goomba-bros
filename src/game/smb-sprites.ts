@@ -396,18 +396,6 @@ function emblemFlag(flag: HTMLCanvasElement, emblem: HTMLCanvasElement) {
   return canvas;
 }
 
-function pixelRope() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 2;
-  canvas.height = 8;
-  const context = canvas.getContext("2d")!;
-  context.fillStyle = "#7c4c18";
-  context.fillRect(0, 0, 2, 8);
-  context.fillStyle = "#d09040";
-  context.fillRect(0, 0, 1, 8);
-  return canvas;
-}
-
 export const AXE_WIDTH = 16;
 export const AXE_HEIGHT = 16;
 
@@ -464,43 +452,6 @@ function pixelAxe() {
   return canvas;
 }
 
-function pixelPulley() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 16;
-  canvas.height = 10;
-  const context = canvas.getContext("2d")!;
-  context.imageSmoothingEnabled = false;
-  const pixels = context.createImageData(16, 10);
-  const d = pixels.data;
-  const put = (x: number, y: number, r: number, g: number, b: number) => {
-    const i = (y * 16 + x) * 4;
-    d[i] = r;
-    d[i + 1] = g;
-    d[i + 2] = b;
-    d[i + 3] = 255;
-  };
-  for (let x = 4; x <= 11; x++) {
-    put(x, 0, 0, 0, 0);
-    put(x, 9, 0, 0, 0);
-  }
-  for (let y = 1; y <= 8; y++) {
-    put(3, y, 0, 0, 0);
-    put(12, y, 0, 0, 0);
-  }
-  for (let y = 1; y <= 8; y++)
-    for (let x = 4; x <= 11; x++) {
-      const rim = y === 1 || y === 8 || x === 4 || x === 11;
-      if (rim) put(x, y, 188, 188, 188);
-      else put(x, y, 252, 252, 252);
-    }
-  put(7, 4, 0, 0, 0);
-  put(8, 4, 0, 0, 0);
-  put(7, 5, 0, 0, 0);
-  put(8, 5, 0, 0, 0);
-  context.putImageData(pixels, 0, 0);
-  return canvas;
-}
-
 // The bill at (60, 125) faces right. (0, 125) is its left-facing mirror, so
 // Play flips this crop only when the bill flies left. The art is 14px tall
 // over 2 clear rows. Drawn 2x, it moves 2px down to center on the barrel.
@@ -542,6 +493,25 @@ export const SPRING_DRAW = {
   compressed: { width: 32, height: 32 },
 } as const;
 
+// DrawLargePlatform and DrawSmallPlatform sprite tile $5B. One crop serves
+// every area. Large decks are six tiles (four in a castle), small ones three.
+export const GIRDER_TILE = { x: 64, y: 128, width: 8, height: 8 } as const;
+export const GIRDER_LENGTHS = [3, 4, 6] as const;
+export const girderKey = (tiles: number) => `girder${tiles}`;
+
+function girderSprites(items: HTMLImageElement) {
+  const tile = crop(
+    items,
+    GIRDER_TILE.x,
+    GIRDER_TILE.y,
+    GIRDER_TILE.width,
+    GIRDER_TILE.height,
+  );
+  return Object.fromEntries(
+    GIRDER_LENGTHS.map((tiles) => [girderKey(tiles), repeatTile(tile, tiles)]),
+  );
+}
+
 export function scenerySprites({ mario, enemies, items }: SpriteSources) {
   const flag = crop(items, 128, 0, 16, 16);
   const mushroom = crop(items, 0, 0, 16, 16);
@@ -560,11 +530,9 @@ export function scenerySprites({ mario, enemies, items }: SpriteSources) {
     bowserWalk: crop(enemies, 42, 211, 32, 32),
     bowserFlame: crop(enemies, 101, 253, 24, 8),
     axe: pixelAxe(),
-    platform: crop(items, 80, 24, 48, 8),
+    ...girderSprites(items),
     // DrawLargePlatform tile $75. The sheet stores one puff; the lift is six.
     cloudPlatform: repeatTile(crop(items, 96, 160, 8, 8), 6),
-    rope: pixelRope(),
-    pulley: pixelPulley(),
     coin: crop(items, 0, 80, 16, 16),
     mushroom,
     oneUp: crop(items, 16, 0, 16, 16),
