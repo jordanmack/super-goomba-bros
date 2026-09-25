@@ -268,6 +268,8 @@ export type Actor = {
   frenzySlot?: number;
   // A Cheep Cheep leaves the view only after it has been in it.
   seen?: boolean;
+  // #218: the power-up a warned NPC is detouring to.
+  itemDetour?: number;
   // #214: a Koopa kind's shell, when it is not a green Koopa, and a
   // Paratroopa's wings. A red Paratroopa is red with "bob" wings.
   troopa?: "red" | "buzzy";
@@ -634,6 +636,9 @@ const PATROL_GOAL_GAP = 96;
 // hop above his feet: a flower on a ? block four tiles up.
 const MARIO_EASY_ITEM = 128;
 const MARIO_EASY_HOP = 144;
+// #218: a warned NPC's easy power-up is as near, and at most a step up that
+// autoJump climbs, so it never jumps into a block from below.
+const NPC_EASY_STEP = 48;
 export type TallyLine = Exclude<TallyPhase, "" | "time" | "ending">;
 const TALLY_LINES: TallyLine[] = ["warned", "saved", "died", "flag", "mario"];
 /** SCORE change for one tally line: count times that line's points. */
@@ -6295,13 +6300,23 @@ export class Simulation {
         continue;
       }
       if (this.tryNpcPipeEscape(n)) continue;
-      if (n.kind === "fish") {
-        this.swim(n);
-        continue;
-      }
-      if (room.data.type === "water") {
-        if (this.strokeSwimmer(n)) this.strokeSwim(n, undefined, T.walkSpeed);
-        else this.swim(n);
+      // #218: in water, a warned swimmer swims to a close power-up first.
+      const water = room.data.type === "water";
+      if (water || n.kind === "fish") {
+        const prize = water ? this.easyPowerUp(n, NPC_EASY_STEP) : undefined;
+        const target = prize && { ...prize.body.position };
+        // A new prize, none, or one that has drifted off the path's end.
+        const end = n.swimPath?.at(-1);
+        if (
+          prize?.id !== n.itemDetour ||
+          (target && end && Math.hypot(end.x - target.x, end.y - target.y) > 16)
+        ) {
+          n.itemDetour = prize?.id;
+          n.swimPath = undefined;
+        }
+        if (water && this.strokeSwimmer(n))
+          this.strokeSwim(n, target, T.walkSpeed);
+        else this.swim(n, target);
         continue;
       }
       if (n.navDrop) {
@@ -6386,6 +6401,18 @@ export class Simulation {
       if (n.grounded) {
         const detour = this.aboveExitCeiling(n);
         if (detour !== undefined) n.navDetourBelow ??= detour;
+      }
+      // #218: a power-up in easy reach comes first, a step back included.
+      // autoJump climbs a step toward it. Once it is taken or out of easy
+      // reach, the run to the door goes on.
+      const prize = this.easyPowerUp(n, NPC_EASY_STEP);
+      n.itemDetour = prize?.id;
+      if (prize) {
+        const dx = prize.body.position.x - p.x;
+        const toward = Math.sign(dx) || n.facing;
+        this.move(n, toward * Math.min(this.runSpeedFor(n), Math.abs(dx)));
+        this.autoJump(n, toward);
+        continue;
       }
       const direction =
         n.navDetourBelow ||
@@ -6706,18 +6733,37 @@ export class Simulation {
     );
   }
 
-  // A power-up he can take with a few steps or one hop: within a few tiles
-  // either side, no higher than a hop, not below his floor, in a clear line,
-  // with floor under the whole way so he never crosses a pit for it.
-  private easyPowerUp(m: { x: number; y: number }) {
-    const feet = this.mario.body.bounds.max.y;
+  // A power-up the actor can take with a few steps or one hop: within a few
+  // tiles either side, no higher than a hop, not below its floor, in a clear
+  // line, with floor under the whole way so it never crosses a pit for it.
+  // In water it is just near and in a clear line. Coins and 1-ups are not
+  // power-ups here, and a block that has not released one is ignored.
+  private easyPowerUp(a: Actor, hop: number) {
+    const m = a.body.position;
+    const feet = a.body.bounds.max.y;
+    if (this.roomFor(a).data.type === "water")
+      return this.items
+        .filter(
+          (item) =>
+            this.marioCanHunt(item) &&
+            Math.hypot(
+              item.body.position.x - m.x,
+              item.body.position.y - m.y,
+            ) <= MARIO_EASY_ITEM &&
+            !rayBlocked(this.solids, m, item.body.position),
+        )
+        .sort(
+          (p, q) =>
+            Math.hypot(p.body.position.x - m.x, p.body.position.y - m.y) -
+            Math.hypot(q.body.position.x - m.x, q.body.position.y - m.y),
+        )[0];
     const floorUnder = (x: number) =>
       this.solids.some(
         (s) =>
           !s.headOnly &&
           x >= s.bounds.min.x &&
           x <= s.bounds.max.x &&
-          s.bounds.min.y >= feet - MARIO_EASY_HOP &&
+          s.bounds.min.y >= feet - hop &&
           s.bounds.min.y <= feet + 8,
       );
     return this.items
@@ -6726,7 +6772,7 @@ export class Simulation {
         const p = item.body.position;
         if (Math.abs(p.x - m.x) > MARIO_EASY_ITEM) return false;
         const bottom = item.body.bounds.max.y;
-        if (bottom < feet - MARIO_EASY_HOP || bottom > feet + 8) return false;
+        if (bottom < feet - hop || bottom > feet + 8) return false;
         if (rayBlocked(this.solids, m, p)) return false;
         const step = Math.sign(p.x - m.x) * 8;
         for (let x = m.x; step && (p.x - x) * step > 0; x += step)
@@ -6826,7 +6872,7 @@ export class Simulation {
   ) {
     // #219: weaker than the player, he takes an easy power-up first.
     if (this.marioWeaker()) {
-      const easy = this.easyPowerUp(m);
+      const easy = this.easyPowerUp(this.mario, MARIO_EASY_HOP);
       if (easy) {
         this.lockMarioItem(easy);
         this.marioGoal = "item";

@@ -37,6 +37,7 @@ import type {
   ItemKind,
   Actor,
   Fireball,
+  Item,
   Obstacle,
 } from "../src/game/simulation.ts";
 import {
@@ -4111,6 +4112,96 @@ test("a weaker Mario does not cross a pit or go far for a power-up, or take a 1-
   oneUp.flower.kind = "oneUp";
   tick(oneUp.s, dt);
   assert.equal(oneUp.s.marioGoal, "stomp");
+});
+
+// #218: a warned, fleeing NPC takes a power-up in easy reach.
+function fleeing(s: Simulation, n: Actor, x: number) {
+  parkNpcs(s, [n]);
+  at(s, 3000);
+  s.marioActive = false;
+  Body.setPosition(n.body, { x, y: T.groundY - n.body.height / 2 });
+  Body.setVelocity(n.body, { x: 0, y: 0 });
+  n.warned = true;
+  n.state = "run";
+  n.wait = 0;
+}
+
+test("a warned NPC steps back for a close power-up, then runs on", () => {
+  const s = game();
+  const n = s.npcs[0]!;
+  fleeing(s, n, 600);
+  const flower = looseItem(s, "flower", 540);
+  let turned = false;
+  for (let i = 0; i < 120 && !n.flower; i++) {
+    tick(s, dt);
+    turned ||= n.body.velocity.x < 0;
+  }
+  assert.ok(turned, "went back for it");
+  assert.equal(n.flower, true);
+  assert.equal(s.items.includes(flower), false);
+  // The pickup lands after this frame's choice, so the detour clears next.
+  tick(s, dt);
+  assert.equal(n.itemDetour, undefined);
+  const x = n.body.position.x;
+  tick(s, 0.5);
+  assert.ok(n.body.position.x > x + 60, "back on the door run");
+});
+
+test("an unwarned NPC walks past a power-up, and a warned one skips far, pit, and 1-up prizes", () => {
+  const s = game();
+  const n = s.npcs[0]!;
+  parkNpcs(s, [n]);
+  at(s, 3000);
+  s.marioActive = false;
+  stillNpc(n, 600);
+  n.idleWalking = true;
+  n.wait = 0;
+  const flower = looseItem(s, "flower", 700);
+  tick(s, 4);
+  assert.equal(n.warned, false);
+  assert.equal(n.itemDetour, undefined);
+  assert.equal(s.items.includes(flower), true, "no seeking while unwarned");
+
+  const [gapLeft, gapRight] = GAPS[0]!;
+  for (const [kind, at, from] of [
+    ["flower", gapLeft - 30, gapRight + 30],
+    ["flower", 600 - 160, 600],
+    ["oneUp", 540, 600],
+  ] as const) {
+    const t = game();
+    const runner = t.npcs[0]!;
+    fleeing(t, runner, from);
+    looseItem(t, kind, at);
+    tick(t, 0.3);
+    assert.equal(runner.itemDetour, undefined, `${kind} at ${at}`);
+    assert.ok(runner.body.position.x > from, `${kind} at ${at}: runs on`);
+  }
+});
+
+test("a warned swimmer swims to a close power-up in water", () => {
+  const s = stageAt("2-2");
+  const fish = s.npcs.find((n) => n.kind === "fish" && n.areaId === s.level.main)!;
+  assert.ok(fish, "2-2 has a swimmer");
+  parkNpcs(s, [fish]);
+  s.marioActive = false;
+  fish.warned = true;
+  fish.state = "run";
+  fish.wait = 0;
+  const p = fish.body.position;
+  // No question block in this water room: make a released flower in place.
+  const flower = (
+    s as unknown as {
+      spawnItem(c: Obstacle, kind: ItemKind, facing: number, instant: boolean): Item;
+    }
+  ).spawnItem({ x: p.x - 80, y: p.y } as Obstacle, "flower", 1, true);
+  flower.emerge = 0;
+  flower.block = undefined;
+  flower.smash = false;
+  Body.setFrozen(flower.body, true);
+  Body.setVelocity(flower.body, { x: 0, y: 0 });
+  for (let i = 0; i < 180 && !fish.flower; i++) tick(s, dt);
+  assert.equal(fish.flower, true);
+  assert.equal(s.items.includes(flower), false);
 });
 
 test("a fleeing crowd beats a loose power-up", () => {

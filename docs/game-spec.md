@@ -424,8 +424,15 @@ most one NPC per 0.15s reaction lock; that lock is the bound, not a water dash.
 NPCs keep moving and can collect items
 outside the camera view, including while the player is in another area.
 
-NPCs collect items by contact without seeking them or intentionally attacking
-Mario. A giant NPC still flees. On land, only the giant player can stomp Mario.
+Unwarned NPCs collect items by contact only, and no NPC intentionally attacks
+Mario. A warned NPC that is fleeing makes one small effort: a collectable
+mushroom, 3x mushroom, 8x mushroom, flower, or star within 128 px either
+way, a step back included, at most a 48 px step up that it climbs on the way,
+in a clear line and with floor the whole way, draws it over until it is taken
+or out of that reach; then the door run goes on. It never crosses a pit or
+leaves the stage for one, never bumps a block to release one, and coins and
+1-up mushrooms stay contact-only. In water a warned swimmer swims to such a
+power-up within 128 px in a clear line. Shells and Mario do not do this. A giant NPC still flees. On land, only the giant player can stomp Mario.
 When the player and Mario overlap in the air on land, compare feet
 (`body.bounds.max.y`). Smaller Y is higher. The higher feet deal the hit. Equal
 feet (within a tiny epsilon) are a side and not a stomp. A small player with
