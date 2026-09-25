@@ -1213,7 +1213,9 @@ for (const viewport of [
       s.player.body.position.x = s.npcs[0].body.position.x;
       s.player.body.position.y = s.npcs[0].body.position.y;
     });
-    await expect(page.locator(".speech")).toBeVisible();
+    // A Koopa walking left (#214) can meet the player on the way and draw an
+    // earlier bubble, so there may be two.
+    await expect(page.locator(".speech").first()).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => (window as any).__game.sim.warned))
       .toBeGreaterThan(0);
